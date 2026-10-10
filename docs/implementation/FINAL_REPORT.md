@@ -214,7 +214,7 @@ Remaining security/quality work:
 | Sequential DB-gated Vitest: `admin-access.test.ts` | PASS: 1/1 on isolated PostgreSQL |
 | Sequential DB-gated Vitest: `critical-workflows.test.ts` | PASS: 5/5 on isolated PostgreSQL; skip exclusion/override, concurrent accept, checkout/support release, cancellation, service change |
 | `npx playwright test --project=tablet --workers=1` with test app on 3100 | PASS: 7/7 from clean seeded test DB; public authorization, kiosk, admin CRUD, protected payment, protected cancellation |
-| iPad viewport screenshot/DOM review | PASS with limitation: 810×1080 and 1080×810; no horizontal overflow, primary controls ≥44px; WebKit/physical device unavailable |
+| iPad viewport screenshot/DOM review | PASS with limitation: 810×1080 and 1080×810; no horizontal overflow, primary controls ≥44px; WebKit/physical device unavailable. Details: [`VIEWPORT_QA.md`](VIEWPORT_QA.md) |
 | `npm run benchmark:db` | PASS: 20 iterations + 2 warmups; board p50 1.76ms/p95 3.26ms, 2,613-byte payload; report day/month p95 0.58/0.50ms on small fixture |
 | Request-ID smoke (`/api/health`, `/api/board`) | PASS: supplied ID echoed; generated ID returned; structured `api.request.completed` log emitted |
 
