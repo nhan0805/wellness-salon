@@ -92,6 +92,10 @@ export class ShiftClosingBlockedError extends Error {
   }
 }
 
+export function verifiedStaffSessionExpiry(now: Date, ttlMinutes: number) {
+  return new Date(now.getTime() + ttlMinutes * 60_000);
+}
+
 export function parseBusinessDate(value: string | null | undefined) {
   const normalized = value?.trim();
   if (!normalized) return currentBusinessDate();
@@ -962,7 +966,7 @@ export async function staffActionDb(input: StaffActionInput, stationUserId: stri
       }
     }
     const config = await tx.shopConfig.findUnique({ where: { id: 1 } });
-    const session = pin ? await tx.verifiedStaffSession.create({ data: { staffId: input.staffId, stationUserId, expiresAt: new Date(Date.now() + Math.min(5, Math.max(2, config?.verifiedSessionTtlMin ?? 3)) * 60_000) } }) : null;
+    const session = pin ? await tx.verifiedStaffSession.create({ data: { staffId: input.staffId, stationUserId, expiresAt: verifiedStaffSessionExpiry(new Date(), config?.verifiedSessionTtlMin ?? 3) } }) : null;
     if (input.action === 'CHECK_IN' || input.action === 'CHECK_OUT') {
       if (input.action === 'CHECK_OUT') {
         const blockingService = await tx.appointmentService.findFirst({

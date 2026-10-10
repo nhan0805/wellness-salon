@@ -29,7 +29,10 @@ export async function POST(request: Request) {
       const result = await staffActionDb(parsed.data, stationUserId, verifiedSessionId);
       const response = NextResponse.json(result);
       const secure = process.env.NODE_ENV === 'production' && process.env.AUTH_COOKIE_SECURE !== 'false';
-      if (result.verifiedStaffSessionId) response.cookies.set(secure ? '__Host-verified-staff-session' : 'verified-staff-session', result.verifiedStaffSessionId, { httpOnly: true, secure, sameSite: 'strict', path: '/', maxAge: 5 * 60 });
+      if (result.verifiedStaffSessionId && result.verifiedStaffSessionExpiresAt) {
+        const maxAge = Math.max(0, Math.ceil((result.verifiedStaffSessionExpiresAt.getTime() - Date.now()) / 1000));
+        response.cookies.set(secure ? '__Host-verified-staff-session' : 'verified-staff-session', result.verifiedStaffSessionId, { httpOnly: true, secure, sameSite: 'strict', path: '/', maxAge });
+      }
       return response;
     } catch (error) {
       return jsonError(error instanceof Error ? error.message : 'Unable to complete board action', 409);
