@@ -168,8 +168,7 @@ See `.env.example` and `docker/docker-compose.yml`.
 | `AUTH_COOKIE_SECURE` | Explicit secure-cookie override. | `false` in Compose |
 | `AUTH_TRUST_HOST` | Auth.js trusted-host setting. | `true` |
 | `NEXTAUTH_URL` | Canonical local/configured origin. | `http://localhost:3000` |
-| `SHOP_TIMEZONE` / `SHOP_CURRENCY` / `SHOP_CLOSING_TIME` | Shop operating configuration. | `Asia/Ho_Chi_Minh` / `USD` / `21:00` |
-| `VERIFIED_SESSION_TTL_MINUTES` | Seed/config default for verified staff session. | `3` |
+| `SHOP_TIMEZONE` | Bootstrap fallback only when `ShopConfig` has not been seeded. | `Asia/Ho_Chi_Minh` |
 | `CRON_SECRET` | Required scheduler authorization for closing job. | Set through `.env` |
 
 ## Coding standards

@@ -49,6 +49,15 @@ async function main() {
     await prisma.serviceSkill.createMany({ data: service.skills.map((skill) => ({ serviceId: record.id, skillId: skills[skill].id })) });
   }
 
+  const skipReasons = ['Customer not ready', 'Customer requested a break', 'Service requires another specialist', 'Other'];
+  for (const [sortOrder, name] of skipReasons.entries()) {
+    await prisma.skipReason.upsert({
+      where: { name },
+      update: { sortOrder, isActive: true },
+      create: { name, sortOrder, isActive: true },
+    });
+  }
+
   const pinHash = await hashSecret(staffPin);
   const staff = [
     { name: 'Anna', initials: 'AN', skills: ['Classic manicure', 'Gel technique'] },
@@ -80,7 +89,7 @@ async function main() {
     create: { email: stationEmail, passwordHash: await hashSecret(stationPassword), role: AuthRole.STATION },
   });
 
-  await prisma.shopConfig.upsert({ where: { id: 1 }, update: {}, create: { id: 1, timezone: 'Asia/Ho_Chi_Minh', closingTime: '21:00', verifiedSessionTtlMin: 3, currency: 'USD', roundRobinEnabled: true } });
+  await prisma.shopConfig.upsert({ where: { id: 1 }, update: {}, create: { id: 1, timezone: 'Asia/Ho_Chi_Minh', openingTime: '09:00', closingTime: '21:00', verifiedSessionTtlMin: 3, currency: 'USD', roundRobinEnabled: true } });
 }
 
 main()

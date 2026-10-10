@@ -45,7 +45,7 @@ export default function SignInPanel() {
           <h1>Keep the floor <span>flowing.</span></h1>
           <p>Log in to access your workspace. The system will automatically route you to your dashboard based on your account role.</p>
         </div>
-        <div className="subtle" style={{ color: 'var(--color-on-dark-muted)' }}>Asia/Ho_Chi_Minh · USD · Single-shop workspace</div>
+        <div className="subtle" style={{ color: 'var(--color-on-dark-muted)' }}>Single-shop operations workspace · Shared tablet access</div>
       </section>
 
       <section className="sign-in-side">

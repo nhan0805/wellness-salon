@@ -141,13 +141,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 .field { display: grid; gap: 8px; }
 .field label { color: var(--color-foreground); font-size: 0.84rem; font-weight: 700; }
-.field input, .field select { width: 100%; min-height: 52px; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; color: var(--color-foreground); padding: 0 15px; transition: border-color 200ms ease, box-shadow 200ms ease; }
+.field input, .field select, .field textarea { width: 100%; min-height: 52px; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; color: var(--color-foreground); padding: 0 15px; transition: border-color 200ms ease, box-shadow 200ms ease; }
+.field textarea { min-height: 112px; padding-top: 13px; padding-bottom: 13px; resize: vertical; }
 .field input::placeholder { color: var(--color-muted-foreground); }
 .field input:focus, .field select:focus { border-color: var(--color-primary-dark); box-shadow: 0 0 0 4px rgb(201 144 155 / 0.17); outline: none; }
 .field input[aria-invalid='true'] { border-color: var(--color-danger); box-shadow: 0 0 0 4px rgb(217 137 137 / 0.14); }
 .field-hint { color: var(--color-muted-foreground); font-size: 0.76rem; }
 .form-grid { display: grid; gap: 16px; }
 .form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.inline-form-grid { display: grid; grid-template-columns: minmax(220px, 1fr) 150px auto; align-items: end; gap: 14px; margin-bottom: 22px; }
+.checkbox-field { display: inline-flex; min-height: 52px; align-items: center; gap: 9px; color: var(--color-foreground); font-size: 0.88rem; font-weight: 700; }
+.checkbox-field input { width: 19px; height: 19px; accent-color: var(--color-primary-strong); }
+.action-preview { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; margin-bottom: 18px; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-background); padding: 14px; color: var(--color-muted-foreground); font-size: 0.78rem; }
+.action-preview strong { color: var(--color-foreground); font-family: var(--font-heading); font-size: 0.86rem; }
 
 .landing-shell { min-height: 100dvh; background: radial-gradient(circle at 85% 5%, rgb(220 214 247 / 0.52) 0, transparent 30%), var(--color-background); }
 .landing-hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr); align-items: center; gap: 72px; min-height: calc(100vh - 76px); padding: 72px 0 96px; }
@@ -638,7 +644,8 @@ h1, h2, h3, h4, p { text-wrap: pretty; }
 
 .field { gap: 9px; }
 .field label { font-size: 0.95rem; }
-.field input, .field select { min-height: 56px; border-radius: 14px; font-size: 1rem; }
+.field input, .field select, .field textarea { min-height: 56px; border-radius: 14px; font-size: 1rem; }
+.field textarea { min-height: 112px; }
 .form-actions { gap: 12px; }
 .period-toggle { min-height: 54px; }
 .period-toggle .button { min-height: 48px; }
@@ -765,8 +772,10 @@ h1, h2, h3, h4, p { text-wrap: pretty; }
   .admin-sidebar .brand-copy, .admin-sidebar-footer, .admin-nav-label { display: none; }
   .admin-nav { display: flex; flex: 1; gap: 6px; overflow-x: auto; padding: 2px 0; }
   .admin-nav-link { flex: 0 0 auto; min-height: 50px; }
-  .admin-topbar { padding-right: 24px; padding-left: 24px; }
+  .admin-topbar { top: 76px; padding-right: 24px; padding-left: 24px; }
   .admin-content { padding: 32px 24px 52px; }
+  .inline-form-grid { grid-template-columns: 1fr 1fr; }
+  .inline-form-grid .form-actions { grid-column: 1 / -1; justify-content: flex-start; }
   .board-main { width: min(100% - 48px, 760px); }
   .board-grid { grid-template-columns: 1fr; }
   .current-turn { min-height: 390px; }
@@ -778,6 +787,9 @@ h1, h2, h3, h4, p { text-wrap: pretty; }
   .kiosk-progress { gap: 7px; overflow-x: auto; white-space: nowrap; }
   .progress-line { width: 32px; }
   .service-card { min-height: 210px; }
+  .inline-form-grid { grid-template-columns: 1fr; }
+  .inline-form-grid .form-actions { grid-column: auto; }
+  .action-preview { grid-template-columns: 1fr; }
   .board-main { width: min(100% - 32px, 640px); padding-top: 32px; }
   .board-heading, .dashboard-greeting, .section-heading { align-items: flex-start; flex-direction: column; }
   .board-heading .topbar-actions, .dashboard-greeting .report-toolbar { width: 100%; }

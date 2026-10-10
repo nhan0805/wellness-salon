@@ -31,6 +31,16 @@ describe('turn routing', () => {
     expect(routeNextTurn([staff({ isPresent: false })], 'gel')).toEqual({ status: 'WAITING', staff: null });
   });
 
+  it('honors all persistent exclusions when routing a turn', () => {
+    const result = routeNextTurn([staff({ id: 'anna' }), staff({ id: 'linda' })], 'gel', ['anna', 'linda']);
+    expect(result).toEqual({ status: 'WAITING', staff: null });
+  });
+
+  it('uses stable name order when fair routing is disabled', () => {
+    const result = routeNextTurn([staff({ id: 'zoe', name: 'Zoe' }), staff({ id: 'amy', name: 'Amy' })], 'gel', [], false);
+    expect(result.staff?.id).toBe('amy');
+  });
+
   it('skips only the current staff and reroutes to another eligible staff member', () => {
     const result = routeAfterSkip([staff({ id: 'anna' }), staff({ id: 'linda', lastServiceFinishedAt: new Date('2026-10-07T06:00:00Z') })], 'gel', 'anna');
     expect(result.status).toBe('ASSIGNED');

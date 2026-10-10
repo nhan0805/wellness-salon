@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Edit3, LoaderCircle, LockKeyhole, Plus, RotateCcw, Tags, Trash2, UserCog, X } from 'lucide-react';
 import { InitialsAvatar, SectionHeader, StatusBadge } from '@/src/components/ui';
+import { useDialogFocus } from '@/src/components/use-dialog-focus';
 
 type AccessKind = 'skills' | 'accounts';
 type SkillRecord = { id: string; name: string; staffCount: number; serviceCount: number; createdAt: string };
@@ -140,10 +141,8 @@ function AccountForm({ record, busy, onCancel, onSubmit }: { record?: Account; b
 }
 
 function AccessModal({ className = '', title, description, error, onClose, children }: { className?: string; title: string; description: string; error: string; onClose: () => void; children: ReactNode }) {
-  const headingRef = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { headingRef.current?.focus(); }, []);
-  useEffect(() => { const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); }; window.addEventListener('keydown', onKeyDown); return () => window.removeEventListener('keydown', onKeyDown); }, [onClose]);
-  return <div className="modal-backdrop"><div className={`modal ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby="access-modal-title"><div className="modal-header"><div><h2 id="access-modal-title" tabIndex={-1} ref={headingRef}>{title}</h2><p>{description}</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><X size={19} aria-hidden="true" /></button></div>{error ? <div className="management-error modal-error" role="alert">{error}</div> : null}{children}</div></div>;
+  const dialogRef = useDialogFocus(true, onClose);
+  return <div className="modal-backdrop"><div className={`modal ${className}`.trim()} ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="access-modal-title"><div className="modal-header"><div><h2 id="access-modal-title">{title}</h2><p>{description}</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={onClose}><X size={19} aria-hidden="true" /></button></div>{error ? <div className="management-error modal-error" role="alert">{error}</div> : null}{children}</div></div>;
 }
 
 function EmptyAccessState({ icon: Icon, title, description }: { icon: typeof Tags; title: string; description: string }) {

@@ -37,6 +37,7 @@ export const staffActionSchema = z.object({
   staffId: z.string().min(1),
   pin: z.string().regex(/^\d{4}$/, 'Enter a 4-digit PIN').optional(),
   reason: z.string().trim().max(140).optional(),
+  skipReasonId: z.string().min(1).optional(),
   idempotencyKey: z.string().min(8).max(120),
 });
 
@@ -97,3 +98,66 @@ export const adminAttendanceSchema = z.object({
   action: z.enum(['CHECK_IN', 'CHECK_OUT']),
   idempotencyKey: z.string().min(8).max(120),
 });
+
+export const adminSkipReasonCreateSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  sortOrder: z.number().int().min(0).max(999).default(0),
+});
+
+export const adminSkipReasonUpdateSchema = adminSkipReasonCreateSchema.extend({
+  id: z.string().min(1),
+  isActive: z.boolean(),
+});
+
+export const adminAppointmentCancelSchema = z.object({
+  appointmentId: z.string().min(1),
+  appointmentServiceId: z.string().min(1).optional(),
+  scope: z.enum(['SERVICE', 'VISIT']).default('SERVICE'),
+  reason: z.string().trim().min(2).max(200),
+  confirmed: z.boolean().default(false),
+  idempotencyKey: z.string().min(8).max(120),
+});
+
+export const adminAppointmentReassignSchema = z.object({
+  appointmentServiceId: z.string().min(1),
+  staffId: z.string().min(1),
+  reason: z.string().trim().min(2).max(200),
+  idempotencyKey: z.string().min(8).max(120),
+});
+
+export const adminTurnExclusionOverrideSchema = z.object({
+  appointmentServiceId: z.string().min(1),
+  staffId: z.string().min(1),
+  reason: z.string().trim().min(2).max(200),
+  idempotencyKey: z.string().min(8).max(120),
+});
+
+export const adminAppointmentServiceChangeSchema = z.object({
+  appointmentServiceId: z.string().min(1),
+  serviceId: z.string().min(1),
+  reason: z.string().trim().min(2).max(200),
+  idempotencyKey: z.string().min(8).max(120),
+});
+
+const shopTime = z.string().regex(/^\d{2}:\d{2}$/).refine((value) => {
+  const [hour, minute] = value.split(':').map(Number);
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+}, 'Enter a valid 24-hour time');
+
+const shopTimezone = z.string().trim().min(1).max(80).refine((value) => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value }).format();
+    return true;
+  } catch {
+    return false;
+  }
+}, 'Enter a valid IANA timezone');
+
+export const adminShopConfigSchema = z.object({
+  timezone: shopTimezone,
+  openingTime: shopTime,
+  closingTime: shopTime,
+  currency: z.string().trim().regex(/^[A-Z]{3}$/),
+  verifiedSessionTtlMin: z.number().int().min(1).max(15),
+  roundRobinEnabled: z.boolean(),
+}).refine((value) => value.openingTime < value.closingTime, { message: 'Closing time must be later than opening time', path: ['closingTime'] });

@@ -1,9 +1,9 @@
 import { AppointmentStatus, AttendanceClosedBy as PrismaAttendanceClosedBy, AttendanceStatus, Availability, AuthRole, Prisma } from '@prisma/client';
-import type { AdminAccountSnapshot, AdminAttendanceSnapshot, AdminCustomerHistorySnapshot, AdminCustomerSnapshot, AdminServiceSnapshot, AdminSkillManagementSnapshot, AdminSkillSnapshot, AdminStaffSnapshot } from '@/src/domain/types';
+import type { AdminAccountSnapshot, AdminAttendanceSnapshot, AdminCustomerHistorySnapshot, AdminCustomerSnapshot, AdminServiceSnapshot, AdminSkipReasonSnapshot, AdminSkillManagementSnapshot, AdminSkillSnapshot, AdminStaffSnapshot } from '@/src/domain/types';
 import { deriveStaffInitials } from '@/src/domain/staff';
 import { normalizeServiceIconKey, type ServiceIconKey } from '@/src/domain/service-icons';
 import { normalizePhoneNumber } from '@/src/domain/phone';
-import { currentBusinessDate, formatBusinessDate, staffBusyAppointmentStatuses } from '@/src/server/services/prisma-operations';
+import { currentDbBusinessDate, formatBusinessDate, staffBusyAppointmentStatuses, type ShopOperationalConfig } from '@/src/server/services/prisma-operations';
 import { prisma } from '@/src/server/db';
 import { hashSecret } from '@/src/server/security';
 
@@ -70,7 +70,7 @@ function staffInclude(businessDate: Date) {
     attendance: { where: { businessDate } },
     serviceState: true,
     appointments: { where: { businessDate, status: { in: staffBusyAppointmentStatuses } }, select: { id: true } },
-    supportingAppointments: { where: { appointment: { businessDate, status: { in: staffBusyAppointmentStatuses } } }, select: { appointmentId: true } },
+    supportingAppointments: { where: { releasedAt: null, appointment: { businessDate, status: { in: staffBusyAppointmentStatuses } } }, select: { appointmentId: true } },
   };
 }
 
@@ -79,7 +79,7 @@ function attendanceInclude(businessDate: Date) {
     attendance: { where: { businessDate } },
     serviceState: true,
     appointments: { where: { businessDate, status: { in: staffBusyAppointmentStatuses } }, select: { id: true } },
-    supportingAppointments: { where: { appointment: { businessDate, status: { in: staffBusyAppointmentStatuses } } }, select: { appointmentId: true } },
+    supportingAppointments: { where: { releasedAt: null, appointment: { businessDate, status: { in: staffBusyAppointmentStatuses } } }, select: { appointmentId: true } },
   };
 }
 
@@ -136,6 +136,54 @@ export async function deleteDbAdminSkill(input: { id: string; adminId?: string }
   });
 }
 
+function mapSkipReason(row: { id: string; name: string; sortOrder: number; isActive: boolean; createdAt: Date; updatedAt: Date }): AdminSkipReasonSnapshot {
+  return { id: row.id, name: row.name, sortOrder: row.sortOrder, isActive: row.isActive, createdAt: row.createdAt, updatedAt: row.updatedAt };
+}
+
+export async function getDbAdminSkipReasons(): Promise<AdminSkipReasonSnapshot[]> {
+  const rows = await prisma.skipReason.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+  return rows.map(mapSkipReason);
+}
+
+export async function createDbAdminSkipReason(input: { name: string; sortOrder?: number; adminId?: string }) {
+  return prisma.$transaction(async (tx) => {
+    const reason = await tx.skipReason.create({ data: { name: input.name.trim(), sortOrder: input.sortOrder ?? 0, isActive: true } });
+    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'skip_reason.created', entity: 'SkipReason', entityId: reason.id, metadata: { name: reason.name, sortOrder: reason.sortOrder } } });
+    return mapSkipReason(reason);
+  });
+}
+
+export async function updateDbAdminSkipReason(input: { id: string; name: string; sortOrder: number; isActive: boolean; adminId?: string }) {
+  return prisma.$transaction(async (tx) => {
+    const reason = await tx.skipReason.update({ where: { id: input.id }, data: { name: input.name.trim(), sortOrder: input.sortOrder, isActive: input.isActive } });
+    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'skip_reason.updated', entity: 'SkipReason', entityId: reason.id, metadata: { name: reason.name, sortOrder: reason.sortOrder, isActive: reason.isActive } } });
+    return mapSkipReason(reason);
+  });
+}
+
+export async function deleteDbAdminSkipReason(input: { id: string; adminId?: string }) {
+  return prisma.$transaction(async (tx) => {
+    const reason = await tx.skipReason.findUnique({ where: { id: input.id }, include: { _count: { select: { turns: true } } } });
+    if (!reason) throw new Error('Skip reason not found');
+    if (reason._count.turns > 0) throw new Error('Skip reasons used in history cannot be deleted; deactivate them instead');
+    await tx.skipReason.delete({ where: { id: input.id } });
+    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'skip_reason.deleted', entity: 'SkipReason', entityId: input.id, metadata: { name: reason.name } } });
+    return { ok: true, id: input.id };
+  });
+}
+
+export async function updateDbShopConfig(input: ShopOperationalConfig & { adminId?: string }) {
+  return prisma.$transaction(async (tx) => {
+    const config = await tx.shopConfig.upsert({
+      where: { id: 1 },
+      update: { timezone: input.timezone, openingTime: input.openingTime, closingTime: input.closingTime, currency: input.currency, verifiedSessionTtlMin: input.verifiedSessionTtlMin, roundRobinEnabled: input.roundRobinEnabled, stateVersion: { increment: 1 } },
+      create: { id: 1, timezone: input.timezone, openingTime: input.openingTime, closingTime: input.closingTime, currency: input.currency, verifiedSessionTtlMin: input.verifiedSessionTtlMin, roundRobinEnabled: input.roundRobinEnabled, stateVersion: 1 },
+    });
+    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'shop_config.updated', entity: 'ShopConfig', entityId: String(config.id), metadata: { timezone: config.timezone, openingTime: config.openingTime, closingTime: config.closingTime, currency: config.currency, verifiedSessionTtlMin: config.verifiedSessionTtlMin, roundRobinEnabled: config.roundRobinEnabled } } });
+    return { timezone: config.timezone, openingTime: config.openingTime, closingTime: config.closingTime, currency: config.currency, verifiedSessionTtlMin: config.verifiedSessionTtlMin, roundRobinEnabled: config.roundRobinEnabled, stateVersion: config.stateVersion };
+  });
+}
+
 function mapAccount(row: { id: string; email: string; role: AuthRole; isActive: boolean; createdAt: Date; updatedAt: Date }, currentId: string): AdminAccountSnapshot {
   return { id: row.id, email: row.email, role: row.role, isActive: row.isActive, isCurrent: row.id === currentId, createdAt: row.createdAt, updatedAt: row.updatedAt };
 }
@@ -162,9 +210,10 @@ export async function updateDbAdminAccount(input: { id: string; email: string; p
       const activeAdminCount = await tx.authUser.count({ where: { role: 'ADMIN', isActive: true } });
       if (activeAdminCount <= 1) throw new Error('Keep at least one active admin account');
     }
-    const data: Prisma.AuthUserUpdateInput = { email: input.email.toLowerCase(), role: input.role, isActive: input.isActive };
+    const data: Prisma.AuthUserUpdateInput = { email: input.email.toLowerCase(), role: input.role, isActive: input.isActive, sessionVersion: { increment: 1 } };
     if (input.password) data.passwordHash = await hashSecret(input.password);
     const account = await tx.authUser.update({ where: { id: input.id }, data });
+    await tx.verifiedStaffSession.updateMany({ where: { stationUserId: input.id, revokedAt: null }, data: { revokedAt: new Date(), revokedReason: 'Account settings changed' } });
     await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'account.updated', entity: 'AuthUser', entityId: account.id, metadata: { email: account.email, role: account.role, isActive: account.isActive, passwordChanged: Boolean(input.password) } } });
     return mapAccount(account, input.adminId ?? '');
   });
@@ -190,7 +239,7 @@ export async function deleteDbAdminAccount(input: { id: string; adminId?: string
 }
 
 export async function getDbAdminAttendance(): Promise<AdminAttendanceSnapshot[]> {
-  const businessDate = currentBusinessDate();
+  const businessDate = await currentDbBusinessDate();
   const rows = await prisma.staff.findMany({ where: {}, include: attendanceInclude(businessDate), orderBy: { name: 'asc' } });
   return rows.map(mapAttendance);
 }
@@ -294,7 +343,7 @@ export async function deleteDbAdminCustomer(input: { id: string; adminId?: strin
 }
 
 export async function getDbAdminStaff(): Promise<{ staff: AdminStaffSnapshot[]; skills: AdminSkillSnapshot[] }> {
-  const businessDate = currentBusinessDate();
+  const businessDate = await currentDbBusinessDate();
   const [rows, skills] = await Promise.all([
     prisma.staff.findMany({ where: {}, include: adminStaffInclude(businessDate), orderBy: { name: 'asc' } }),
     getDbAdminSkills(),
@@ -303,7 +352,7 @@ export async function getDbAdminStaff(): Promise<{ staff: AdminStaffSnapshot[]; 
 }
 
 export async function createDbAdminStaff(input: { name: string; pin: string; skillIds: string[]; adminId?: string }) {
-  const businessDate = currentBusinessDate();
+  const businessDate = await currentDbBusinessDate();
   return prisma.$transaction(async (tx) => {
     const selectedSkillIds = await assertSkillIds(tx, input.skillIds);
     const staff = await tx.staff.create({ data: { name: input.name, initials: deriveStaffInitials(input.name), pinHash: await hashSecret(input.pin), isActive: true } });
@@ -315,7 +364,7 @@ export async function createDbAdminStaff(input: { name: string; pin: string; ski
 }
 
 export async function updateDbAdminStaff(input: { id: string; name: string; initials?: string; pin?: string; skillIds: string[]; isActive: boolean; adminId?: string }) {
-  const businessDate = currentBusinessDate();
+  const businessDate = await currentDbBusinessDate();
   return prisma.$transaction(async (tx) => {
     const selectedSkillIds = await assertSkillIds(tx, input.skillIds);
     const data: Prisma.StaffUpdateInput = { name: input.name, initials: (input.initials ?? deriveStaffInitials(input.name)).toUpperCase(), isActive: input.isActive };
@@ -325,7 +374,7 @@ export async function updateDbAdminStaff(input: { id: string; name: string; init
     await tx.staffSkill.createMany({ data: selectedSkillIds.map((skillId) => ({ staffId: input.id, skillId })) });
     if (!input.isActive) {
       const activePrimaryAssignment = await tx.appointmentService.findFirst({ where: { primaryStaffId: input.id, status: { in: staffBusyAppointmentStatuses }, appointment: { businessDate } }, select: { appointment: { select: { code: true } } } });
-      const activeSupportAssignment = await tx.appointmentSupportingStaff.findFirst({ where: { staffId: input.id, appointment: { businessDate, status: { in: staffBusyAppointmentStatuses } } }, select: { appointment: { select: { code: true } } } });
+      const activeSupportAssignment = await tx.appointmentSupportingStaff.findFirst({ where: { staffId: input.id, releasedAt: null, appointment: { businessDate, status: { in: staffBusyAppointmentStatuses } } }, select: { appointment: { select: { code: true } } } });
       if (activePrimaryAssignment || activeSupportAssignment) throw new Error(`Cannot deactivate staff while assigned to active turn ${activePrimaryAssignment?.appointment.code ?? activeSupportAssignment?.appointment.code}`);
       const closedAt = new Date();
       await tx.staffServiceState.updateMany({ where: { staffId: input.id }, data: { availability: Availability.AVAILABLE } });

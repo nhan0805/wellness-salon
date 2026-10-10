@@ -3,6 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const localChrome = process.env.PLAYWRIGHT_CHROME_PATH ?? (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined);
 const launchOptions = localChrome ? { executablePath: localChrome } : undefined;
+const playwrightPort = process.env.PLAYWRIGHT_PORT ?? '3000';
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -11,7 +12,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${playwrightPort}`,
     trace: 'on-first-retry'
   },
   projects: [
@@ -19,8 +20,8 @@ export default defineConfig({
     { name: 'tablet', use: { ...devices['iPad (gen 7)'], browserName: 'chromium', launchOptions } }
   ],
   webServer: {
-    command: 'npm run dev',
-    url: 'http://127.0.0.1:3000',
+    command: `PORT=${playwrightPort} npm run dev`,
+    url: `http://127.0.0.1:${playwrightPort}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000
   }

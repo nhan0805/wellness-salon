@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { canTransitionAppointment, transitionAppointment, transitionAttendance, transitionTurn } from '@/src/domain/state-machines';
 
 describe('state machines', () => {
-  it('allows the happy path and blocks cancellation-by-skip', () => {
+  it('allows the happy path and limits cancellation to open appointments', () => {
     expect(transitionAppointment('WAITING', 'ASSIGNED')).toBe('ASSIGNED');
     expect(transitionAppointment('IN_SERVICE', 'PAYMENT_PENDING')).toBe('PAYMENT_PENDING');
+    expect(transitionAppointment('CREATED', 'CANCELLED')).toBe('CANCELLED');
+    expect(transitionAppointment('IN_SERVICE', 'CANCELLED')).toBe('CANCELLED');
     expect(canTransitionAppointment('WAITING', 'COMPLETED')).toBe(false);
+    expect(canTransitionAppointment('PAYMENT_PENDING', 'CANCELLED')).toBe(false);
+    expect(canTransitionAppointment('COMPLETED', 'CANCELLED')).toBe(false);
     expect(() => transitionAppointment('WAITING', 'COMPLETED')).toThrow('Invalid appointment transition');
   });
 

@@ -1,6 +1,6 @@
 import type { ServiceIconKey } from '@/src/domain/service-icons';
 
-export type AppointmentStatus = 'CREATED' | 'WAITING' | 'ASSIGNED' | 'IN_SERVICE' | 'PAYMENT_PENDING' | 'COMPLETED';
+export type AppointmentStatus = 'CREATED' | 'WAITING' | 'ASSIGNED' | 'IN_SERVICE' | 'PAYMENT_PENDING' | 'COMPLETED' | 'CANCELLED';
 export type TurnStatus = 'ASSIGNED' | 'ACCEPTED' | 'SKIPPED' | 'FINISHED';
 export type AttendanceStatus = 'PRESENT' | 'CHECKED_OUT' | 'ABSENT';
 export type Availability = 'AVAILABLE' | 'BUSY';
@@ -38,8 +38,17 @@ export interface TurnSnapshot {
   assignedStaffId: string | null;
   status: TurnStatus;
   reason: string | null;
+  skipReasonId?: string | null;
+  skipReasonNameSnapshot?: string | null;
   createdAt: Date;
   endedAt: Date | null;
+}
+
+export interface TurnExclusionSnapshot {
+  staffId: string;
+  staffName: string;
+  reason: string;
+  createdAt: Date;
 }
 
 export interface AppointmentServiceSnapshot {
@@ -54,6 +63,7 @@ export interface AppointmentServiceSnapshot {
   primaryStaff: { id: string; name: string; initials: string } | null;
   completedAt: Date | null;
   turns: TurnSnapshot[];
+  turnExclusions: TurnExclusionSnapshot[];
 }
 
 export interface AppointmentSnapshot {
@@ -97,6 +107,7 @@ export interface DailyReport {
   appointmentCount: number;
   openCount: number;
   pendingPaymentCount: number;
+  cancelledCount: number;
   revenue: number;
   completedCount: number;
   cardTotal: number;
@@ -115,6 +126,7 @@ export interface MonthlyReport {
   appointmentCount: number;
   openCount: number;
   pendingPaymentCount: number;
+  cancelledCount: number;
   revenue: number;
   completedCount: number;
   cardTotal: number;
@@ -133,6 +145,15 @@ export interface AdminSkillManagementSnapshot extends AdminSkillSnapshot {
   staffCount: number;
   serviceCount: number;
   createdAt: Date;
+}
+
+export interface AdminSkipReasonSnapshot {
+  id: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface AdminAccountSnapshot {

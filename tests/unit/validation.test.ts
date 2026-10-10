@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkInSchema, kioskCustomerLookupSchema } from '@/src/server/validation';
+import { adminShopConfigSchema, checkInSchema, kioskCustomerLookupSchema } from '@/src/server/validation';
 import { normalizePhoneNumber } from '@/src/domain/phone';
 
 describe('phone validation', () => {
@@ -17,5 +17,12 @@ describe('phone validation', () => {
 
   it('normalizes equivalent phone formats to one matching key', () => {
     expect(normalizePhoneNumber('+1 (415) 555-0100')).toBe('14155550100');
+  });
+
+  it('rejects invalid shop time and timezone configuration', () => {
+    const base = { timezone: 'Asia/Ho_Chi_Minh', openingTime: '09:00', closingTime: '21:00', currency: 'USD', verifiedSessionTtlMin: 3, roundRobinEnabled: true };
+    expect(adminShopConfigSchema.safeParse({ ...base, closingTime: '25:00' }).success).toBe(false);
+    expect(adminShopConfigSchema.safeParse({ ...base, timezone: 'Not/A_Timezone' }).success).toBe(false);
+    expect(adminShopConfigSchema.safeParse({ ...base, openingTime: '22:00', closingTime: '08:00' }).success).toBe(false);
   });
 });

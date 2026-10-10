@@ -35,14 +35,16 @@ export function selectFairStaff(staff: StaffCandidate[]): StaffCandidate | null 
   })[0];
 }
 
-export function routeNextTurn(staff: StaffCandidate[], requiredSkills: RequiredSkills, excludedIds: string[] = []): AssignmentResult {
+export function routeNextTurn(staff: StaffCandidate[], requiredSkills: RequiredSkills, excludedIds: string[] = [], roundRobinEnabled = true): AssignmentResult {
   const eligible = getEligibleStaff(staff, requiredSkills, excludedIds);
-  const selected = selectFairStaff(eligible);
+  const selected = roundRobinEnabled
+    ? selectFairStaff(eligible)
+    : [...eligible].sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))[0] ?? null;
   return selected ? { status: 'ASSIGNED', staff: selected } : { status: 'WAITING', staff: null };
 }
 
-export function routeAfterSkip(staff: StaffCandidate[], requiredSkills: RequiredSkills, skippedStaffId: string) {
-  return routeNextTurn(staff, requiredSkills, [skippedStaffId]);
+export function routeAfterSkip(staff: StaffCandidate[], requiredSkills: RequiredSkills, skippedStaffId: string, roundRobinEnabled = true) {
+  return routeNextTurn(staff, requiredSkills, [skippedStaffId], roundRobinEnabled);
 }
 
 export function compareFairnessOrder(left: StaffCandidate, right: StaffCandidate) {

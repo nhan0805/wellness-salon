@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { AppointmentStatus, Availability } from '@prisma/client';
+import { Availability } from '@prisma/client';
 import { prisma } from '@/src/server/db';
 import { createDbCheckIn } from '@/src/server/services/prisma-operations';
 
-const enabled = process.env.RUN_DB_TESTS === 'true' && Boolean(process.env.DATABASE_URL);
+const enabled = process.env.RUN_DB_TESTS === 'true' && Boolean(process.env.TEST_DATABASE_URL) && process.env.TEST_DATABASE_URL !== process.env.APPLICATION_DATABASE_URL;
 
 describe.skipIf(!enabled)('PostgreSQL migration and seed', () => {
   it('reads the migrated schema, seeded catalog, and advisory-lock capability', async () => {
@@ -25,23 +25,26 @@ describe.skipIf(!enabled)('PostgreSQL migration and seed', () => {
     expect(lockResult[0]?.value).toBe(1);
   });
 
-  it('serializes concurrent kiosk submissions for one phone into one appointment', async () => {
+  it('keeps retries idempotent while preserving distinct explicit same-day visits', async () => {
     const phone = '+1 415 555 ' + String(Date.now()).slice(-4);
     const service = await prisma.service.findFirstOrThrow({ where: { isActive: true }, orderBy: { name: 'asc' } });
+    const retryKey = `integration-retry-${Date.now()}`;
     const results = await Promise.all([
-      createDbCheckIn({ serviceId: service.id, phone, name: 'Concurrent Guest' }),
-      createDbCheckIn({ serviceId: service.id, phone, name: 'Concurrent Guest' }),
+      createDbCheckIn({ serviceId: service.id, phone, name: 'Concurrent Guest', idempotencyKey: retryKey }),
+      createDbCheckIn({ serviceId: service.id, phone, name: 'Concurrent Guest', idempotencyKey: retryKey }),
     ]);
     expect(results[0].appointmentId).toBe(results[1].appointmentId);
     expect(await prisma.appointment.count({ where: { id: results[0].appointmentId } })).toBe(1);
+    const explicitResults = await Promise.all([
+      createDbCheckIn({ serviceId: service.id, phone, name: 'Concurrent Guest', idempotencyKey: `integration-explicit-a-${Date.now()}` }),
+      createDbCheckIn({ serviceId: service.id, phone, name: 'Concurrent Guest', idempotencyKey: `integration-explicit-b-${Date.now()}` }),
+    ]);
+    expect(explicitResults[0].appointmentId).not.toBe(explicitResults[1].appointmentId);
     const customer = await prisma.customer.findUniqueOrThrow({ where: { phone } });
-    const appointment = await prisma.appointment.findUniqueOrThrow({ where: { id: results[0].appointmentId }, select: { primaryStaffId: true } });
-    await prisma.appointment.delete({ where: { id: results[0].appointmentId } });
+    await prisma.appointment.deleteMany({ where: { customerId: customer.id } });
+    await prisma.commandReceipt.deleteMany({ where: { key: { startsWith: 'integration-' } } });
     await prisma.customer.delete({ where: { id: customer.id } });
-    if (appointment.primaryStaffId) {
-      const activeAssignmentCount = await prisma.appointment.count({ where: { primaryStaffId: appointment.primaryStaffId, status: { in: [AppointmentStatus.ASSIGNED, AppointmentStatus.IN_SERVICE] } } });
-      if (!activeAssignmentCount) await prisma.staffServiceState.update({ where: { staffId: appointment.primaryStaffId }, data: { availability: Availability.AVAILABLE } });
-    }
+    await prisma.staffServiceState.updateMany({ data: { availability: Availability.AVAILABLE } });
   });
 
   afterAll(async () => {

@@ -27,19 +27,33 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!user?.isActive) return null;
         const valid = await verifySecret(user.passwordHash, parsed.data.password);
         if (!valid) return null;
-        return { id: user.id, email: user.email, role: user.role };
+        return { id: user.id, email: user.email, role: user.role, sessionVersion: user.sessionVersion };
       },
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
-      if (user) token.role = (user as { role?: 'ADMIN' | 'STATION' }).role;
+    async jwt({ token, user }) {
+      if (user) {
+        token.role = (user as { role?: 'ADMIN' | 'STATION' }).role;
+        token.sessionVersion = (user as { sessionVersion?: number }).sessionVersion;
+      }
+      if (token.sub) {
+        const current = await prisma.authUser.findUnique({ where: { id: token.sub }, select: { role: true, isActive: true, sessionVersion: true } });
+        if (!current?.isActive || (token.sessionVersion !== undefined && token.sessionVersion !== current.sessionVersion)) {
+          token.invalid = true;
+          token.role = undefined;
+        } else {
+          token.role = current.role;
+          token.sessionVersion = current.sessionVersion;
+          token.invalid = false;
+        }
+      }
       return token;
     },
     session({ session, token }) {
       if (session.user) {
         if (token.sub) session.user.id = token.sub;
-        session.user.role = token.role as 'ADMIN' | 'STATION';
+        session.user.role = token.invalid ? undefined as never : token.role as 'ADMIN' | 'STATION';
       }
       return session;
     },

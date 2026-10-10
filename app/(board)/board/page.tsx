@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, Check, ClipboardList, Clock3, LogIn, LogOut, MessageSquareWarning, Plus, RefreshCcw, Scissors, Sparkles, UserCheck, Users, X } from 'lucide-react';
 import { InitialsAvatar } from '@/src/components/ui';
 import { SignOutButton } from '@/src/components/sign-out-button';
+import { useDialogFocus } from '@/src/components/use-dialog-focus';
 
 type Staff = { id: string; name: string; initials: string; isPresent: boolean; availability: 'AVAILABLE' | 'BUSY'; skills: string[] };
 type AppointmentService = {
@@ -15,16 +16,16 @@ type AppointmentService = {
   status: string;
   primaryStaffId: string | null;
   primaryStaff: { id: string; name: string; initials: string } | null;
-  turns: Array<{ status: string; reason: string | null }>;
+  turns: Array<{ status: string; reason: string | null; skipReasonNameSnapshot?: string | null }>;
 };
-type Appointment = { id: string; code: string; customerName: string; serviceName: string; durationMin: number; amount: number; status: string; primaryStaffId: string | null; createdAt: string; turns: Array<{ status: string; reason: string | null }>; services: AppointmentService[] };
-type BoardState = { current: Appointment | null; currentTurns: Appointment[]; upNext: Appointment[]; staff: Staff[]; at: string; viewerRole: 'ADMIN' | 'STATION' | null };
+type Appointment = { id: string; code: string; customerName: string; serviceName: string; durationMin: number; amount: number; status: string; primaryStaffId: string | null; createdAt: string; turns: Array<{ status: string; reason: string | null; skipReasonNameSnapshot?: string | null }>; services: AppointmentService[] };
+type BoardState = { current: Appointment | null; currentTurns: Appointment[]; upNext: Appointment[]; staff: Staff[]; skipReasons: Array<{ id: string; name: string }>; shop: { timezone: string; openingTime: string; closingTime: string; currency: string }; version: number; at: string; viewerRole: 'ADMIN' | 'STATION' | null };
 type Action = 'ACCEPT' | 'SKIP' | 'FINISH' | 'CHECK_IN' | 'CHECK_OUT' | 'ADD_SUPPORT';
 type BoardTab = 'turns' | 'staff';
 type AttendanceAction = Extract<Action, 'CHECK_IN' | 'CHECK_OUT'>;
+type SyncStatus = 'LIVE' | 'POLLING' | 'RECONNECTING' | 'STALE';
 
-const emptyBoard: BoardState = { current: null, currentTurns: [], upNext: [], staff: [], at: '', viewerRole: null };
-const skipReasons = ['Customer not ready', 'Customer did not respond', 'Guest requested a later turn', 'Wrong service selected'];
+const emptyBoard: BoardState = { current: null, currentTurns: [], upNext: [], staff: [], skipReasons: [], shop: { timezone: 'Asia/Ho_Chi_Minh', openingTime: '09:00', closingTime: '21:00', currency: 'USD' }, version: 0, at: '', viewerRole: null };
 
 function StaffAttendancePanel({ staff, viewerRole, onAction }: { staff: Staff[]; viewerRole: BoardState['viewerRole']; onAction: (action: AttendanceAction, staffId: string) => void }) {
   const presentCount = staff.filter((member) => member.isPresent).length;
@@ -43,44 +44,92 @@ export default function BoardPage() {
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [pin, setPin] = useState('');
   const [reason, setReason] = useState('');
+  const [skipReasonId, setSkipReasonId] = useState('');
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const [boardLoaded, setBoardLoaded] = useState(false);
   const [boardError, setBoardError] = useState('');
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('POLLING');
   const [activeTab, setActiveTab] = useState<BoardTab>('turns');
   const actionSequenceRef = useRef(0);
+  const requestSequenceRef = useRef(0);
+  const requestControllerRef = useRef<AbortController | null>(null);
+  const latestVersionRef = useRef(0);
+  const lastSuccessAtRef = useRef<number>(0);
 
   const availableStaff = board.staff.filter((member) => member.isPresent && member.availability === 'AVAILABLE');
   const modalStaff = modal?.action === 'ADD_SUPPORT' ? availableStaff : board.staff;
   const selectedStaffIsValid = modalStaff.some((member) => member.id === selectedStaffId);
 
+  const closeActionModal = useCallback(() => {
+    setModal(null);
+    setSelectedStaffId('');
+    setPin('');
+    setReason('');
+    setSkipReasonId('');
+    setNotice('');
+  }, []);
+
+  const dialogRef = useDialogFocus(Boolean(modal), closeActionModal);
+
   const loadBoard = useCallback(async () => {
+    const requestSequence = ++requestSequenceRef.current;
+    requestControllerRef.current?.abort();
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+    setSyncStatus((current) => current === 'LIVE' ? current : 'POLLING');
     try {
-      const response = await fetch('/api/board', { cache: 'no-store' });
+      const response = await fetch('/api/board', { cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error('Unable to load the live board');
-      setBoard(await response.json());
+      const nextBoard = await response.json() as BoardState;
+      if (requestSequence !== requestSequenceRef.current) return;
+      if (nextBoard.version < latestVersionRef.current) return;
+      latestVersionRef.current = nextBoard.version;
+      setBoard(nextBoard);
       setBoardLoaded(true);
       setBoardError('');
-    
+      lastSuccessAtRef.current = Date.now();
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (requestSequence !== requestSequenceRef.current) return;
       setBoardError(error instanceof Error ? error.message : 'Unable to load the live board');
     }
-
   }, []);
 
   // Board state is synchronized from SSE and the polling fallback.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadBoard();
-    const source = new EventSource('/api/sse/board');
-    source.onmessage = () => loadBoard();
-    source.onerror = () => {
-      source.close();
+    let disposed = false;
+    let source: EventSource | null = null;
+    let reconnectTimer: number | undefined;
+    let reconnectAttempt = 0;
+    const connect = () => {
+      if (disposed) return;
+      source?.close();
+      source = new EventSource('/api/sse/board');
+      source.onopen = () => { reconnectAttempt = 0; setSyncStatus('LIVE'); };
+      source.onmessage = () => { void loadBoard(); };
+      source.onerror = () => {
+        source?.close();
+        source = null;
+        setSyncStatus('RECONNECTING');
+        reconnectAttempt += 1;
+        reconnectTimer = window.setTimeout(connect, Math.min(30_000, 1_000 * (2 ** Math.min(reconnectAttempt, 5))));
+      };
     };
-    const poll = window.setInterval(loadBoard, 3000);
+    const initialLoad = window.setTimeout(() => { void loadBoard(); }, 0);
+    connect();
+    const poll = window.setInterval(() => { void loadBoard(); }, 5_000);
+    const staleCheck = window.setInterval(() => {
+      if (lastSuccessAtRef.current && Date.now() - lastSuccessAtRef.current > 15_000) setSyncStatus('STALE');
+    }, 5_000);
     return () => {
-      source.close();
+      disposed = true;
+      source?.close();
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      window.clearTimeout(initialLoad);
       window.clearInterval(poll);
+      window.clearInterval(staleCheck);
+      requestControllerRef.current?.abort();
     };
   }, [loadBoard]);
 
@@ -114,6 +163,7 @@ export default function BoardPage() {
           staffId: selectedStaffId,
           pin: pin || undefined,
           reason: reason || undefined,
+          skipReasonId: modal.action === 'SKIP' ? skipReasonId : undefined,
           idempotencyKey: modal.idempotencyKey,
         }),
       });
@@ -124,6 +174,7 @@ export default function BoardPage() {
       setSelectedStaffId('');
       setPin('');
       setReason('');
+      setSkipReasonId('');
       await loadBoard();
     } catch (error) {
       setPin('');
@@ -139,15 +190,8 @@ export default function BoardPage() {
     setSelectedStaffId(staffId ?? staffOptions[0]?.id ?? '');
     setPin('');
     setReason('');
+    setSkipReasonId(action === 'SKIP' ? board.skipReasons[0]?.id ?? '' : '');
     setModal({ action, appointmentId, appointmentServiceId, staffId, idempotencyKey: `${action.toLowerCase()}-${appointmentId ?? staffId ?? 'staff'}-${actionSequenceRef.current}` });
-    setNotice('');
-  }
-
-  function closeActionModal() {
-    setModal(null);
-    setSelectedStaffId('');
-    setPin('');
-    setReason('');
     setNotice('');
   }
 
@@ -172,7 +216,7 @@ export default function BoardPage() {
             <p>Everyone can view the same queue. Staff actions require a signed-in station and a short PIN session.</p>
           </div>
           <div className="topbar-actions board-heading-actions">
-            <span className="board-last-updated" role="status" aria-live="polite">{board.at ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(board.at))}` : 'Waiting for update'}</span>
+            <span className="board-last-updated" role="status" aria-live="polite">{board.at ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: board.shop.timezone }).format(new Date(board.at))}` : 'Waiting for update'} · {syncStatus === 'LIVE' ? 'Live' : syncStatus === 'POLLING' ? 'Checking' : syncStatus === 'RECONNECTING' ? 'Reconnecting' : 'Stale'}</span>
             <button className="button button-outline button-sm" onClick={loadBoard}><RefreshCcw size={15} aria-hidden="true" /> Refresh</button>
           </div>
         </div>
@@ -231,12 +275,12 @@ export default function BoardPage() {
         </div> : <div id="staff-panel" role="tabpanel" aria-labelledby="staff-tab"><StaffAttendancePanel staff={board.staff} viewerRole={board.viewerRole} onAction={(action, staffId) => openAction(action, undefined, staffId)} /></div>}
       </div>
 
-      {modal ? <div className="modal-backdrop" role="presentation"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="verify-title">
+      {modal ? <div className="modal-backdrop" role="presentation"><div className="modal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="verify-title">
         <div className="modal-header"><div><h2 id="verify-title">Verify this action</h2><p>Select a staff member and enter your 4-digit PIN. The verified session lasts 3 minutes.</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={closeActionModal}><X size={18} aria-hidden="true" /></button></div>
         <form className="form-grid" onSubmit={submitAction}>
           <div className="field"><label htmlFor="staff-name">Select staff</label><select id="staff-name" value={selectedStaffIsValid ? selectedStaffId : ''} onChange={(event) => { setSelectedStaffId(event.target.value); setPin(''); }} required disabled={!modalStaff.length || ['ACCEPT', 'SKIP', 'FINISH'].includes(modal.action)}>{modalStaff.length ? modalStaff.map((member) => <option key={member.id} value={member.id}>{member.name}</option>) : <option value="">No staff currently available</option>}</select><span className="field-hint">{['ACCEPT', 'SKIP', 'FINISH'].includes(modal.action) ? 'This turn is already assigned to the selected specialist.' : 'Select the specialist completing this action.'}</span></div>
           <div className="field"><label htmlFor="staff-pin">4-digit PIN</label><input id="staff-pin" name="verification-pin" type="password" inputMode="numeric" pattern="[0-9]*" maxLength={4} value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, ''))} autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="done" autoFocus placeholder="••••" /><span className="field-hint">Use the numeric keypad on iPad. Enter it once; the verified staff session lasts 3 minutes.</span></div>
-          {modal.action === 'SKIP' ? <div className="field"><label htmlFor="skip-reason">Reason for skip</label><select id="skip-reason" value={reason} onChange={(event) => setReason(event.target.value)} required><option value="" disabled>Select a reason</option>{skipReasons.map((skipReason) => <option value={skipReason} key={skipReason}>{skipReason}</option>)}</select><span className="field-hint">Choose the closest reason so the queue history stays consistent.</span></div> : null}
+          {modal.action === 'SKIP' ? <div className="field"><label htmlFor="skip-reason">Reason for skip</label><select id="skip-reason" value={skipReasonId} onChange={(event) => setSkipReasonId(event.target.value)} required><option value="" disabled>Select a reason</option>{board.skipReasons.map((skipReason) => <option value={skipReason.id} key={skipReason.id}>{skipReason.name}</option>)}</select><span className="field-hint">This exclusion stays attached to this service until a manager explicitly overrides it.</span></div> : null}
           {notice ? <p role="alert" className="subtle" style={{ color: 'var(--color-danger)' }}>{notice}</p> : null}
           <div className="form-actions"><button className="button button-quiet" type="button" onClick={closeActionModal}>Cancel</button><button className="button button-primary" disabled={loading || !selectedStaffIsValid || (pin.length > 0 && pin.length !== 4)}>{loading ? 'Saving…' : <><UserCheck size={16} aria-hidden="true" /> Confirm action</>}</button></div>
         </form>

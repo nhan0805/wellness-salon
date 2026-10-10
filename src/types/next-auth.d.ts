@@ -7,5 +7,5 @@ declare module 'next-auth' {
 }
 
 declare module 'next-auth/jwt' {
-  interface JWT { role?: 'ADMIN' | 'STATION'; }
+  interface JWT { role?: 'ADMIN' | 'STATION'; sessionVersion?: number; invalid?: boolean; }
 }

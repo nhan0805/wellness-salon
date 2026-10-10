@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getDbServices } from '@/src/server/services/prisma-operations';
+import { getDbServices, getDbShopConfig } from '@/src/server/services/prisma-operations';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  return NextResponse.json({ services: await getDbServices() });
+  const [services, shop] = await Promise.all([getDbServices(), getDbShopConfig()]);
+  return NextResponse.json({ services, shop: { timezone: shop.timezone, openingTime: shop.openingTime, closingTime: shop.closingTime, currency: shop.currency } });
 }

@@ -1,12 +1,13 @@
 import type { AppointmentStatus, AttendanceStatus, TurnStatus } from './types';
 
 const transitions: Record<AppointmentStatus, AppointmentStatus[]> = {
-  CREATED: ['WAITING', 'ASSIGNED'],
-  WAITING: ['ASSIGNED'],
-  ASSIGNED: ['IN_SERVICE', 'WAITING'],
-  IN_SERVICE: ['PAYMENT_PENDING', 'WAITING'],
+  CREATED: ['WAITING', 'ASSIGNED', 'CANCELLED'],
+  WAITING: ['ASSIGNED', 'CANCELLED'],
+  ASSIGNED: ['IN_SERVICE', 'WAITING', 'CANCELLED'],
+  IN_SERVICE: ['PAYMENT_PENDING', 'WAITING', 'CANCELLED'],
   PAYMENT_PENDING: ['COMPLETED'],
   COMPLETED: [],
+  CANCELLED: [],
 };
 
 const turnTransitions: Record<TurnStatus, TurnStatus[]> = {

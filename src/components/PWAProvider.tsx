@@ -4,18 +4,16 @@ import { useEffect } from 'react';
 
 export default function PWAProvider() {
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then((registration) => {
-            console.log('SW registered: ', registration);
-          })
-          .catch((registrationError) => {
-            console.log('SW registration failed: ', registrationError);
-          });
+    if (!('serviceWorker' in navigator)) return;
+    const register = () => {
+      void navigator.serviceWorker.register('/sw.js').catch(() => {
+        // Installation is optional; the application remains online-first.
       });
-    }
+    };
+    if (document.readyState === 'complete') register();
+    else window.addEventListener('load', register, { once: true });
+    return () => window.removeEventListener('load', register);
   }, []);
 
-  return null; // Component này không hiển thị gì cả, chỉ chạy logic
+  return null;
 }

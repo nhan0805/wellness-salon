@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/src/server/auth';
-import { formatBusinessDate, formatBusinessMonth, getDbAppointmentsFiltered, parseBusinessDate, parseBusinessMonth } from '@/src/server/services/prisma-operations';
+import { currentDbBusinessDate, formatBusinessDate, formatBusinessMonth, getDbAppointmentsFiltered, parseBusinessDate, parseBusinessMonth } from '@/src/server/services/prisma-operations';
 import { jsonError } from '@/src/server/request-security';
 
 export const runtime = 'nodejs';
@@ -15,7 +15,8 @@ export async function GET(request: Request) {
   let end;
   let period: 'day' | 'month' | 'range' = 'day';
   if (month !== null) {
-    const monthStart = parseBusinessMonth(month);
+    const currentDate = await currentDbBusinessDate();
+    const monthStart = parseBusinessMonth(month ?? currentDate.toISOString().slice(0, 7));
     if (!monthStart) return jsonError('Invalid business month. Use YYYY-MM.', 400);
     start = monthStart;
     end = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
@@ -29,7 +30,8 @@ export async function GET(request: Request) {
     end = new Date(rangeEnd.getTime() + 24 * 60 * 60 * 1000);
     period = 'range';
   } else {
-    const businessDate = parseBusinessDate(searchParams.get('date'));
+    const dateParam = searchParams.get('date');
+    const businessDate = dateParam ? parseBusinessDate(dateParam) : await currentDbBusinessDate();
     if (!businessDate) return jsonError('Invalid business date. Use YYYY-MM-DD.', 400);
     start = businessDate;
     end = new Date(businessDate.getTime() + 24 * 60 * 60 * 1000);
