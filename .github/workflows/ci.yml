@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: nailshop
+          POSTGRES_USER: nailshop
+          POSTGRES_PASSWORD: nailshop
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U nailshop -d nailshop"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      DATABASE_URL: postgresql://nailshop:nailshop@localhost:5432/nailshop?schema=public
+      AUTH_SECRET: ci-only-32-byte-random-value-replace-me
+      AUTH_COOKIE_SECURE: "false"
+      AUTH_TRUST_HOST: "true"
+      NEXTAUTH_URL: http://127.0.0.1:3000
+      CRON_SECRET: ci-only-cron-secret
+      ADMIN_EMAIL: admin@ci.invalid
+      ADMIN_PASSWORD: ci-only-admin-password
+      STATION_EMAIL: station@ci.invalid
+      STATION_PASSWORD: ci-only-station-password
+      STAFF_DEFAULT_PIN: "1234"
+      RUN_DB_TESTS: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - run: npm run build
+      - run: npm audit --omit=dev --omit=optional --audit-level=high
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          E2E_ADMIN_EMAIL: admin@ci.invalid
+          E2E_ADMIN_PASSWORD: ci-only-admin-password
+          E2E_STATION_EMAIL: station@ci.invalid
+          E2E_STATION_PASSWORD: ci-only-station-password
