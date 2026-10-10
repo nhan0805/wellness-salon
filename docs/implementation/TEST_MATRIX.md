@@ -55,7 +55,7 @@ The automated unit suite is intentionally fast and database-independent. Postgre
 | `npm run lint` | PASS |
 | `npm run typecheck` | PASS |
 | `npm test -- --run` | PASS: 28 passed, 8 DB-gated tests skipped without DB env |
-| `npm run test:coverage` | PASS: 12.31% statements/lines, 61.03% branches, 12.5% functions |
+| `npm run test:coverage` | PASS: 13.2% statements/lines, 65.93% branches, 12.87% functions |
 | `npx prisma validate` | PASS |
 | `npm run build` | PASS |
 | Public/protected tablet Playwright suite | PASS: 7/7 on clean seeded test DB, one worker |

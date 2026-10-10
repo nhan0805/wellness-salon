@@ -36,7 +36,7 @@ This checklist distinguishes implementation evidence from release verification t
 - [x] `npm run lint`
 - [x] `npm run typecheck`
 - [x] `npm test -- --run` — 28 passed, 8 DB-gated tests skipped without DB env
-- [x] `npm run test:coverage` — 12.31% statements/lines, 61.03% branches, 12.5% functions
+- [x] `npm run test:coverage` — 13.2% statements/lines, 65.93% branches, 12.87% functions
 - [x] `npx prisma validate`
 - [x] `npm run build`
 - [x] Full tablet E2E — 7/7 on isolated app/test DB

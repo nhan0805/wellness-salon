@@ -207,7 +207,7 @@ Remaining security/quality work:
 | `npm run typecheck` | PASS |
 | `npm run lint` | PASS |
 | `npm test -- --run` | PASS: 9 files, 28 passed, 8 DB-gated tests skipped without DB env |
-| `npm run test:coverage` | PASS: 12.31% statements/lines, 61.03% branches, 12.5% functions |
+| `npm run test:coverage` | PASS: 13.2% statements/lines, 65.93% branches, 12.87% functions |
 | `npx prisma validate` | PASS |
 | `npm run build` | PASS after request-ID/lean-board changes; Next.js 16.4.0/Turbopack, all current routes compiled |
 | Sequential DB-gated Vitest: `postgres.test.ts` | PASS: 2/2 on isolated PostgreSQL; migration/seed/idempotency |

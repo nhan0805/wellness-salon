@@ -45,7 +45,7 @@ These checks were run before implementation changes:
 | `npm run typecheck` | PASS |
 | `npm run lint` | PASS |
 | `npm test -- --run` | PASS: 9 files, 28 tests; 3 DB-gated files / 8 tests skipped without DB env |
-| `npm run test:coverage` | PASS: 12.31% statements/lines, 61.03% branches, 12.5% functions |
+| `npm run test:coverage` | PASS: 13.2% statements/lines, 65.93% branches, 12.87% functions |
 | `npx prisma validate` | PASS; Prisma 7 package.json configuration deprecation warning |
 | `npm run build` | PASS; Next.js 16.4.0 Turbopack; all current app/API routes compiled |
 | Tablet public authorization smoke: board visitor + kiosk | PASS: 2/2; server required approved out-of-sandbox bind |
