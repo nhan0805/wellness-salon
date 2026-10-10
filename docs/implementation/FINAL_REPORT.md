@@ -28,7 +28,7 @@ The remaining release gates are deliberately explicit: physical iPad/WebKit and 
 |---|---|---|
 | Product concept fit | Good | The implementation remains focused on queue, attendance, skills, services, kiosk, staff board, and admin operations. No payment gateway, staff mobile app, payroll, inventory, loyalty, or multi-tenant expansion was added. |
 | Core workflow correctness | Verified on disposable PostgreSQL fixture | Sequential DB integration tests pass: migration/seed 14/14, postgres 2/2, admin access 1/1, critical workflow safety 5/5. |
-| Data integrity | Stronger, migration verification pending | Unique receipts, request hashes, advisory locks, snapshots, audit events, and exclusion constraints are implemented in `prisma/schema.prisma:272-310,402-438`. |
+| Data integrity | Stronger, disposable migration/workflow verification passed | Unique receipts, request hashes, advisory locks, snapshots, audit events, and exclusion constraints are implemented in `prisma/schema.prisma:272-310,402-438`; production-scale/rollback verification remains open. |
 | Three-tablet synchronization | Improved, live-network verification pending | Board version/recovery logic is implemented in `src/server/services/prisma-operations.ts:176-182` and `app/(board)/board/page.tsx:103-132`; no multi-device latency test was possible. |
 | iPad UX foundation | Good foundation, viewport review passed with hardware limitation | Chromium checks at 810×1080 and 1080×810 found no horizontal overflow; primary interactive controls met 44px. Physical iPad/WebKit remains untested. |
 | Security posture | Improved, privacy decision pending | Auth/session, origin, validation, lockout, and public-board redaction paths are implemented; kiosk phone lookup still needs a salon privacy decision. |
@@ -42,7 +42,7 @@ The remaining release gates are deliberately explicit: physical iPad/WebKit and 
 | Layer | Actual implementation | Completion |
 |---|---|---|
 | Web/UI | Next.js 16.4 App Router, React 19.2, TypeScript, client components, shared CSS, lucide-react | Implemented |
-| API | Next route handlers under `app/api` with server-side role/origin/schema checks | Implemented; protected mutation E2E not run |
+| API | Next route handlers under `app/api` with server-side role/origin/schema checks | Implemented; protected mutation E2E passes 7/7 on test fixture |
 | Domain | Pure appointment state machine and routing logic in `src/domain` | Implemented and unit-tested |
 | Persistence | PostgreSQL through Prisma 6.19; additive migrations in `prisma/migrations` | Implemented and applied/seeded on isolated test cluster; production not touched |
 | Authentication | Auth.js credentials, ADMIN/STATION roles, JWT session version, verified staff sessions | Implemented; protected admin/station E2E passes |
