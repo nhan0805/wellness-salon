@@ -14,10 +14,11 @@ npm run db:generate
 npm run lint
 npm run typecheck
 npm test
+npx prisma validate
 npm run build
 ```
 
-Kết quả local hiện tại: lint PASS, typecheck PASS, unit/validation tests PASS (13 tests; PostgreSQL suite opt-in thêm 2 tests), production build standalone PASS. E2E đã được chuyển sang database-backed flow và cần chạy sau khi PostgreSQL được migrate/seed.
+Kết quả kiểm chứng ngày 11/10/2026: Prisma generate/validate, lint, typecheck, production build và test mặc định PASS; 31 tests PASS và 9 DB-gated tests được bỏ qua có chủ đích khi chưa có `TEST_DATABASE_URL`. Coverage hiện tại ghi nhận 24.88% statements/lines, 68.75% branches và 11.39% functions. Bằng chứng PostgreSQL disposable, protected tablet E2E, returning-guest kiosk, resilience và viewport Chromium được ghi lại từ đợt hardening 10/10; các kết quả này không thay thế kiểm thử iPad/WebKit, Wi‑Fi thật, staging hay production.
 
 ## Chạy app
 
@@ -28,18 +29,20 @@ npm run dev
 Hoặc PostgreSQL thật:
 
 ```bash
-docker compose -f docker/docker-compose.yml up --build
+docker compose --env-file .env -f docker/docker-compose.yml up -d --build
 ```
 
 Routes:
 
 - `/kiosk` — khách tự chọn service, nhập phone/name, nhận mã lượt.
 - `/board` — turn board chung, current/up next, public read-only view; verified staff action sau khi station sign-in.
-- `/admin` — dashboard, queue, appointments, payment confirm và reports.
-- `/sign-in` — staff/station sign-in để mở các thao tác trên board.
-- `/admin/sign-in` — admin sign-in.
+- `/admin` — dashboard, queue, appointments, payments, customer history, service catalog/categories và reports.
+- `/sign-in` — entry point đăng nhập chung và tự chuyển hướng theo role.
+- `/admin/sign-in` — compatibility alias cho entry point đăng nhập chung.
 
 Seed credentials are read from `.env` (`ADMIN_EMAIL`, `ADMIN_PASSWORD`, `STATION_EMAIL`, `STATION_PASSWORD`, `STAFF_DEFAULT_PIN`) and are never shown in the UI or committed to the repository.
+
+The service catalog is organized by admin-managed categories and icon choices. Admin-only payment confirmation, adjustment, correction, refund recording, appointment turn history, and payment history are audited; the app does not process card data or call a merchant gateway.
 
 ## Repository tree
 
@@ -66,6 +69,11 @@ The repository keeps the current project context in the following files. Read th
 - [Decisions](docs/decisions.md) — durable architecture decisions and trade-offs.
 - [Changelog](docs/changelog.md) — release-style history of meaningful changes.
 - [Handoff](docs/handoff.md) — instructions for the next AI engineer.
+- [Implementation progress](docs/implementation/PROGRESS.md) — hardening scope, evidence and remaining gates.
+- [Final report](docs/implementation/FINAL_REPORT.md) — implementation handoff and measured verification.
+- [Release checklist](docs/implementation/RELEASE_CHECKLIST.md) — evidence versus release gates.
+- [Test matrix](docs/implementation/TEST_MATRIX.md) — scenario-level pass/partial/not-run status.
+- [Audit baseline](docs/audits/2026-10-10-nail-salon-mvp-audit.md) — read-only pre-hardening audit.
 
 ## Production notes / human gates
 

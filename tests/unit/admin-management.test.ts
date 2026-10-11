@@ -15,11 +15,11 @@ describe('admin management contracts', () => {
   });
 
   it('accepts valid service and attendance commands', () => {
-    const parsedService = adminServiceCreateSchema.safeParse({ name: 'Express set', durationMin: 30, price: 25, skillIds: ['skill-id', 'second-skill-id'] });
+    const parsedService = adminServiceCreateSchema.safeParse({ name: 'Express set', categoryId: 'category-id', durationMin: 30, price: 25, skillIds: ['skill-id', 'second-skill-id'] });
     expect(parsedService.success).toBe(true);
     if (parsedService.success) expect(parsedService.data.iconKey).toBe('sparkles');
-    expect(adminServiceCreateSchema.safeParse({ name: 'Express set', iconKey: 'not-an-icon', durationMin: 30, price: 25, skillIds: ['skill-id'] }).success).toBe(false);
-    expect(adminServiceCreateSchema.safeParse({ name: 'Express set', durationMin: 30, price: 25, skillIds: [] }).success).toBe(false);
+    expect(adminServiceCreateSchema.safeParse({ name: 'Express set', categoryId: 'category-id', iconKey: 'not-an-icon', durationMin: 30, price: 25, skillIds: ['skill-id'] }).success).toBe(false);
+    expect(adminServiceCreateSchema.safeParse({ name: 'Express set', categoryId: 'category-id', durationMin: 30, price: 25, skillIds: [] }).success).toBe(false);
     expect(adminAttendanceSchema.safeParse({ staffId: 'staff-id', action: 'CHECK_IN', idempotencyKey: 'attendance-test-key' }).success).toBe(true);
   });
 

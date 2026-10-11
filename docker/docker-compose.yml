@@ -55,6 +55,8 @@ services:
       STATION_EMAIL: ${STATION_EMAIL:?STATION_EMAIL is required}
       STATION_PASSWORD: ${STATION_PASSWORD:?STATION_PASSWORD is required}
       STAFF_DEFAULT_PIN: ${STAFF_DEFAULT_PIN:?STAFF_DEFAULT_PIN is required}
+      DEMO_START_DATE: ${DEMO_START_DATE:-}
+      DEMO_END_DATE: ${DEMO_END_DATE:-}
     depends_on:
       postgres:
         condition: service_healthy

@@ -26,7 +26,7 @@ export default function SignInPanel() {
     });
 
     if (result?.error) {
-      setError('Could not log in. Check the account and try again.');
+    setError('Unable to sign in. Check your email and password and try again.');
     } else {
       router.replace('/');
     }
@@ -41,11 +41,9 @@ export default function SignInPanel() {
           <span className="brand-copy">Wellness Salon <small>Operations</small></span>
         </Link>
         <div>
-          <div className="eyebrow" style={{ color: 'var(--color-peach)' }}>Secure Access</div>
-          <h1>Keep the floor <span>flowing.</span></h1>
-          <p>Log in to access your workspace. The system will automatically route you to your dashboard based on your account role.</p>
+          <div className="eyebrow" style={{ color: 'var(--color-peach)' }}>Staff access</div>
+          <h1>Sign in to continue.</h1>
         </div>
-        <div className="subtle" style={{ color: 'var(--color-on-dark-muted)' }}>Single-shop operations workspace · Shared tablet access</div>
       </section>
 
       <section className="sign-in-side">
@@ -61,7 +59,7 @@ export default function SignInPanel() {
             <Sparkles size={24} aria-hidden="true" />
           </div>
           <h2 style={{ marginTop: 0 }}>Log in</h2>
-          <p>Enter your credentials to continue to your workspace.</p>
+          <p>Use your work email and password to continue.</p>
           <form className="form-grid" onSubmit={submit}>
             <div className="field">
               <label htmlFor="sign-in-email">Email</label>

@@ -1,31 +1,43 @@
 # Tasks
 
-Last updated: 2026-10-09
+Last updated: 2026-10-11
 
 ## Backlog
 
-- Add a disposable PostgreSQL Playwright fixture for the complete kiosk → board → payment → reports journey.
-- Add cleanup/retention jobs for expired verified sessions, command receipts, and audit data.
-- Add scheduler retry/alerting guidance and a production deployment example once secrets/domain are approved.
+- Complete physical iPad/WebKit, distance readability, Dynamic Type/VoiceOver, real Wi-Fi interruption, offline submission, and modal interaction review.
+- Measure staging/deployed connection-pool, lock-wait, network, and representative-history behavior; document backup/restore rollback.
+- Fill the remaining scenario gaps: repeated staff actions, in-service/payment-pending cancellation boundaries, session revalidation, stale board versions, and broader closing/retention coverage.
+- Add scheduler retry/alerting guidance and a production deployment example once the deferred operations decision and secrets/domain are approved.
 - Add production TLS certificate/domain configuration after a human approval artifact.
+- Add DB-gated and browser coverage for service-category lifecycle, payment adjustment/correction/refund history, and appointment turn history.
 - Reintroduce or attach repository Git metadata so branch, diff, and release history can be audited.
 
 ## Planned
 
-- Recreate the Docker Compose stack from a host with Docker socket access.
-- Verify Prisma migration/seed, `/api/health`, the closing endpoint, and the trigger script with the real PostgreSQL adapter.
-- Run `RUN_DB_TESTS=true npm run test:coverage` and capture the result in the lifecycle report.
+- Run the physical tablet and real-network run sheet from `docs/implementation/TABLET_QA_PLAN.md`.
+- From a Docker-enabled host, verify Compose health, `/api/health`, the closing endpoint, and the trigger script without printing `.env`.
+- Run `RUN_DB_TESTS=true` with an isolated `TEST_DATABASE_URL` and capture any new coverage result.
 - Review production secret handling and ensure scheduler traffic uses a real secret manager.
 
 ## In progress
 
-- Continue database-backed E2E coverage for station actions, payments, reporting, and the remaining admin workflows; the local Docker stack is healthy after the latest queue-card image build.
+- Close physical-device, deployed-network, scheduler, and production-approval gates; keep the application at supervised-pilot status until those checks are complete.
 
 ## Blocked
 
 - Production TLS/domain/secret/merchant/deploy work is intentionally blocked on human approval gates.
 
 ## Completed
+- [x] Completed the approved BR-01 through BR-06 hardening scope: exact-service skip exclusions/override, attendance safety, idempotent same-day visits, cancellation, audited service changes, and atomic support release.
+- [x] Added session-version revalidation, database-backed PIN lockout, verified-session revocation, request-hash conflict detection, board version/reconnect/polling recovery, explicit queue repair, and critical-path telemetry.
+- [x] Added server-side appointment history pagination/projection and disposable benchmark, service-layer load, authenticated HTTP, and pool-constrained load scripts.
+- [x] Applied and seeded all 14 migrations on an isolated native PostgreSQL cluster; sequential DB tests passed (`postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5).
+- [x] Protected tablet E2E passed 7/7; returning-guest kiosk passed 2/2; browser resilience passed 3/3; Chromium portrait/landscape review passed with the physical-device limitation recorded.
+- [x] Fresh static gates passed: lint, typecheck, 31 default tests with 9 DB-gated skips, Prisma validate, and production build.
+- [x] Restored the service-category taxonomy with ordered/archivable categories, migration backfill, Admin CRUD, category filtering, grouped kiosk presentation, and searchable service-icon selection.
+- [x] Added append-only `TurnEvent` history with actor/staff snapshots and an Admin appointment turn-history view.
+- [x] Added Admin payment history plus audited, idempotent adjustment/correction/refund commands; refunds record an external terminal action and do not process card data.
+- [x] Added the compact Appointment action menu for payment, history, change-service, reassignment, skip override, and cancellation actions.
 - [x] Split the Today’s turn board screen into Turn board and Staff attendance tabs, and made staff Check in/Check out actions prominent and touch-friendly.
 - [x] Fixed the turn-board `Up next` display for multi-service appointments so all selected services, progress labels, and combined duration remain visible in one queue card.
 - [x] Fixed mobile app/board topbar authentication actions so `Log in` and `Sign out` remain visible at narrow widths while secondary controls collapse to avoid overflow.
@@ -33,7 +45,7 @@ Last updated: 2026-10-09
 - [x] Unified sign-in flow with automatic role-based redirection.
 - [x] Implemented interactive RolePreview dashboard for landing page.
 - [x] Added Tip functionality to payments (Schema, Validation, API, UI).
-- [x] Removed service category from the Prisma model, migration path, API contracts, seed data, admin catalog, and kiosk cards.
+- [x] Superseded the interim category-free catalog decision with `ServiceCategory` migrations, API contracts, admin management, and kiosk grouping.
 - [x] Made the turn board read-only view public; kept accept/skip/finish/check-in/out/add-support actions protected by station/admin authentication and staff PIN verification. Accept moves directly into service; there is no separate Start action.
 - [x] Added multi-skill service requirements with a `ServiceSkill` migration, admin checkbox selection, all-skills routing, and unit/contract coverage.
 - [x] Cleared the staff verification PIN when closing/reopening the modal, after submission, or when changing staff; disabled browser autocomplete for the PIN input.

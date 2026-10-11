@@ -30,11 +30,11 @@ export function AdminAccessManagement({ kind, onToast }: { kind: AccessKind; onT
     try {
       const response = await fetch(endpointByKind[kind], { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error ?? 'Unable to load this module');
+      if (!response.ok) throw new Error(payload.error ?? 'Unable to load this section');
       if (kind === 'skills') setSkills(payload.skills ?? []);
       if (kind === 'accounts') setAccounts(payload.accounts ?? []);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load this module');
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load this section');
     } finally {
       setLoading(false);
     }
@@ -98,10 +98,10 @@ export function AdminAccessManagement({ kind, onToast }: { kind: AccessKind; onT
   }
 
   const title = kind === 'skills' ? 'Skills' : 'Accounts';
-  const description = kind === 'skills' ? 'Skill definitions used by staff routing and the service catalog.' : 'Manage admin and station access. Passwords are stored securely.';
+  const description = kind === 'skills' ? 'Skills used to match services with available staff.' : 'Manage access for administrators and stations.';
 
   return <>
-    <SectionHeader eyebrow="Admin settings" title={title} description={description} action={<button className="button button-primary button-sm" onClick={() => openModal(kind === 'skills' ? { type: 'skill' } : { type: 'account' })} disabled={loading || busy}><Plus size={15} aria-hidden="true" /> Add {kind === 'skills' ? 'skill' : 'account'}</button>} />
+    <SectionHeader eyebrow="Access settings" title={title} description={description} action={<button className="button button-primary button-sm" onClick={() => openModal(kind === 'skills' ? { type: 'skill' } : { type: 'account' })} disabled={loading || busy}><Plus size={15} aria-hidden="true" /> Add {kind === 'skills' ? 'skill' : 'account'}</button>} />
     {error ? <div className="management-error" role="alert"><X size={17} aria-hidden="true" />{error}<button className="button button-quiet button-sm" onClick={() => void load()}>Retry</button></div> : null}
     {loading ? <div className="card management-loading" role="status"><LoaderCircle size={22} className="spin" aria-hidden="true" /> Loading {title.toLowerCase()}…</div> : <div className="card card-pad management-card">{kind === 'skills' ? <SkillsTable rows={skills} onEdit={(record) => openModal({ type: 'skill', record })} onDelete={deleteSkill} /> : <AccountsTable rows={accounts} onEdit={(record) => openModal({ type: 'account', record })} onToggle={toggleAccount} onDelete={deleteAccount} />}</div>}
     {modal?.type === 'skill' ? <AccessModal title={modal.record ? 'Edit skill' : 'Add skill'} description="Skills can be renamed at any time. A skill in use cannot be deleted." error={formError} onClose={() => setModal(null)}><SkillForm record={modal.record} busy={busy} onCancel={() => setModal(null)} onSubmit={(values) => submit(endpointByKind.skills, modal.record ? 'PATCH' : 'POST', modal.record ? { ...values, id: modal.record.id } : values, modal.record ? 'Skill updated.' : 'Skill added.')} /></AccessModal> : null}
@@ -115,7 +115,7 @@ function SkillsTable({ rows, onEdit, onDelete }: { rows: SkillRecord[]; onEdit: 
 }
 
 function AccountsTable({ rows, onEdit, onToggle, onDelete }: { rows: Account[]; onEdit: (record: Account) => void; onToggle: (record: Account) => void; onDelete: (record: Account) => void }) {
-  if (!rows.length) return <EmptyAccessState icon={UserCog} title="No accounts yet" description="Add an admin or station account to secure this workspace." />;
+  if (!rows.length) return <EmptyAccessState icon={UserCog} title="No accounts yet" description="Add an administrator or station account to manage access." />;
   return <div className="admin-table-wrap"><table className="admin-table management-table"><caption className="sr-only">Admin and station accounts</caption><thead><tr><th>Account</th><th>Role</th><th>Status</th><th>Last updated</th><th /></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><div className="table-customer"><InitialsAvatar initials={row.role === 'ADMIN' ? 'A' : 'S'} tone={row.role === 'ADMIN' ? 'blue' : 'teal'} /><div><strong>{row.email}</strong><small>{row.isCurrent ? 'Current session' : `Created ${formatDate(row.createdAt)}`}</small></div></div></td><td><StatusBadge label={row.role === 'ADMIN' ? 'Admin' : 'Station'} tone={row.role === 'ADMIN' ? 'blue' : 'neutral'} /></td><td><StatusBadge label={row.isActive ? 'Active' : 'Inactive'} tone={row.isActive ? 'success' : 'neutral'} /></td><td className="subtle">{formatDate(row.updatedAt)}</td><td><div className="table-actions"><button className="button button-quiet button-sm" onClick={() => onEdit(row)}><Edit3 size={15} aria-hidden="true" /> Edit</button><button className="button button-quiet button-sm" onClick={() => onToggle(row)} disabled={row.isCurrent} title={row.isCurrent ? 'The current account cannot be deactivated here' : row.isActive ? 'Deactivate account' : 'Reactivate account'}>{row.isActive ? <><LockKeyhole size={15} aria-hidden="true" /> Deactivate</> : <><RotateCcw size={15} aria-hidden="true" /> Reactivate</>}</button><button className="button button-danger button-sm" onClick={() => onDelete(row)} disabled={row.isCurrent} title={row.isCurrent ? 'The current account cannot be deleted here' : 'Delete account'}><Trash2 size={15} aria-hidden="true" /> Delete</button></div></td></tr>)}</tbody></table></div>;
 }
 
@@ -137,7 +137,7 @@ function AccountForm({ record, busy, onCancel, onSubmit }: { record?: Account; b
         <option value="ADMIN">Admin</option>
         <option value="STATION">Station</option>
       </select>
-    </div><div className="field account-password-field"><label htmlFor="managed-account-password">{record ? 'New password (optional)' : 'Password'}</label><input id="managed-account-password" type="password" value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} autoComplete="new-password" minLength={record ? 0 : 8} maxLength={200} required={!record} placeholder={record ? 'Leave blank to keep the current password.' : 'At least 8 characters'} aria-describedby={record ? undefined : 'managed-account-password-hint'} />{record ? null : <span id="managed-account-password-hint" className="field-hint">Use a password only this account knows.</span>}</div></div><div className="form-actions account-form-actions"><button type="button" className="button button-quiet" onClick={onCancel}>Cancel</button><button className="button button-primary" disabled={busy}>{busy ? 'Saving…' : record ? 'Save changes' : 'Add account'}</button></div></form>;
+    </div><div className="field account-password-field"><label htmlFor="managed-account-password">{record ? 'New password (optional)' : 'Password'}</label><input id="managed-account-password" type="password" value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} autoComplete="new-password" minLength={record ? 0 : 8} maxLength={200} required={!record} placeholder={record ? 'Leave blank to keep the current password.' : 'At least 8 characters'} aria-describedby={record ? undefined : 'managed-account-password-hint'} />{record ? null : <span id="managed-account-password-hint" className="field-hint">Use a unique password for this account.</span>}</div></div><div className="form-actions account-form-actions"><button type="button" className="button button-quiet" onClick={onCancel}>Cancel</button><button className="button button-primary" disabled={busy}>{busy ? 'Saving…' : record ? 'Save changes' : 'Add account'}</button></div></form>;
 }
 
 function AccessModal({ className = '', title, description, error, onClose, children }: { className?: string; title: string; description: string; error: string; onClose: () => void; children: ReactNode }) {

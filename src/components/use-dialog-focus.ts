@@ -5,10 +5,11 @@ import { useEffect, useRef } from 'react';
 const focusableSelector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /** Shared touch-safe dialog behavior: initial focus, Escape, Tab trapping, and focus restoration. */
-export function useDialogFocus(open: boolean, onClose: () => void) {
+export function useDialogFocus(open: boolean, onClose: () => void, options: { stopPropagation?: boolean } = {}) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
+  const stopPropagation = options.stopPropagation ?? false;
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -26,10 +27,12 @@ export function useDialogFocus(open: boolean, onClose: () => void) {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        if (stopPropagation) event.stopPropagation();
         onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab') return;
+      if (stopPropagation) event.stopPropagation();
       const focusable = [...dialog.querySelectorAll<HTMLElement>(focusableSelector)];
       if (!focusable.length) return;
       const first = focusable[0];
@@ -48,7 +51,7 @@ export function useDialogFocus(open: boolean, onClose: () => void) {
       dialog.removeEventListener('keydown', handleKeyDown);
       openerRef.current?.focus();
     };
-  }, [open]);
+  }, [open, stopPropagation]);
 
   return dialogRef;
 }

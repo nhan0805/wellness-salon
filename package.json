@@ -2,6 +2,11 @@
   "name": "nail-shop-management",
   "version": "1.0.0",
   "private": true,
+  "browserslist": [
+    "iOS >= 12",
+    "Safari >= 12",
+    "last 2 versions"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -16,6 +21,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "benchmark:db": "tsx scripts/benchmark-db.ts",
+    "load:profile": "tsx scripts/load-profile.ts",
+    "load:http": "tsx scripts/http-load-profile.ts",
     "db:studio": "prisma studio",
     "format": "prettier --write ."
   },

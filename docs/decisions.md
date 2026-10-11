@@ -1,8 +1,9 @@
 # Architecture decisions
 
-Last updated: 2026-10-08
+Last updated: 2026-10-11
 
 Historical decisions are retained here. The original lifecycle ADR remains in `docs/lifecycle/ADR-001-advisory-lock.md`.
+The implementation-specific BR-01 through BR-06 rules and hardening choices are detailed in [`docs/implementation/DECISIONS.md`](implementation/DECISIONS.md).
 
 ## ADR-001 — Transaction-scoped advisory lock
 
@@ -124,17 +125,17 @@ Historical decisions are retained here. The original lifecycle ADR remains in `d
 - Tradeoffs: Account deletion is irreversible and historical payments no longer point to a live account after deletion; the audit event preserves the deleted account identity and count for operational traceability.
 - Consequences: The Skills and Accounts modules must surface usage/status context and mutations must be transactionally audited.
 
-## ADR-011 — Keep service catalog category-free
+## ADR-011 — Keep service catalog category-free (superseded)
 
 - ID: ADR-011
 - Date: 2026-10-08
-- Status: Accepted for V1
+- Status: Superseded by ADR-019 on 2026-10-11
 - Context: Service category added a management field without affecting assignment, pricing, duration, or kiosk check-in behavior.
 - Decision: Remove category from the `Service` model and all service API/UI contracts. Services are identified by their name, duration, price, and required skill; the kiosk uses a shared treatment presentation instead of category-specific rendering.
 - Alternatives considered: Keep category as an optional enum; infer categories from service names; retain the field only for reporting.
 - Reason: Reduces data duplication and keeps the service form focused on fields that affect operations.
 - Tradeoffs: Category-based filtering and category-specific icons are not available in V1; a future taxonomy would require a new explicit product decision and migration.
-- Consequences: The forward migration drops the legacy `services.category` column and `ServiceCategory` enum, and all new service writes omit category.
+- Consequences: The 2026-10-08 forward migration remains in history, but the later category migration restores a normalized `ServiceCategory` model; current service writes require `categoryId`.
 
 ## ADR-012 — Public read-only turn board
 
@@ -171,3 +172,98 @@ Historical decisions are retained here. The original lifecycle ADR remains in `d
 - Reason: Reduces operational taps and removes the obsolete persisted state after cleaning the legacy records from the local database.
 - Tradeoffs: Historical appointments containing the deprecated `STARTED` state are intentionally removed by the migration; customer profiles and audit logs remain.
 - Consequences: Board UI/API validation reject `START`; state-machine tests cover `ASSIGNED -> ACCEPTED -> FINISHED`; current assignments remain protected by staff ownership checks.
+
+## ADR-015 — Board reads remain side-effect free
+
+- ID: ADR-015
+- Date: 2026-10-10
+- Status: Accepted for V1
+- Context: Reconciliation during every GET/SSE refresh can turn a normal tablet refresh storm into a write storm and can reassign work without an explicit operator action.
+- Decision: Board GET/SSE reads only return a snapshot. Assignment repair runs at safe mutation boundaries and through the explicit manager-only `/api/admin/queue/reconcile` command.
+- Alternatives considered: Reconcile on every board read; reconcile in a background worker; remove repair capability entirely.
+- Reason: Keeps read paths predictable while preserving a visible recovery action for operational drift.
+- Tradeoffs: A manager must invoke repair when a stale assignment is discovered; a background event bus is still out of scope.
+- Consequences: Board state uses a monotonic `ShopConfig.stateVersion`, clients ignore stale snapshots, and queue repair is audited.
+
+## ADR-016 — Retry keys include a request hash
+
+- ID: ADR-016
+- Date: 2026-10-10
+- Status: Accepted for V1
+- Context: A retried mutation must replay the original response, but silently accepting a different payload under the same key could apply an unintended operation.
+- Decision: Durable `CommandReceipt` records store a normalized request hash. The same scope/key/payload replays; the same key with changed details is rejected. Account/session version is revalidated server-side on protected requests.
+- Alternatives considered: Client-only button disabling; replay any response regardless of payload; trust the original JWT role/status until expiry.
+- Reason: Makes retry semantics explicit and prevents stale authorization or accidental key reuse from bypassing current state.
+- Tradeoffs: Clients must retain a stable key for a retry and surface conflict errors clearly; receipt retention remains an operator policy.
+- Consequences: Kiosk, payment, staff, cancellation, reassignment, service-change, and exclusion-override paths define stable scopes and audited receipts.
+
+## ADR-017 — Returning kiosk lookup uses limited full-name confirmation
+
+- ID: ADR-017
+- Date: 2026-10-10
+- Status: Accepted for V1
+- Context: Returning guests need a low-friction check-in, but the shared kiosk must not reveal phone numbers or full customer records.
+- Decision: When a normalized phone matches, the kiosk may display the stored full name read-only for confirmation. The response is limited to readiness/found/name fields, marked `no-store`, and does not return the phone or customer record.
+- Alternatives considered: Always ask for the name again; reveal the full customer record; return only a boolean match.
+- Reason: The approved option balances check-in speed with limited disclosure on a trusted-origin kiosk.
+- Tradeoffs: Anyone with repeated phone access could attempt enumeration; rate limiting and abuse monitoring remain deployment/operator controls.
+- Consequences: Returning-guest behavior is covered by a 2/2 E2E check and remains a supervised-pilot risk until kiosk abuse controls are reviewed.
+
+## ADR-018 — Closing/retention scheduling is operator-owned
+
+- ID: ADR-018
+- Date: 2026-10-10
+- Status: Deferred for V1 deployment
+- Context: Closing and retention endpoints are implemented, but adding an internal scheduler would couple application lifecycle, retries, alerting, and secret rotation to the MVP runtime.
+- Decision: Keep `/api/jobs/closing` and `/api/jobs/retention` protected by admin session or `CRON_SECRET`; deployment operators own external scheduling, retry policy, monitoring, and approval.
+- Alternatives considered: In-process timer; Compose cron container; silently assume a platform scheduler.
+- Reason: Keeps job execution explicit and avoids a false production-readiness claim before deployment infrastructure is approved.
+- Tradeoffs: The app does not self-schedule; unattended operation is blocked until an external schedule and alerting are configured.
+- Consequences: Scheduler setup is a release gate, not an application feature, and the local runbook must document the secret boundary.
+
+## ADR-019 — Restore service categories as presentation taxonomy
+
+- ID: ADR-019
+- Date: 2026-10-11
+- Status: Accepted for the current V1 catalog
+- Context: The category-free interim model made the kiosk catalog harder to scan and removed the admin's ability to organize a growing service list. The existing migration history already contains a category-removal step, so restoring the concept must be explicit and forward-only.
+- Decision: Use a normalized `ServiceCategory` table with stable slug, display order, and active/archive state. Every service belongs to one category; categories affect catalog filtering/grouping only, never routing eligibility, pricing, or appointment state. Archive is blocked while active services still reference the category.
+- Alternatives considered: Keep the catalog flat; use a free-text category; infer categories from service names at render time.
+- Reason: Stable relational data supports admin CRUD, kiosk grouping, deterministic seed data, and future reporting without coupling taxonomy to turn routing.
+- Tradeoffs: Category migration/backfill and service forms now require category data; the earlier category-free ADR remains a historical migration step, not the current contract.
+- Consequences: `20261010200000_service_categories` and `20261010201000_refine_service_category_backfill` restore/backfill the model, and `/api/admin/service-categories` owns its audited lifecycle.
+
+## ADR-020 — Payment corrections and refunds are audited administrative records
+
+- ID: ADR-020
+- Date: 2026-10-11
+- Status: Accepted for supervised pilot
+- Context: Staff may enter the wrong amount, payment method, tip, cash received, or refund amount after an external terminal action. Deleting or silently overwriting the payment would break reconciliation and operator trust.
+- Decision: Keep one current `Payment` row per appointment, expose admin-only adjustment/correction/refund commands, and append `AuditEvent` records containing actor, reason, and previous/current or refunded details. Stable command receipts make retries safe; a refund records an external merchant action and does not call a gateway.
+- Alternatives considered: Delete and recreate the payment; add an unaudited overwrite endpoint; integrate a merchant gateway in V1.
+- Reason: Preserves reportability and keeps terminal/card-data responsibility outside this app while providing a practical correction trail.
+- Tradeoffs: Reports use the current payment state plus refund history; operators must reconcile the external terminal separately and still need a production retention policy.
+- Consequences: Payment history is available at `/api/admin/payments/[appointmentId]/history`; `adjust`, `correct`, and `refund` routes are protected by admin role, trusted origin, validation, and audit boundaries.
+
+## ADR-021 — Persist an append-only turn-event ledger
+
+- ID: ADR-021
+- Date: 2026-10-11
+- Status: Accepted for supervised pilot
+- Context: Current turn rows show state but do not explain reassignment, same-specialist continuation, support participation, skip reasons, or who acted after staff/account records change.
+- Decision: Persist `TurnEvent` rows for assignment, accept, skip, finish, cancellation, reassignment, continuation, support add/release, and waiting states. Store actor and assigned-staff display snapshots, reason, and timestamp; seed legacy turns with historical system events during migration.
+- Alternatives considered: Derive history from mutable turn rows; rely only on generic audit metadata; store a client-side activity log.
+- Reason: A relational, queryable ledger makes the appointment history useful for operations and preserves context when referenced records are later renamed or deactivated.
+- Tradeoffs: Each mutation writes an additional event and retention must eventually cover turn events; the current UI/API is admin-only.
+- Consequences: `/api/admin/appointments/[id]/turn-history` and the Admin history modal expose the ledger without making board reads writeful.
+
+## ADR-022 — Use static locale option data for configuration controls
+
+- ID: ADR-022
+- Date: 2026-10-11
+- Status: Accepted for V1
+- Context: Generating timezone/currency options differently on server and browser can cause hydration drift, while operators still need a broad valid choice set.
+- Decision: Keep a checked-in IANA timezone and CLDR-style currency option list in `src/domain/locale-options.ts`; validate configured values server-side and preserve an unknown current value in the UI rather than dropping it.
+- Alternatives considered: Generate options with runtime `Intl` on each render; expose unrestricted text inputs; support only the default locale.
+- Reason: Deterministic labels and validation are more important than runtime-generated completeness for this tablet admin surface.
+- Consequences: Locale option data must be refreshed deliberately when the supported runtime/CLDR dataset changes.

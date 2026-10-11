@@ -13,10 +13,12 @@ requirement_ids: [FR-KSK-001, FR-BRD-001, FR-ADM-001, NFR-SEC-001]
 
 ## Kết luận
 
-PASS cho UI, pure domain logic, build, lint, typecheck và PostgreSQL migration/seed path. Browser E2E được cấu hình để chạy trên database đã seed; cần host có Docker/PostgreSQL và listener để hoàn tất môi trường xác nhận. Không có finding severity P0/P1 sau vòng sửa hiện tại.
+PASS cho UI, pure domain logic, build, lint, typecheck, PostgreSQL migration/seed path và các protected tablet workflow đã ghi nhận. Sequential DB-gated tests (`postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5), protected tablet E2E 7/7, returning kiosk 2/2 và resilience 3/3 đã PASS trên môi trường disposable. Physical iPad/WebKit, real Wi‑Fi, staging SLO và production approval vẫn là follow-up gates; không nên xem đây là sign-off production không giám sát.
 
 ## Follow-up trước production thật
 
+- P1: chạy tablet QA trên thiết bị iPad/WebKit thật, bao gồm distance readability, touch, Dynamic Type/VoiceOver và Wi‑Fi interruption.
+- P1: đo lock/pool/network SLO trên staging/deployment và hoàn tất backup/restore rollback rehearsal.
 - P2: cấu hình TLS certificate/domain thật trong nginx; chỉ thực hiện sau approval artifact.
-- P2: nối scheduler bên ngoài thật vào `POST /api/jobs/closing` bằng `CRON_SECRET`.
-- P2: mở rộng Playwright fixture cho full station/admin happy path trên database disposable.
+- P2: nối scheduler/alerting bên ngoài vào closing/retention jobs bằng `CRON_SECRET` sau khi quyết định operations được mở lại.
+- P2: bổ sung DB/E2E matrix cho category lifecycle, appointment turn history, và payment adjustment/correction/refund trước khi đóng follow-up release gate.

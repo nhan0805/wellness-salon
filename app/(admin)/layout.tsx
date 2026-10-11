@@ -5,8 +5,8 @@ import type { Metadata } from 'next';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Admin console | Wellness Salon',
-  description: 'Manage the Wellness Salon floor, queue, staff, services, and reports.',
+  title: 'Salon operations | Wellness Salon',
+  description: 'Manage the salon queue, staff, services, appointments, and payments.',
 };
 
 export default async function AdminLayout({ children }: Readonly<{ children: React.ReactNode }>) {

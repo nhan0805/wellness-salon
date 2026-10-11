@@ -22,7 +22,11 @@ export async function observeApiRequest(request: Request, route: string, handler
       route,
       status: response.status,
       durationMs,
+      outcome: response.status >= 400 ? 'rejected' : 'success',
     });
+    if (response.status >= 400 && request.method !== 'GET') {
+      logEvent('warn', 'command.rejected', { requestId, method: request.method, route, status: response.status });
+    }
     return response;
   } catch (error) {
     logEvent('error', 'api.request.failed', {

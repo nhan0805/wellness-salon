@@ -5,13 +5,20 @@ import { lookupDbCustomerByPhone } from '@/src/server/services/prisma-operations
 
 export const runtime = 'nodejs';
 
+function privateLookupResponse(body: unknown, init?: ResponseInit) {
+  const response = NextResponse.json(body, init);
+  response.headers.set('Cache-Control', 'no-store, max-age=0');
+  response.headers.set('Referrer-Policy', 'no-referrer');
+  return response;
+}
+
 export async function GET(request: Request) {
   if (!hasTrustedOrigin(request)) return jsonError('Invalid request origin', 403);
 
   const phone = new URL(request.url).searchParams.get('phone') ?? '';
   const parsed = kioskCustomerLookupSchema.safeParse({ phone });
   if (!parsed.success) {
-    return NextResponse.json({
+    return privateLookupResponse({
       found: false,
       name: null,
       ready: false,
@@ -20,8 +27,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    return NextResponse.json({ ...(await lookupDbCustomerByPhone(parsed.data.phone)), ready: true });
+    return privateLookupResponse({ ...(await lookupDbCustomerByPhone(parsed.data.phone)), ready: true });
   } catch {
-    return jsonError('Unable to look up this number right now', 503);
+    return privateLookupResponse({ error: 'Unable to look up this number right now' }, { status: 503 });
   }
 }

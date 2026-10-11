@@ -11,12 +11,20 @@ export interface ServiceCandidate {
   id: string;
   name: string;
   iconKey: ServiceIconKey;
+  category: ServiceCategorySnapshot;
   durationMin: number;
   price: number;
   requiredSkillIds: string[];
   isActive: boolean;
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+export interface ServiceCategorySnapshot {
+  id: string;
+  name: string;
+  slug: string;
+  sortOrder: number;
 }
 
 export interface StaffCandidate {
@@ -83,7 +91,7 @@ export interface AppointmentSnapshot {
   turns: TurnSnapshot[];
   services: AppointmentServiceSnapshot[];
   supportingStaffIds: string[];
-  payment: { method: PaymentMethod; confirmedAt: Date } | null;
+  payment: { amount: number; tip: number; method: PaymentMethod; confirmedAt: Date } | null;
 }
 
 export interface AssignmentResult {
@@ -112,7 +120,12 @@ export interface DailyReport {
   completedCount: number;
   cardTotal: number;
   cashTotal: number;
+  tipTotal: number;
+  cardCollectedTotal: number;
+  cashCollectedTotal: number;
+  totalCollected: number;
   byService: Array<{ serviceName: string; revenue: number; count: number }>;
+  byCategory: Array<{ categoryName: string; revenue: number; count: number }>;
   byStaff: Array<{ staffName: string; revenue: number; count: number }>;
   dailyTrend: ReportTrendPoint[];
 }
@@ -131,7 +144,12 @@ export interface MonthlyReport {
   completedCount: number;
   cardTotal: number;
   cashTotal: number;
+  tipTotal: number;
+  cardCollectedTotal: number;
+  cashCollectedTotal: number;
+  totalCollected: number;
   byService: Array<{ serviceName: string; revenue: number; count: number }>;
+  byCategory: Array<{ categoryName: string; revenue: number; count: number }>;
   byStaff: Array<{ staffName: string; revenue: number; count: number }>;
   dailyTrend: ReportTrendPoint[];
 }
@@ -224,6 +242,7 @@ export interface AdminCustomerHistorySnapshot {
     completedCount: number;
     paidTotal: number;
     tipTotal: number;
+    totalCollected: number;
   };
   history: AdminCustomerHistoryItem[];
 }
@@ -244,11 +263,20 @@ export interface AdminServiceSnapshot {
   id: string;
   name: string;
   iconKey: ServiceIconKey;
+  categoryId: string;
+  category: ServiceCategorySnapshot;
   durationMin: number;
   price: number;
   requiredSkills: AdminSkillSnapshot[];
   isActive: boolean;
   appointmentCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AdminServiceCategorySnapshot extends ServiceCategorySnapshot {
+  isActive: boolean;
+  serviceCount: number;
   createdAt: Date;
   updatedAt: Date;
 }

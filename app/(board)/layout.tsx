@@ -3,8 +3,8 @@ import type { Metadata } from 'next';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Turn board | Wellness Salon',
-  description: 'A live view of the Wellness Salon queue and staff availability.',
+  title: 'Live queue | Wellness Salon',
+  description: 'View the live salon queue and staff availability.',
 };
 
 export default async function BoardLayout({ children }: Readonly<{ children: React.ReactNode }>) {

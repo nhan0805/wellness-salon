@@ -2,6 +2,25 @@
 
 Release-style history of meaningful repository changes. Dates use the project timezone context and are based on the artifacts currently present in the workspace.
 
+## Unreleased — 2026-10-11
+
+### Added
+
+- Restored a normalized service-category taxonomy with seven seeded categories, ordered/archive-safe lifecycle rules, migration backfill, Admin CRUD/filtering, and grouped kiosk presentation. The earlier category-free decision remains in migration history but is superseded for the current catalog contract.
+- Added searchable service-icon selection and deterministic timezone/currency option data for Admin configuration and service forms.
+- Added append-only `TurnEvent` history with actor/assigned-staff snapshots, reasons, and an Admin appointment turn-history view.
+- Added Admin payment history plus idempotent, audited payment amount/method/tip adjustments, bookkeeping corrections, and full/partial refund records. Refunds document an external terminal action and do not process card data.
+
+### Changed
+
+- Consolidated appointment operations behind a compact `...` menu for payment, history, service change, reassignment, skip override, and cancellation actions.
+- Updated the current project memory and release evidence to distinguish the 2026-10-11 follow-up from the previously recorded 2026-10-10 hardening/DB/E2E evidence.
+
+### Verification
+
+- Current tree: Prisma generate/validate, lint, typecheck, 31 default tests (9 DB-gated skips without `TEST_DATABASE_URL`), coverage, and production build pass. Coverage is 24.88% statements/lines, 68.75% branches, and 11.39% functions.
+- The follow-up paths have not yet received dedicated disposable DB/E2E coverage; existing hardening DB/E2E evidence remains recorded separately and no production database/deployment was changed.
+
 ## Unreleased — 2026-10-10
 
 ### Added
@@ -9,15 +28,27 @@ Release-style history of meaningful repository changes. Dates use the project ti
 - Added iPad-first operational polish across Admin, Turn board, and kiosk: shared live-refresh affordances, clearer queue hierarchy, touch-friendly skip reasons, safe-area support, reduced-motion handling, and consistent Lucide icon sizing.
 - Added durable idempotency keys to kiosk check-in and admin payment confirmation retries.
 - Added normalized customer phone identity storage and migration while preserving the formatted display phone value.
+- Added the reliability-hardening paths for exact-service skip exclusions/manager override, cancellation, reassignment, service changes, queue repair, support release, closing/retention, session revalidation, database-backed PIN lockout, request/lock/sync/job telemetry, and disposable benchmark/load profiles.
 
 ### Changed
 
+- Updated the Admin service visibility and Shop configuration fair-turn settings to balanced, accessible `Yes`/`No` segmented controls; the controls preserve the existing `isActive` and `roundRobinEnabled` persistence contracts across desktop and mobile layouts.
 - Removed the separate `START` board action. Accept now moves the assigned service directly into service through the existing `ACCEPTED` turn state; the legacy `STARTED` appointments and enum value are removed by migration.
 - Added assignment guards for staff Accept/Skip/Finish actions and prevented deactivation of staff who are assigned to an active turn.
 
 ### Fixed
 
 - Fixed Admin Appointments history rows being overwritten by the dashboard polling refresh; Day and Month now load immediately when selected, and Range loads automatically once both dates form a valid range. Removed the separate `Apply date` action.
+- Fixed the desktop Admin sidebar being unable to reach its lower navigation items by adding an independent viewport-height vertical scroll region while preserving the horizontal mobile navigation behavior.
+- Replaced the payment-method select with large Cash/Card segmented buttons so admins can choose the terminal method with one tap.
+- Balanced the shared modal typography scale across titles, context text, labels, inputs, helper copy, and action buttons, including the payment modal's method label.
+- Audited every Admin and Turn board modal and added consistent section spacing; the payment method group now has clear separation before the Tip field.
+
+### Verification
+
+- Static gates passed for the 2026-10-10 hardening tree: lint, typecheck, 31 default tests with 9 intentional DB-gated skips, Prisma validation, and production build. That recorded coverage rerun reported 27% statements/lines, 68.04% branches, and 12.85% functions.
+- Disposable PostgreSQL verification passed all 14 migrations + seed, `postgres` 3/3, `admin-access` 1/1, and `critical-workflows` 5/5 sequentially. Protected tablet E2E passed 7/7, returning-guest kiosk 2/2, resilience 3/3, and Chromium portrait/landscape review passed with physical-device/network limits recorded.
+- No production database, deployment, infrastructure, or dependency was changed. Detailed evidence and remaining gates are tracked in [`docs/implementation/FINAL_REPORT.md`](implementation/FINAL_REPORT.md).
 
 ## Unreleased — 2026-10-09
 

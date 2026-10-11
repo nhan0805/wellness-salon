@@ -9,7 +9,7 @@ async function createKioskVisit(page: import('@playwright/test').Page, name: str
   await page.getByLabel('Mobile number').fill(phone);
   await expect(page.getByText(/New guest — enter your name to continue/i)).toBeVisible();
   await page.getByLabel('First and last name').fill(name);
-  await page.getByRole('button', { name: /Join the turn board/i }).click();
+  await page.getByRole('button', { name: /Check in/i }).click();
   const ticket = page.getByRole('heading', { name: /^A\d{3}$/ });
   await expect(ticket).toBeVisible();
   return (await ticket.textContent()) ?? '';
@@ -74,7 +74,7 @@ test('management tablet cancels a selected service with an audit reason', async 
   const row = page.locator('tbody tr').filter({ hasText: code });
   await expect(row).toBeVisible();
   await row.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Cancel appointment work', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cancel appointment', exact: true })).toBeVisible();
   await page.getByLabel('Reason').fill('Customer changed plans before service');
   await page.getByRole('button', { name: 'Confirm', exact: true }).click();
   await expect(page.getByText(`${code} cancelled.`, { exact: true })).toBeVisible();

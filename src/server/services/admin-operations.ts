@@ -1,5 +1,6 @@
 import { AppointmentStatus, AttendanceClosedBy as PrismaAttendanceClosedBy, AttendanceStatus, Availability, AuthRole, Prisma } from '@prisma/client';
-import type { AdminAccountSnapshot, AdminAttendanceSnapshot, AdminCustomerHistorySnapshot, AdminCustomerSnapshot, AdminServiceSnapshot, AdminSkipReasonSnapshot, AdminSkillManagementSnapshot, AdminSkillSnapshot, AdminStaffSnapshot } from '@/src/domain/types';
+import { randomUUID } from 'node:crypto';
+import type { AdminAccountSnapshot, AdminAttendanceSnapshot, AdminCustomerHistorySnapshot, AdminCustomerSnapshot, AdminServiceCategorySnapshot, AdminServiceSnapshot, AdminSkipReasonSnapshot, AdminSkillManagementSnapshot, AdminSkillSnapshot, AdminStaffSnapshot, ServiceCategorySnapshot } from '@/src/domain/types';
 import { deriveStaffInitials } from '@/src/domain/staff';
 import { normalizeServiceIconKey, type ServiceIconKey } from '@/src/domain/service-icons';
 import { normalizePhoneNumber } from '@/src/domain/phone';
@@ -303,13 +304,17 @@ export async function getDbAdminCustomerHistory(customerId: string, filters: { f
     };
   });
 
+  const paidTotal = history.reduce((total, item) => total + (item.payment?.amount ?? 0), 0);
+  const tipTotal = history.reduce((total, item) => total + (item.payment?.tip ?? 0), 0);
+
   return {
     customer,
     summary: {
       visitCount: history.length,
       completedCount: history.filter((item) => item.status === AppointmentStatus.COMPLETED).length,
-      paidTotal: history.reduce((total, item) => total + (item.payment?.amount ?? 0), 0),
-      tipTotal: history.reduce((total, item) => total + (item.payment?.tip ?? 0), 0),
+      paidTotal,
+      tipTotal,
+      totalCollected: paidTotal + tipTotal,
     },
     history,
   };
@@ -390,8 +395,74 @@ export async function deactivateDbAdminStaff(input: { id: string; adminId?: stri
   return updateDbAdminStaff({ id: staff.id, name: staff.name, initials: staff.initials, skillIds: staff.skills.map((row) => row.skillId), isActive: false, adminId: input.adminId });
 }
 
+function mapServiceCategory(row: { id: string; name: string; slug: string; sortOrder: number; isActive?: boolean; createdAt?: Date; updatedAt?: Date; _count?: { services: number } }): AdminServiceCategorySnapshot {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    sortOrder: row.sortOrder,
+    isActive: row.isActive ?? true,
+    serviceCount: row._count?.services ?? 0,
+    createdAt: row.createdAt ?? new Date(0),
+    updatedAt: row.updatedAt ?? new Date(0),
+  };
+}
+
+function serviceCategorySlug(name: string) {
+  const slug = name.trim().toLowerCase().replaceAll(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return slug || `category-${Date.now()}`;
+}
+
+export async function getDbAdminServiceCategories(): Promise<AdminServiceCategorySnapshot[]> {
+  const rows = await prisma.serviceCategory.findMany({ include: { _count: { select: { services: true } } }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+  return rows.map(mapServiceCategory);
+}
+
+export async function createDbAdminServiceCategory(input: { name: string; sortOrder: number; adminId?: string }) {
+  return prisma.$transaction(async (tx) => {
+    const category = await tx.serviceCategory.create({ data: { id: `category-${randomUUID()}`, name: input.name.trim(), slug: serviceCategorySlug(input.name), sortOrder: input.sortOrder, isActive: true } });
+    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'service_category.created', entity: 'ServiceCategory', entityId: category.id, metadata: { name: category.name, slug: category.slug, sortOrder: category.sortOrder } } });
+    return mapServiceCategory({ ...category, _count: { services: 0 } });
+  });
+}
+
+export async function updateDbAdminServiceCategory(input: { id: string; name: string; sortOrder: number; isActive: boolean; adminId?: string }) {
+  return prisma.$transaction(async (tx) => {
+    const current = await tx.serviceCategory.findUnique({ where: { id: input.id } });
+    if (!current) throw new Error('Service category not found');
+    if (!input.isActive) {
+      const activeServiceCount = await tx.service.count({ where: { categoryId: input.id, isActive: true } });
+      if (activeServiceCount > 0) throw new Error('Move active services to another category before archiving this category');
+    }
+    const category = await tx.serviceCategory.update({ where: { id: input.id }, data: { name: input.name.trim(), slug: serviceCategorySlug(input.name), sortOrder: input.sortOrder, isActive: input.isActive } });
+    const serviceCount = await tx.service.count({ where: { categoryId: category.id } });
+    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'service_category.updated', entity: 'ServiceCategory', entityId: category.id, metadata: { name: category.name, slug: category.slug, sortOrder: category.sortOrder, isActive: category.isActive } } });
+    return mapServiceCategory({ ...category, _count: { services: serviceCount } });
+  });
+}
+
+export async function deactivateDbAdminServiceCategory(input: { id: string; adminId?: string }) {
+  return prisma.$transaction(async (tx) => {
+    const category = await tx.serviceCategory.findUnique({ where: { id: input.id } });
+    if (!category) throw new Error('Service category not found');
+    const activeServiceCount = await tx.service.count({ where: { categoryId: input.id, isActive: true } });
+    if (activeServiceCount > 0) throw new Error('Move active services to another category before archiving this category');
+    await tx.serviceCategory.update({ where: { id: input.id }, data: { isActive: false } });
+    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'service_category.archived', entity: 'ServiceCategory', entityId: input.id, metadata: { name: category.name } } });
+    return { ok: true, id: input.id };
+  });
+}
+
+async function assertActiveServiceCategory(tx: Prisma.TransactionClient, categoryId: string) {
+  const category = await tx.serviceCategory.findUnique({ where: { id: categoryId }, select: { id: true, isActive: true } });
+  if (!category) throw new Error('Selected service category does not exist');
+  if (!category.isActive) throw new Error('Selected service category is archived');
+  return category;
+}
+
 function serviceInclude() {
   return {
+    category: { select: { id: true, name: true, slug: true, sortOrder: true } },
     requiredSkills: { include: { skill: true }, orderBy: { skill: { name: 'asc' as const } } },
     _count: { select: { appointments: true } },
   };
@@ -401,6 +472,8 @@ function mapService(row: {
   id: string;
   name: string;
   iconKey: string;
+  categoryId: string;
+  category: ServiceCategorySnapshot;
   durationMin: number;
   price: Prisma.Decimal;
   isActive: boolean;
@@ -413,6 +486,8 @@ function mapService(row: {
     id: row.id,
     name: row.name,
     iconKey: normalizeServiceIconKey(row.iconKey),
+    categoryId: row.categoryId,
+    category: row.category,
     durationMin: row.durationMin,
     price: Number(row.price),
     requiredSkills: row.requiredSkills.map((item) => mapSkill(item.skill)),
@@ -423,28 +498,31 @@ function mapService(row: {
   };
 }
 
-export async function getDbAdminServices(): Promise<{ services: AdminServiceSnapshot[]; skills: AdminSkillSnapshot[] }> {
-  const [rows, skills] = await Promise.all([
+export async function getDbAdminServices(): Promise<{ services: AdminServiceSnapshot[]; skills: AdminSkillSnapshot[]; categories: AdminServiceCategorySnapshot[] }> {
+  const [rows, skills, categories] = await Promise.all([
     prisma.service.findMany({ include: serviceInclude(), orderBy: { name: 'asc' } }),
     getDbAdminSkills(),
+    getDbAdminServiceCategories(),
   ]);
-  return { services: rows.map(mapService), skills };
+  return { services: rows.map(mapService), skills, categories };
 }
 
-export async function createDbAdminService(input: { name: string; iconKey: ServiceIconKey; durationMin: number; price: number; skillIds: string[]; adminId?: string }) {
+export async function createDbAdminService(input: { name: string; iconKey: ServiceIconKey; categoryId: string; durationMin: number; price: number; skillIds: string[]; adminId?: string }) {
   return prisma.$transaction(async (tx) => {
     const selectedSkillIds = await assertSkillIds(tx, input.skillIds);
-    const service = await tx.service.create({ data: { name: input.name, iconKey: input.iconKey, durationMin: input.durationMin, price: input.price, isActive: true } });
+    await assertActiveServiceCategory(tx, input.categoryId);
+    const service = await tx.service.create({ data: { name: input.name, iconKey: input.iconKey, categoryId: input.categoryId, durationMin: input.durationMin, price: input.price, isActive: true } });
     await tx.serviceSkill.createMany({ data: selectedSkillIds.map((skillId) => ({ serviceId: service.id, skillId })) });
     await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'service.created', entity: 'Service', entityId: service.id, metadata: { name: service.name, iconKey: service.iconKey, skillIds: selectedSkillIds } } });
     return tx.service.findUniqueOrThrow({ where: { id: service.id }, include: serviceInclude() });
   }).then(mapService);
 }
 
-export async function updateDbAdminService(input: { id: string; name: string; iconKey: ServiceIconKey; durationMin: number; price: number; skillIds: string[]; isActive: boolean; adminId?: string }) {
+export async function updateDbAdminService(input: { id: string; name: string; iconKey: ServiceIconKey; categoryId: string; durationMin: number; price: number; skillIds: string[]; isActive: boolean; adminId?: string }) {
   return prisma.$transaction(async (tx) => {
     const selectedSkillIds = await assertSkillIds(tx, input.skillIds);
-    const service = await tx.service.update({ where: { id: input.id }, data: { name: input.name, iconKey: input.iconKey, durationMin: input.durationMin, price: input.price, isActive: input.isActive } });
+    await assertActiveServiceCategory(tx, input.categoryId);
+    const service = await tx.service.update({ where: { id: input.id }, data: { name: input.name, iconKey: input.iconKey, categoryId: input.categoryId, durationMin: input.durationMin, price: input.price, isActive: input.isActive } });
     await tx.serviceSkill.deleteMany({ where: { serviceId: service.id } });
     await tx.serviceSkill.createMany({ data: selectedSkillIds.map((skillId) => ({ serviceId: service.id, skillId })) });
     await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'service.updated', entity: 'Service', entityId: service.id, metadata: { name: service.name, iconKey: service.iconKey, skillIds: selectedSkillIds, isActive: service.isActive } } });

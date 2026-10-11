@@ -30,6 +30,19 @@ enum TurnStatus {
   FINISHED
 }
 
+enum TurnEventType {
+  WAITING
+  ASSIGNED
+  ACCEPTED
+  SKIPPED
+  FINISHED
+  REASSIGNED
+  CONTINUED_WITH_ME
+  SUPPORT_ADDED
+  SUPPORT_RELEASED
+  CANCELLED
+}
+
 enum AttendanceStatus {
   PRESENT
   CHECKED_OUT
@@ -69,12 +82,28 @@ model Skill {
   @@map("skills")
 }
 
+model ServiceCategory {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  sortOrder Int       @default(0) @map("sort_order")
+  isActive  Boolean   @default(true) @map("is_active")
+  services  Service[]
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@index([isActive, sortOrder])
+  @@map("service_categories")
+}
+
 model Service {
   id                  String               @id @default(cuid())
   name                String
   iconKey             String               @default("sparkles") @map("icon_key")
+  categoryId          String               @map("category_id")
   durationMin         Int                  @map("duration_min")
   price               Decimal              @db.Decimal(10, 2)
+  category            ServiceCategory     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   requiredSkills      ServiceSkill[]
   appointments        Appointment[]
   appointmentServices AppointmentService[]
@@ -83,6 +112,7 @@ model Service {
   updatedAt           DateTime             @updatedAt @map("updated_at")
 
   @@index([isActive])
+  @@index([categoryId, isActive])
   @@map("services")
 }
 
@@ -180,6 +210,7 @@ model Appointment {
   service             Service                      @relation(fields: [serviceId], references: [id])
   primaryStaff        Staff?                       @relation(fields: [primaryStaffId], references: [id])
   turns               Turn[]
+  turnEvents          TurnEvent[]
   supportingStaff     AppointmentSupportingStaff[]
   payment             Payment?
   services            AppointmentService[]
@@ -210,6 +241,7 @@ model AppointmentService {
   service             Service           @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   primaryStaff        Staff?            @relation("appointment_service_primary_staff", fields: [primaryStaffId], references: [id])
   turns               Turn[]
+  turnEvents          TurnEvent[]
   paymentItems        PaymentItem[]
   turnExclusions      TurnExclusion[]
   changeEvents        ServiceChangeEvent[]
@@ -235,11 +267,35 @@ model Turn {
   appointmentService   AppointmentService? @relation(fields: [appointmentServiceId], references: [id], onDelete: Cascade)
   assignedStaff        Staff?              @relation("assigned_turns", fields: [assignedStaffId], references: [id])
   skipReason           SkipReason?         @relation(fields: [skipReasonId], references: [id], onDelete: SetNull)
+  events               TurnEvent[]
 
   @@index([appointmentId, createdAt])
   @@index([appointmentServiceId, createdAt])
   @@index([assignedStaffId, status])
   @@map("turns")
+}
+
+model TurnEvent {
+  id                        String             @id @default(cuid())
+  appointmentId             String             @map("appointment_id")
+  appointmentServiceId     String?            @map("appointment_service_id")
+  turnId                    String?            @map("turn_id")
+  eventType                 TurnEventType      @map("event_type")
+  assignedStaffId           String?            @map("assigned_staff_id")
+  assignedStaffNameSnapshot String?            @map("assigned_staff_name_snapshot")
+  actorType                 ActorType          @map("actor_type")
+  actorId                   String?            @map("actor_id")
+  actorNameSnapshot         String?            @map("actor_name_snapshot")
+  reason                    String?
+  createdAt                 DateTime           @default(now()) @map("created_at")
+  appointment               Appointment        @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  appointmentService        AppointmentService? @relation(fields: [appointmentServiceId], references: [id], onDelete: Cascade)
+  turn                      Turn?              @relation(fields: [turnId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId, createdAt])
+  @@index([appointmentServiceId, createdAt])
+  @@index([turnId, createdAt])
+  @@map("turn_events")
 }
 
 model AppointmentSupportingStaff {

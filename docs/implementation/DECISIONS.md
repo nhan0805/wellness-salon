@@ -1,5 +1,13 @@
 # Implementation decisions
 
+Last updated: 2026-10-11
+
+## 2026-10-11 follow-up decisions
+
+- `ServiceCategory` is the current catalog contract; the earlier category-free decision is retained only as historical migration context. Categories organize presentation and may be archived only after active services move elsewhere.
+- Payment correction/refund workflows update one current payment row and preserve a reasoned, actor-scoped audit trail instead of deleting/recreating financial records. Refunds document an external terminal action; the app does not process card data.
+- `TurnEvent` is an append-only operational ledger with actor and assigned-staff snapshots so the Admin history view remains useful after staff/account changes.
+
 This file records decisions that constrain implementation. Items marked `Business rule` came from the authorized implementation brief. Items marked `Implementation decision` are the simplest reliable choices made to make those rules enforceable in the current MVP architecture.
 
 ## Final business rules
@@ -10,7 +18,7 @@ When a technician skips an exact `AppointmentService`, the system persists an ex
 
 ### BR-02 — Attendance and checkout safety
 
-An `ASSIGNED` technician cannot check out. Automatic closing follows the same blocking rule. Accepting a turn validates attendance, active staff status, and current assignment in one transaction. A checked-out technician cannot start service.
+An `ASSIGNED` technician cannot check out. Automatic closing follows the same blocking rule. Accepting a turn validates attendance, active staff status, and current assignment in one transaction. A checked-out technician cannot accept/enter service.
 
 ### BR-03 — Explicit same-day visits and idempotent retries
 
@@ -51,3 +59,4 @@ Supporting technicians finish with the primary technician. There is no independe
 - Queue repair is an explicit manager action. It is not performed by read-only board requests, which prevents an SSE/refresh storm from creating hidden writes.
 - Retention cleanup is exposed as a protected job endpoint and is not automatically scheduled by the application. The deployment operator must schedule it with the configured job secret.
 - Tests that require a database must use `TEST_DATABASE_URL`, and the test harness must refuse to run if it equals the configured application database URL.
+- Public kiosk returning-customer lookup uses the approved full-name behavior: a matching phone may display the stored full name on the shared kiosk so the guest can confirm it. The lookup response is limited to `found`, `name`, and readiness/error fields, is marked `no-store`, and does not expose the phone or customer record. Rate limiting remains an infrastructure/operator concern because the shared kiosk is a trusted-origin surface.

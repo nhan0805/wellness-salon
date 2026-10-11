@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { prisma } from '@/src/server/db';
-import { currentDbBusinessDate, getDbAppointmentsFiltered, getDbBoardState, getDbMonthlyReport, getDbReport } from '@/src/server/services/prisma-operations';
+import { currentDbBusinessDate, getDbAppointmentsFiltered, getDbAppointmentsPage, getDbBoardState, getDbMonthlyReport, getDbReport } from '@/src/server/services/prisma-operations';
 
 const iterations = Math.max(3, Number(process.env.BENCHMARK_ITERATIONS ?? 20));
 const warmup = Math.max(0, Number(process.env.BENCHMARK_WARMUP ?? 2));
@@ -40,6 +40,7 @@ async function main() {
   console.log(JSON.stringify({ databaseBenchmark: true, businessDate: businessDate.toISOString().slice(0, 10), iterations, warmup }));
   await sample('board.private', () => getDbBoardState({ publicView: false }));
   await sample('appointments.filtered', () => getDbAppointmentsFiltered({ start: businessDate, end: nextDate }));
+  await sample('appointments.page', () => getDbAppointmentsPage({ start: businessDate, end: nextDate }, 1, 25));
   await sample('report.day', () => getDbReport(businessDate));
   await sample('report.month', () => getDbMonthlyReport(monthStart));
 }

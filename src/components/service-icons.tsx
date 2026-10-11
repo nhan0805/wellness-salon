@@ -54,8 +54,7 @@ import {
   WavesLadder,
   Wind,
   Check,
-  ChevronDown,
-  ChevronUp,
+  X,
 } from 'lucide-react';
 import {
   SERVICE_ICON_CATEGORIES,
@@ -63,6 +62,7 @@ import {
   type ServiceIconCategory,
   type ServiceIconKey,
 } from '@/src/domain/service-icons';
+import { useDialogFocus } from '@/src/components/use-dialog-focus';
 
 const SERVICE_ICON_COMPONENTS = {
   hand: Hand,
@@ -126,58 +126,71 @@ export function ServiceIcon({ iconKey, ...props }: { iconKey?: string | null } &
 }
 
 export function ServiceIconPicker({ value, onChange }: { value: ServiceIconKey; onChange: (value: ServiceIconKey) => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = SERVICE_ICON_OPTIONS.find((option) => option.key === value) ?? SERVICE_ICON_OPTIONS[0];
+
+  return <>
+    <button type="button" className="service-icon-picker-trigger" aria-haspopup="dialog" aria-label={`Change service icon. Current icon: ${selectedOption.label}`} title={`Change service icon: ${selectedOption.label}`} onClick={() => setIsOpen(true)}>
+      <span className="service-icon-current" aria-hidden="true"><ServiceIcon iconKey={value} size={25} /></span>
+    </button>
+    {isOpen ? <ServiceIconDialog value={value} onApply={onChange} onClose={() => setIsOpen(false)} /> : null}
+  </>;
+}
+
+function ServiceIconDialog({ value, onApply, onClose }: { value: ServiceIconKey; onApply: (value: ServiceIconKey) => void; onClose: () => void }) {
   const [query, setQuery] = useState('');
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [draftValue, setDraftValue] = useState(value);
   const pickerId = useId();
+  const dialogRef = useDialogFocus(true, onClose, { stopPropagation: true });
   const normalizedQuery = query.trim().toLowerCase();
   const filteredOptions = useMemo(
     () => SERVICE_ICON_OPTIONS.filter((option) => !normalizedQuery || `${option.label} ${option.key} ${option.category}`.toLowerCase().includes(normalizedQuery)),
     [normalizedQuery],
   );
   const filteredByCategory = (category: ServiceIconCategory) => filteredOptions.filter((option) => option.category === category);
-  const selectedOption = SERVICE_ICON_OPTIONS.find((option) => option.key === value) ?? SERVICE_ICON_OPTIONS[0];
-  const pickerContentId = `service-icon-picker-${pickerId}`;
+  const draftOption = SERVICE_ICON_OPTIONS.find((option) => option.key === draftValue) ?? SERVICE_ICON_OPTIONS[0];
+  const titleId = `service-icon-dialog-title-${pickerId}`;
   const searchId = `service-icon-search-${pickerId}`;
 
-  return <fieldset className="service-icon-fieldset">
-    <legend>Service icon</legend>
-    <div className="service-icon-toolbar">
-      <span className="service-icon-current" role="img" aria-label={`Selected icon: ${selectedOption.label}`} title={selectedOption.label}>
-        <ServiceIcon iconKey={value} size={22} aria-hidden="true" />
-      </span>
-      <button type="button" className="service-icon-collapse-toggle" aria-expanded={isExpanded} aria-controls={pickerContentId} onClick={() => setIsExpanded((current) => !current)}>
-        {isExpanded ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
-        <span>{isExpanded ? 'Hide icon choices' : 'Change icon'}</span>
-      </button>
-    </div>
-    <div id={pickerContentId} className="service-icon-picker-body" hidden={!isExpanded}>
-      <div className="service-icon-search field">
-        <label htmlFor={searchId}>Search icons</label>
-        <div className="service-icon-search-control">
-          <Search size={17} aria-hidden="true" />
-          <input id={searchId} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or category" />
+  return <div className="modal-backdrop service-icon-modal-backdrop">
+    <div className="modal service-icon-modal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className="modal-header">
+        <div><h2 id={titleId}>Choose service icon</h2><p>Pick an icon to represent this service on the kiosk.</p></div>
+        <button type="button" className="modal-close" aria-label="Close service icon dialog" onClick={onClose}><X size={19} aria-hidden="true" /></button>
+      </div>
+      <div className="service-icon-modal-body">
+        <div className="service-icon-search field">
+          <label htmlFor={searchId}>Search icons</label>
+          <div className="service-icon-search-control">
+            <Search size={17} aria-hidden="true" />
+            <input autoFocus data-dialog-focus id={searchId} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or category" />
+          </div>
         </div>
+        <div className="service-icon-groups">
+          {SERVICE_ICON_CATEGORIES.map((category) => {
+            const options = filteredByCategory(category);
+            if (!options.length) return null;
+            const categoryId = `service-icon-${pickerId}-${category.replaceAll(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
+            return <section className="service-icon-group" key={category} aria-labelledby={categoryId}>
+              <h4 id={categoryId}>{category}</h4>
+              <div className="service-icon-grid">
+                {options.map((option) => {
+                  const selected = option.key === draftValue;
+                  return <button key={option.key} type="button" className={`service-icon-option ${selected ? 'selected' : ''}`} onClick={() => setDraftValue(option.key)} aria-label={`Use ${option.label} icon`} aria-pressed={selected} title={option.label}>
+                    <span className="service-icon-option-art"><ServiceIcon iconKey={option.key} size={21} aria-hidden="true" /></span>
+                    {selected ? <Check className="service-icon-option-check" size={16} aria-hidden="true" /> : null}
+                  </button>;
+                })}
+              </div>
+            </section>;
+          })}
+        </div>
+        {!filteredOptions.length ? <p className="service-icon-empty" role="status">No icons match “{query}”.</p> : null}
       </div>
-      <div className="service-icon-groups">
-        {SERVICE_ICON_CATEGORIES.map((category) => {
-          const options = filteredByCategory(category);
-          if (!options.length) return null;
-          return <section className="service-icon-group" key={category} aria-labelledby={`service-icon-${category.replaceAll(/[^a-z0-9]+/gi, '-').toLowerCase()}`}>
-            <h4 id={`service-icon-${category.replaceAll(/[^a-z0-9]+/gi, '-').toLowerCase()}`}>{category}</h4>
-            <div className="service-icon-grid">
-              {options.map((option) => {
-                const selected = option.key === value;
-                return <button key={option.key} type="button" className={`service-icon-option ${selected ? 'selected' : ''}`} onClick={() => onChange(option.key)} aria-label={`Use ${option.label} icon`} aria-pressed={selected} title={option.label}>
-                  <span className="service-icon-option-art"><ServiceIcon iconKey={option.key} size={21} aria-hidden="true" /></span>
-                  {selected ? <Check className="service-icon-option-check" size={16} aria-hidden="true" /> : null}
-                </button>;
-              })}
-            </div>
-          </section>;
-        })}
+      <div className="form-actions service-icon-modal-actions">
+        <button type="button" className="button button-quiet" onClick={onClose}>Cancel</button>
+        <button type="button" className="button button-primary" onClick={() => { onApply(draftValue); onClose(); }}><ServiceIcon iconKey={draftValue} size={17} aria-hidden="true" /> Use {draftOption.label}</button>
       </div>
-      {!filteredOptions.length ? <p className="service-icon-empty" role="status">No icons match “{query}”.</p> : null}
-      <span className="field-hint">Choose one of the 50 curated icons. The icon style stays consistent across the salon.</span>
     </div>
-  </fieldset>;
+  </div>;
 }

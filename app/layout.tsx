@@ -4,11 +4,11 @@ import PWAProvider from '@/src/components/PWAProvider';
 
 export const metadata = {
   title: 'Wellness Salon',
-  description: 'Tablet-first operations for a modern nail shop.',
-  manifest: '/manifest-v1.json?v=4',
+  description: 'Salon operations for guest check-in, queue management, staff, services, and payments.',
+  manifest: '/manifest-v1.json?v=6',
   icons: {
-    icon: '/icons/icon-sparkles-512.png?v=1',
-    apple: '/icons/icon-sparkles-192.png?v=1',
+    icon: '/icons/wellness-mark-b-512.png?v=1',
+    apple: '/icons/wellness-mark-b-192.png?v=1',
   },
   appleWebApp: {
     capable: true,

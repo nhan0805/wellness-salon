@@ -1,6 +1,6 @@
 # Project state
 
-Last updated: 2026-10-10
+Last updated: 2026-10-11
 
 ## Current project goal
 
@@ -8,17 +8,30 @@ Deliver a tablet-first nail-shop operations system that connects customer self-c
 
 ## Current milestone
 
-V1 functional baseline and the iPad-first redesign are implemented. The repository remains in production-data hardening: every operational surface must use PostgreSQL, credentials must come from deployment secrets, and database-backed checks must be completed on the deployment host.
+V1 functional baseline, iPad-first redesign, reliability hardening, and the follow-up catalog/payment traceability batch are implemented. The repository is now at supervised-pilot release verification: every operational surface uses PostgreSQL, credentials come from deployment secrets, and physical-device/staging/deployment checks remain before unattended production use.
 
 ## Current sprint
 
-Tablet workflow polish, durable mutation retries, and deployment verification.
+Close the physical tablet, deployed-network, scheduler, and production approval gates without weakening the PostgreSQL workflow.
 
 ## Current task
 
-Complete the shared pastel/iPad interaction pass across Admin, Turn board, and kiosk while preserving the PostgreSQL workflow and removing the separate Start action.
+Validate the hardening batch on real iPad/WebKit and staging-like infrastructure, then close the remaining release gates.
 
 ## Last completed work
+
+- Completed the authorized BR-01 through BR-06 hardening scope: durable exact-service skip exclusions and audited override, attendance/checkout safety, explicit same-day visits with idempotent retries, cancellation, audited service changes, and atomic support release.
+- Added session-version revalidation, database-backed PIN lockout, verified-session revocation, request-hash conflict detection, advisory-lock/request/sync/job telemetry, and explicit manager queue repair.
+- Added board SSE reconnect/backoff and version-aware polling, dynamic ShopConfig presentation, server-side appointment history pagination/summary projection, and disposable benchmark/load tooling.
+- Completed disposable PostgreSQL migration/seed verification, sequential DB-gated tests, protected tablet E2E, kiosk returning-guest E2E, resilience E2E, and Chromium viewport review; production DB/deployment/infrastructure were not changed.
+- Restored the service-category taxonomy with ordered/archivable categories, migration backfill, Admin CRUD/filtering, grouped kiosk presentation, and searchable service-icon selection.
+- Added append-only `TurnEvent` history for assignment, accept/skip/finish, cancellation, reassignment, continuation, and support lifecycle events, with an Admin appointment history view.
+- Added Admin payment history plus audited amount/method/tip adjustment, bookkeeping correction, and full/partial refund recording with retry-safe command scopes.
+- Added static timezone/currency option data, the compact Appointment action menu, and the exact configured staff-verification session duration.
+- Replaced the Admin service `Visible on kiosk` and Shop configuration `Use fair turn routing` checkboxes with balanced accessible `Yes`/`No` segmented controls while preserving the existing `isActive` and `roundRobinEnabled` save behavior.
+- Standardized Admin and board modal typography and spacing so titles, context, labels, fields, helper copy, and actions follow one readable iPad scale; the payment method group is separated from the Tip field.
+- Replaced the payment-method select in the Admin payment modal with accessible Cash/Card buttons using the existing payment API values.
+- Fixed the desktop Admin sidebar so its full navigation, including Accounts, Shop config, and Reports, can scroll to the bottom inside the viewport without changing the mobile horizontal menu.
 - Fixed Admin Appointments date-scope history being reset to today's rows by the parent polling refresh; Day and Month now auto-load on selection, Range auto-loads once both dates are valid, and the explicit `Apply date` button is removed.
 - Split Today’s turn board into `Turn board` and `Staff attendance` tabs, with prominent labeled Check in/Check out actions for staff attendance.
 - Fixed multi-service `Up next` cards so the board shows every selected service with its progress and combined duration instead of only the currently routed service.
@@ -34,7 +47,7 @@ Complete the shared pastel/iPad interaction pass across Admin, Turn board, and k
 - Unified sign-in flow: Removed separate admin sign-in route, implemented a single `/sign-in` entry point with automatic role-based redirection (Admin -> /admin, Station -> /board) via the root page.
 - Transformed the landing page dashboard preview from a static image into an interactive `RolePreview` component with switchable tabs (Overview, Queue, Payments, Services).
 - Implemented a "Tip" system for payments: added a `tip` column to the database, updated validation schemas, and added a tip input field in the Admin payment confirmation modal.
-- Removed service categories from the service domain, admin service form/table, kiosk presentation, seed data, Prisma schema, and API contracts; added a forward migration that drops the legacy column and enum.
+- Superseded the interim category-free catalog decision: the current schema requires `ServiceCategory` for services, while the earlier category-removal migration remains historical and is followed by explicit restore/backfill migrations.
 - Made the turn board publicly viewable without sign-in while keeping staff mutations protected by station/admin auth and staff PIN verification; added coverage for the public board view.
 - Increased turn-board action/status visibility: `Accept` is now a filled blue CTA, unassigned turns show a `Waiting` badge, and shared status badges use stronger contrast and borders.
 - Added multi-skill service routing: `ServiceSkill` stores one-or-more requirements, service management edits them as a checkbox set, and assignment requires every skill before applying check-in/availability/fairness ordering.
@@ -65,18 +78,22 @@ Complete the shared pastel/iPad interaction pass across Admin, Turn board, and k
 
 ## Build and test status
 
-Latest targeted verification on 2026-10-10: `npm run lint`, `npm run typecheck`, `npm test`, `npx prisma validate`, and `npm run build` pass after the iPad redesign and workflow hardening. Docker Compose was rebuilt/recreated; `docker-app-1` and PostgreSQL are healthy, migration `20261010160000_remove_legacy_started_turn_state` removed the legacy appointments and `STARTED` enum value, `/api/health` returns `status: ok`, `/api/board` returns an empty current queue, and the in-app browser renders `/board` successfully. The build retains existing Next.js metadata warnings for `themeColor`/`viewport` placement.
+Latest local static verification on 2026-10-11: `npm run db:generate`, `npm run lint`, `npm run typecheck`, `npm test -- --run` (31 passed, 9 DB-gated skipped without DB env), `npx prisma validate`, `npm run test:coverage`, and `npm run build` pass. Coverage currently reports 24.88% statements/lines, 68.75% branches, and 11.39% functions. The implementation verification recorded 14 migrations + seed, sequential PostgreSQL tests (`postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5), protected tablet E2E 7/7, returning-guest kiosk E2E 2/2, resilience E2E 3/3, and Chromium viewport review at 810×1080/1080×810 with no horizontal overflow. No production database, deployment, or infrastructure was changed.
 
-Checks run on 2026-10-08 from this workspace:
+Detailed evidence and scenario-level gaps are maintained in [`docs/implementation/FINAL_REPORT.md`](implementation/FINAL_REPORT.md), [`docs/implementation/RELEASE_CHECKLIST.md`](implementation/RELEASE_CHECKLIST.md), and [`docs/implementation/TEST_MATRIX.md`](implementation/TEST_MATRIX.md).
+
+Verification evidence from the baseline and the 2026-10-10 hardening run:
 
 | Check | Status | Notes |
 | --- | --- | --- |
 | `npm run lint` | PASS | No lint errors or warnings in the final run. |
 | `npm run typecheck` | PASS | Must be run after `next build`; a concurrent build can replace `.next/types` while TypeScript is reading it. |
-| `npm test` | PASS | Default host run passes 22 tests and skips 3 database-gated tests. |
-| `npm run build` | PASS | Next.js 16.4 standalone build completed. |
-| `npm run test:e2e -- --workers=1` | PASS (existing suite) | The existing 8-test desktop/tablet suite passes with configured credentials; Skills and Accounts CRUD still need dedicated browser coverage. |
-| Docker health | PASS | `docker compose --env-file .env -f docker/docker-compose.yml up -d --build` completed; PostgreSQL and the app report healthy, phone normalization and legacy-`STARTED` migrations applied, and read-only health/board/services API checks passed. |
+| `npm test -- --run` | PASS | 31 tests passed; 9 DB-gated tests skipped when no disposable DB variables are provided. |
+| `npm run test:coverage` | PASS | Current rerun: 24.88% statements/lines, 68.75% branches, 11.39% functions. |
+| `npm run build` | PASS | Next.js 16.4.0 Turbopack production build completed and compiled the current route inventory. |
+| DB-gated Vitest | PASS (recorded implementation run) | Disposable PostgreSQL: `postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5; sequential execution required. |
+| Playwright/viewport evidence | PASS with limitations | Protected tablet 7/7, returning kiosk 2/2, resilience 3/3, and Chromium portrait/landscape review; physical iPad/WebKit and real Wi-Fi remain. |
+| Docker health | Previously PASS; not re-verified here | Earlier Compose verification recorded healthy app/PostgreSQL and applied phone/legacy-`STARTED` migrations. The current restricted shell cannot access the Docker socket. |
 
 ## Runtime
 
@@ -85,23 +102,24 @@ Checks run on 2026-10-08 from this workspace:
 
 ## Open issues
 
-- The unprivileged shell cannot probe `127.0.0.1:3000` directly, but Docker's app healthcheck is passing after the latest rebuild.
-- The unprivileged shell still cannot bind a local web server (`EPERM`); the current E2E pass used an approved local runtime with the server already running.
+- Earlier Docker verification recorded a passing app healthcheck after the latest rebuild; the current restricted shell cannot re-query it.
+- The current restricted shell cannot access the Docker socket or bind/probe a local web server; the recorded E2E pass used an approved isolated runtime.
 - `POST /api/jobs/closing` requires `CRON_SECRET` or an admin session in every runtime.
 - `scripts/trigger-closing.sh` fails when `CRON_SECRET` is missing.
-- The workspace currently has no `.git` directory, so branch/diff/commit state cannot be verified here.
+- The workspace still has no `.git` directory; this snapshot is tracked through the attached external Git metadata at `/private/tmp/wellness-salon-git` and pushed to `origin/main`.
 
 ## Technical debt
 
-- Add a disposable PostgreSQL Playwright fixture for the full kiosk → board → payment → report journey.
-- Expand Playwright coverage for the new admin CRUD workflows after the local listener restriction is removed.
-- Add scheduler observability, retry policy, and a production deployment example after the secret/domain approval gate is available.
-- Add a disposable PostgreSQL fixture for end-to-end reporting verification.
-- Add retention/cleanup policy for expired `VerifiedStaffSession` and old `CommandReceipt` records.
+- Complete physical iPad/WebKit, distance readability, Dynamic Type/VoiceOver, real Wi-Fi, offline submission, and modal interaction review.
+- Measure staging/deployed pool, lock-wait, network, and representative-history behavior; document backup/restore rollback.
+- Expand remaining scenario coverage listed in `docs/implementation/TEST_MATRIX.md`, especially repeated staff actions, session revalidation, stale board versions, and closing/retention paths.
+- Add dedicated DB/E2E coverage for the follow-up category, payment-history, refund, and turn-history paths before treating them as release-gated evidence.
+- Configure scheduler observability/retry/alerting only after the deferred operations decision is reopened.
+- Add retention/cleanup policy execution and operator runbook details for expired `VerifiedStaffSession` and old `CommandReceipt` records.
 
 ## Next recommended task
 
-1. From a host with Docker access, run `scripts/trigger-closing.sh` against the healthy Compose stack and capture the response.
-2. Run `RUN_DB_TESTS=true npm run test:coverage` against a disposable PostgreSQL database.
-3. Expand Playwright to cover station authentication, staff PIN verification, skip/reroute, finish, admin payment confirmation, report reconciliation, and the new Skills/Accounts CRUD workflows.
+1. From a host with Docker access, verify Compose health and run the closing trigger against the disposable/approved stack without printing `.env`.
+2. Run `RUN_DB_TESTS=true` with an isolated `TEST_DATABASE_URL` and capture any new DB-gated coverage result.
+3. Execute the physical tablet/WebKit and real-network run sheet in `docs/implementation/TABLET_QA_PLAN.md`.
 4. Only after those checks pass, take the production TLS, secret, scheduler, and deploy approvals described in `docs/lifecycle/approvals/README.md`.

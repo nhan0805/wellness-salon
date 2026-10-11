@@ -1,0 +1,6 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Wellness Salon mark</title>
+  <rect x="16" y="16" width="480" height="480" rx="136" fill="#E8BFC5"/>
+  <path d="M166 132C211 105 301 105 346 132" stroke="#8F5360" stroke-width="14" stroke-linecap="round"/>
+  <path d="M108 178L153 329C159 350 186 353 194 332L236 180C242 158 272 158 279 180L321 332C329 353 356 350 362 329L407 178" stroke="#51464A" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

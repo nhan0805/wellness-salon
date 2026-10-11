@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/src/server/auth';
-import { currentDbBusinessDate, formatBusinessDate, formatBusinessMonth, getDbAppointmentsFiltered, parseBusinessDate, parseBusinessMonth } from '@/src/server/services/prisma-operations';
+import { currentDbBusinessDate, formatBusinessDate, formatBusinessMonth, getDbAppointmentFilterOptions, getDbAppointmentsFiltered, getDbAppointmentsPage, parseBusinessDate, parseBusinessMonth } from '@/src/server/services/prisma-operations';
 import { jsonError } from '@/src/server/request-security';
 
 export const runtime = 'nodejs';
@@ -38,20 +38,40 @@ export async function GET(request: Request) {
   }
   const status = searchParams.get('status') ?? undefined;
   const payment = searchParams.get('payment');
+  const paymentMethod = searchParams.get('paymentMethod');
   const serviceCount = searchParams.get('serviceCount');
   const sort = searchParams.get('sort');
-  const appointments = await getDbAppointmentsFiltered({
+  const filters = {
     start,
     end,
     search: searchParams.get('search') ?? undefined,
     status,
     payment: payment === 'PAID' || payment === 'UNPAID' ? payment : undefined,
+    paymentMethod: paymentMethod === 'CARD' || paymentMethod === 'CASH' ? paymentMethod : undefined,
     staffId: searchParams.get('staffId') ?? undefined,
     serviceId: searchParams.get('serviceId') ?? undefined,
     serviceStatus: searchParams.get('serviceStatus') ?? undefined,
     serviceCount: serviceCount === 'SINGLE' || serviceCount === 'MULTI' ? serviceCount : undefined,
-    sort: sort === 'OLDEST' || sort === 'AMOUNT_DESC' || sort === 'DURATION_DESC' ? sort : 'NEWEST',
-  });
+    sort: sort === 'OLDEST' || sort === 'AMOUNT_DESC' || sort === 'DURATION_DESC' || sort === 'PAYMENT_NEWEST' || sort === 'PAYMENT_OLDEST' ? sort : 'NEWEST',
+  } as const;
+  const requestedPage = Number(searchParams.get('page') ?? '');
+  const requestedPageSize = Number(searchParams.get('pageSize') ?? '');
+  const isPaginated = searchParams.has('page') || searchParams.has('pageSize');
+  if (isPaginated) {
+    const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const pageSize = Number.isInteger(requestedPageSize) && requestedPageSize > 0 ? Math.min(requestedPageSize, 50) : 25;
+    const [result, filterOptions] = await Promise.all([getDbAppointmentsPage(filters, page, pageSize), getDbAppointmentFilterOptions()]);
+    return NextResponse.json({
+      ...(period === 'month' ? { businessMonth: formatBusinessMonth(start) } : {}),
+      ...(period === 'day' ? { businessDate: formatBusinessDate(start) } : {}),
+      ...(period === 'range' ? { from: formatBusinessDate(start), to: formatBusinessDate(new Date(end.getTime() - 24 * 60 * 60 * 1000)) } : {}),
+      appointments: result.appointments,
+      pagination: { page: result.page, pageSize: result.pageSize, total: result.total, totalPages: result.totalPages },
+      summary: { totalRevenue: result.totalRevenue, totalDuration: result.totalDuration },
+      filterOptions,
+    });
+  }
+  const appointments = await getDbAppointmentsFiltered(filters);
   return NextResponse.json({
     ...(period === 'month' ? { businessMonth: formatBusinessMonth(start) } : {}),
     ...(period === 'day' ? { businessDate: formatBusinessDate(start) } : {}),

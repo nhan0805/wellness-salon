@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-10-09
+Last updated: 2026-10-11
 
 ## System overview
 
@@ -59,13 +59,13 @@ docker/                      Build, Compose, entrypoint, nginx
 - `src/domain/state-machines.ts`: valid appointment, turn, and attendance transitions.
 - `src/domain/reconciliation.ts`: card + cash reconciliation and labels.
 - `src/domain/concurrency.ts`: in-memory serialization used by logic tests.
-- `src/server/services/prisma-operations.ts`: transactional database implementation for catalog, board, check-in, payments, reports, closing, and staff actions.
-- `src/server/services/admin-operations.ts`: transactional PostgreSQL reads/writes for attendance, customers, staff, skills, services, and auth accounts, including audit events and safe lifecycle rules.
-- `src/components/admin-management.tsx`: responsive admin tables/forms for attendance, customer CRUD, staff lifecycle, and service catalog lifecycle.
+- `src/server/services/prisma-operations.ts`: transactional database implementation for catalog, board, check-in, payments, payment history/corrections/refunds, reports, closing, turn-event history, and staff actions.
+- `src/server/services/admin-operations.ts`: transactional PostgreSQL reads/writes for attendance, customers, staff, skills, service categories/services, and auth accounts, including audit events and safe lifecycle rules.
+- `src/components/admin-management.tsx`: responsive admin tables/forms for attendance, customer CRUD/history, staff lifecycle, and category-aware service catalog lifecycle.
 - `src/components/admin-access.tsx`: responsive admin tables/forms for skill definitions and ADMIN/STATION account lifecycle.
 - `src/server/services/turn-engine.ts`: advisory-lock key and shared staff selection helpers.
 - `src/server/auth.ts`: Auth.js credentials, role/session setup.
-- `src/server/security.ts`: Argon2id and in-memory failed-PIN lockout.
+- `src/server/security.ts`: Argon2id, process-local fast-path protection, and database-backed failed-PIN lockout.
 - `src/server/request-security.ts`: trusted-origin validation and JSON errors.
 - `proxy.ts`: CSP and browser security headers.
 
@@ -85,12 +85,27 @@ docker/                      Build, Compose, entrypoint, nginx
 | GET/POST/PATCH/DELETE | `/api/admin/customers` | Read, create, update, or safely delete customer profiles. | `ADMIN` |
 | GET/POST/PATCH/DELETE | `/api/admin/staff` | Read, create, update, deactivate, or reactivate staff and skills. | `ADMIN` |
 | GET/POST/PATCH/DELETE | `/api/admin/services` | Read, create, update, archive, or reactivate service catalog entries. | `ADMIN` |
+| GET/POST/PATCH/DELETE | `/api/admin/service-categories` | Read, create, update, or archive service categories; active services must move before a category can be archived. | `ADMIN` |
 | GET/POST/PATCH/DELETE | `/api/admin/skills` | Read, create, rename, or safely delete skill definitions. | `ADMIN` |
 | GET/POST/PATCH/DELETE | `/api/admin/accounts` | Read, create, update, reset password, activate/deactivate, or safely delete Auth.js accounts. | `ADMIN` |
+| GET | `/api/admin/appointments/[id]/turn-history` | Return the append-only turn-event history for one appointment. | `ADMIN` |
+| GET | `/api/admin/customers/[id]/history` | Return filtered customer visit/payment history and summary totals. | `ADMIN` |
+| GET | `/api/admin/payments/[appointmentId]/history` | Return the payment state and audited payment event history. | `ADMIN` |
+| POST | `/api/admin/payments/adjust` | Adjust amount, method, tip, or cash details with reason, idempotency, and audit metadata. | `ADMIN` |
+| POST | `/api/admin/payments/correct` | Correct method/tip bookkeeping without deleting the original audit trail. | `ADMIN` |
+| POST | `/api/admin/payments/refund` | Record a full/partial refund against a confirmed payment with reason and audit metadata. | `ADMIN` |
+| POST | `/api/admin/appointments/cancel` | Cancel a service or visit with scope, reason, idempotency, and audited capacity release/reroute. | `ADMIN` |
+| POST | `/api/admin/appointments/reassign` | Reassign an active/waiting service with reason and audited idempotency. | `ADMIN` |
+| POST | `/api/admin/appointments/change-service` | Preview/apply an active service change with snapshot and skill revalidation. | `ADMIN` |
+| POST | `/api/admin/appointments/override-exclusion` | Override an exact-service skip exclusion with an explicit reason and audit event. | `ADMIN` |
+| POST | `/api/admin/queue/reconcile` | Explicitly repair waiting/assignment state; reads never perform hidden writes. | `ADMIN` |
+| GET/POST/PATCH/DELETE | `/api/admin/skip-reasons` | Read and manage active skip-reason master data. | `ADMIN` |
+| GET/POST | `/api/admin/config` | Read/update authoritative shop timezone, hours, currency, routing and session configuration. | `ADMIN` |
 | POST | `/api/jobs/closing` | Automatically close open attendance. | `CRON_SECRET` or `ADMIN` |
+| POST | `/api/jobs/retention` | Remove expired operational receipts/sessions under protected retention policy. | `CRON_SECRET` or `ADMIN` |
 | GET/POST | `/api/auth/[...nextauth]` | Auth.js credentials/session handler. | Auth.js |
 
-When a request includes an `Origin`, mutations accept the request origin/configured `NEXTAUTH_URL` or equivalent local host/port in development. Requests without an `Origin` are allowed to support server-side cron calls; production scheduler access therefore depends on `CRON_SECRET`.
+When a request includes an `Origin`, mutations accept the request origin/configured `NEXTAUTH_URL` or equivalent local host/port in development. Requests without an `Origin` are allowed to support server-side cron calls; production scheduler access therefore depends on `CRON_SECRET`. `ShopConfig` is authoritative for business timezone, opening/closing, currency, routing mode, and session TTL; environment values are bootstrap fallbacks.
 
 The board client opens the public SSE stream and polls `GET /api/board` every 3 seconds. SSE currently provides the initial snapshot and keepalives; the polling path detects database changes such as a new kiosk check-in without reloading the page. The board UI separates queue operations and staff attendance into tabs; attendance uses prominent labeled actions while preserving the same protected PIN flow. Each `Up next` card renders the appointment's full ordered `AppointmentService` bundle, including completed/next/queued progress and combined duration; routing still advances one service at a time.
 
@@ -110,10 +125,10 @@ Supporting staff is attached to an appointment and does not create a second paym
 
 ## Database model
 
-- Catalog: `Skill`, `Service`, `ServiceSkill`, `ShopConfig`. `Service` deliberately has no category field; a service may require multiple skills and routing only considers staff who have all of them. The kiosk presents one or more service names, durations, and prices, then creates an ordered appointment bundle.
+- Catalog: `ServiceCategory`, `Service`, `ServiceSkill`, `ShopConfig`. Categories are ordered, archivable catalog presentation data; they do not affect routing. A service has one category, an icon, and one or more required skills, and routing only considers staff who have all of them. The kiosk groups active services by category, then creates an ordered appointment bundle.
 - People/auth: `Staff`, `StaffSkill`, `AuthUser`, `Customer`.
-- Operations: `Appointment`, ordered `AppointmentService` bundle, `Turn`, `AppointmentSupportingStaff`, `Attendance`, `StaffServiceState`.
-- Money/audit/idempotency: `Payment`, `AuditEvent`, `CommandReceipt`.
+- Operations: `Appointment`, ordered `AppointmentService` bundle, `Turn`, append-only `TurnEvent` history, `AppointmentSupportingStaff`, `Attendance`, `StaffServiceState`.
+- Money/audit/idempotency: `Payment`, `PaymentItem`, `AuditEvent`, `CommandReceipt`. Payment adjustments, corrections, and refunds update the current payment state only through admin commands and retain previous/current details in audit events; no card data or gateway transaction is stored.
 - Session bridge: `VerifiedStaffSession` maps a station user to a short-lived verified staff PIN session.
 
 Important constraints:
@@ -130,13 +145,23 @@ The database path starts assignment/check-in and other shop mutations inside a t
 SELECT pg_advisory_xact_lock(hashtextextended('nail-shop:default:' || business_date, 0));
 ```
 
-This serializes competing queue operations even when the candidate row does not yet exist. Database uniqueness and command receipts provide the second line of defense. The key must include tenant identity if the system becomes multi-tenant.
+This serializes competing queue operations even when the candidate row does not yet exist. Database uniqueness and command receipts provide the second line of defense. Receipts store a request hash, replay the original response for the same key/payload, and reject a reused key with different details. Board mutations increment a monotonic `ShopConfig.stateVersion`; clients ignore stale versions and recover through bounded polling/reconnect. The key must include tenant identity if the system becomes multi-tenant.
+
+## Operational hardening
+
+- Board reads and SSE snapshots are side-effect free. Assignment repair is an explicit manager command or a safe mutation boundary, so refresh storms cannot create hidden writes.
+- Appointment history uses server-side filters, deterministic ordering, bounded 25-row pages, summary aggregates, and a lean response projection rather than loading the full history into the browser.
+- Admin appointment actions use a compact menu for payment/history/change/reassign/override/cancel operations; turn history stores actor and assigned-staff snapshots so later staff/account changes do not erase operational context.
+- The service catalog supports category CRUD/archive, category filtering on Admin, category grouping on the kiosk, and searchable service-icon selection. Static timezone/currency option lists keep configuration labels deterministic across server and browser renders.
+- Payment history is audit-backed rather than a separate adjustment table: current payment values remain queryable for reports, while adjustment/correction/refund events retain reason, actor, and previous/current or refunded amounts.
+- Critical APIs emit request IDs and structured completion timings; rejected commands, advisory-lock waits, board snapshot version/time, and closing/retention outcomes are available for deployment logging.
+- Closing and retention are protected job endpoints. The application does not run an internal scheduler; deployment operators own scheduling, retries, alerting, and secret rotation.
 
 ## Security design
 
 - Passwords and staff PINs are Argon2id hashes using memory cost 19,456 KiB, time cost 2, and parallelism 1.
 - Auth.js session cookie is httpOnly, strict same-site, and secure in production unless explicitly disabled for local development.
-- Five failed PIN attempts temporarily lock that staff ID for 60 seconds in process memory.
+- Five failed PIN attempts temporarily lock that staff ID for 60 seconds. A process-local fast path protects the current instance and a `StaffPinLockout` row makes the lockout durable across restarts/processes.
 - Staff mutations require a four-digit PIN or an unexpired verified session; admin payment confirmation requires an admin role.
 - The public board read endpoints intentionally expose operational turn codes, redacted guest labels, service details, and staff availability needed for the floor display; customer phone numbers and names stay hidden, while mutations remain protected by station/admin auth and staff verification.
 - Admin management mutations require an admin role, validate all body fields with Zod, enforce trusted origins, and append audit events. Staff initials are derived server-side from the staff name; customer records with appointment history are not hard-deleted; skills in use cannot be deleted; staff and services are deactivated/archived; and the last active admin/current admin session cannot be removed from admin access.
@@ -169,7 +194,7 @@ See `.env.example` and `docker/docker-compose.yml`.
 | `AUTH_TRUST_HOST` | Auth.js trusted-host setting. | `true` |
 | `NEXTAUTH_URL` | Canonical local/configured origin. | `http://localhost:3000` |
 | `SHOP_TIMEZONE` | Bootstrap fallback only when `ShopConfig` has not been seeded. | `Asia/Ho_Chi_Minh` |
-| `CRON_SECRET` | Required scheduler authorization for closing job. | Set through `.env` |
+| `CRON_SECRET` | Required scheduler authorization for closing and retention jobs. | Set through `.env` |
 
 ## Coding standards
 

@@ -1,8 +1,7 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowRight, CheckCircle2, Sparkles, LogIn } from 'lucide-react';
+import { ArrowRight, Sparkles, LogIn } from 'lucide-react';
 import { auth } from '@/src/server/auth';
-import RolePreview from '@/src/components/role-preview';
 
 export default async function HomePage() {
   const session = await auth();
@@ -17,11 +16,11 @@ export default async function HomePage() {
   }
 
   return (
-    <main className="landing-shell page-root">
+    <main className="entry-shell page-root">
       <header className="app-topbar">
-        <Link className="brand" href="/" aria-label="Wellness Salon Management home">
+        <Link className="brand" href="/" aria-label="Wellness Salon home">
           <span className="brand-mark"><Sparkles size={19} aria-hidden="true" /></span>
-          <span className="brand-copy">Wellness Salon <small>Management</small></span>
+          <span className="brand-copy">Wellness Salon <small>Operations</small></span>
         </Link>
         <div className="topbar-actions">
           <Link className="button button-quiet button-sm" href="/sign-in">
@@ -30,18 +29,16 @@ export default async function HomePage() {
           </Link>
         </div>
       </header>
-      <section className="container landing-hero">
-        <div>
-          <div className="eyebrow">One calm operating system</div>
-          <h1>Make every turn feel <span>intentional.</span></h1>
-          <p>A tablet-first command center for welcoming guests, routing the right specialist, and closing the day with confidence.</p>
-          <div className="landing-cta">
-            <Link className="button button-primary" href="/kiosk">Open customer kiosk <ArrowRight size={17} aria-hidden="true" /></Link>
-            <Link className="button button-outline" href="/board">View turn board</Link>
+      <section className="container entry-screen" aria-labelledby="entry-title">
+        <div className="entry-card">
+          <div className="eyebrow">Wellness Salon</div>
+          <h1 id="entry-title">Choose where to start</h1>
+          <p>Open customer check-in or the live queue.</p>
+          <div className="entry-actions">
+            <Link className="button button-primary" href="/kiosk">Customer check-in <ArrowRight size={17} aria-hidden="true" /></Link>
+            <Link className="button button-outline" href="/board">Live queue</Link>
           </div>
-          <div className="landing-note"><CheckCircle2 size={17} aria-hidden="true" /> <span>Designed for the front desk, the floor, and the owner’s end-of-day review.</span></div>
         </div>
-        <RolePreview />
       </section>
     </main>
   );

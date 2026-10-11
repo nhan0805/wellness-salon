@@ -4,6 +4,7 @@ import { staffActionSchema } from '@/src/server/validation';
 import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
 import { getDbBoardState, staffActionDb } from '@/src/server/services/prisma-operations';
 import { observeApiRequest } from '@/src/server/observability';
+import { logEvent } from '@/src/server/logger';
 
 export const runtime = 'nodejs';
 
@@ -12,7 +13,12 @@ export async function GET(request: Request) {
     const session = await auth();
     const role = session?.user?.role;
     const isStaffViewer = ['STATION', 'ADMIN'].includes(role ?? '');
-    return NextResponse.json({ ...(await getDbBoardState({ publicView: !isStaffViewer })), viewerRole: isStaffViewer ? role : null });
+    const board = await getDbBoardState({ publicView: !isStaffViewer });
+    logEvent('info', 'board.snapshot.served', { stateVersion: board.version, publicView: !isStaffViewer, snapshotAt: board.at });
+    const response = NextResponse.json({ ...board, viewerRole: isStaffViewer ? role : null });
+    response.headers.set('X-Board-Version', String(board.version));
+    response.headers.set('X-Board-Snapshot-At', board.at);
+    return response;
   });
 }
 
