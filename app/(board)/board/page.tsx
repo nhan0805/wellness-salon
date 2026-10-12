@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, ClipboardList, Clock3, LogIn, LogOut, MessageSquareWarning, Plus, RefreshCcw, Scissors, Search, Sparkles, UserCheck, Users, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, ClipboardList, Clock3, LogIn, LogOut, MessageSquareWarning, Plus, RefreshCcw, Scissors, Search, ShieldCheck, Sparkles, UserCheck, Users, X } from 'lucide-react';
 import { InitialsAvatar } from '@/src/components/ui';
+import { AccountMenu } from '@/src/components/account-menu';
+import { PinKeypad } from '@/src/components/pin-keypad';
 import { SignOutButton } from '@/src/components/sign-out-button';
+import SafariLoginLink from '@/src/components/safari-login-link';
 import { useDialogFocus } from '@/src/components/use-dialog-focus';
+import type { AccountViewer } from '@/src/domain/viewer';
 
 type Staff = { id: string; name: string; initials: string; isPresent: boolean; availability: 'AVAILABLE' | 'BUSY'; skills: string[] };
 type AppointmentService = {
@@ -19,13 +23,21 @@ type AppointmentService = {
   turns: Array<{ status: string; reason: string | null; skipReasonNameSnapshot?: string | null }>;
 };
 type Appointment = { id: string; code: string; customerName: string; serviceName: string; durationMin: number; amount: number; status: string; primaryStaffId: string | null; createdAt: string; supportingStaffIds: string[]; turns: Array<{ status: string; reason: string | null; skipReasonNameSnapshot?: string | null }>; services: AppointmentService[] };
-type BoardState = { current: Appointment | null; currentTurns: Appointment[]; upNext: Appointment[]; staff: Staff[]; skipReasons: Array<{ id: string; name: string }>; shop: { timezone: string; openingTime: string; closingTime: string; currency: string }; version: number; at: string; viewerRole: 'ADMIN' | 'STATION' | null };
+type BoardState = { current: Appointment | null; currentTurns: Appointment[]; upNext: Appointment[]; staff: Staff[]; skipReasons: Array<{ id: string; name: string }>; shop: { timezone: string; openingTime: string; closingTime: string; currency: string }; version: number; at: string; viewerRole: 'ADMIN' | 'STATION' | null; viewer: AccountViewer | null };
 type Action = 'ACCEPT' | 'SKIP' | 'FINISH' | 'CHECK_IN' | 'CHECK_OUT' | 'ADD_SUPPORT' | 'CONTINUE_WITH_ME';
 type BoardTab = 'turns' | 'staff';
 type AttendanceAction = Extract<Action, 'CHECK_IN' | 'CHECK_OUT'>;
 type SyncStatus = 'LIVE' | 'POLLING' | 'RECONNECTING' | 'STALE';
+type StaffVerification = { staffId: string; staffName: string; expiresAt: number };
 
-const emptyBoard: BoardState = { current: null, currentTurns: [], upNext: [], staff: [], skipReasons: [], shop: { timezone: 'Asia/Ho_Chi_Minh', openingTime: '09:00', closingTime: '21:00', currency: 'USD' }, version: 0, at: '', viewerRole: null };
+const emptyBoard: BoardState = { current: null, currentTurns: [], upNext: [], staff: [], skipReasons: [], shop: { timezone: 'Asia/Ho_Chi_Minh', openingTime: '09:00', closingTime: '21:00', currency: 'USD' }, version: 0, at: '', viewerRole: null, viewer: null };
+
+function formatVerificationRemaining(expiresAt: number, now = Date.now()) {
+  const totalSeconds = Math.max(0, Math.ceil((expiresAt - now) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
 
 function StaffAttendancePanel({ staff, viewerRole, onAction }: { staff: Staff[]; viewerRole: BoardState['viewerRole']; onAction: (action: AttendanceAction, staffId: string) => void }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -43,8 +55,46 @@ function StaffAttendancePanel({ staff, viewerRole, onAction }: { staff: Staff[];
   return <section className="card card-pad staff-attendance-panel" aria-labelledby="staff-attendance-title">
     <div className="card-title-row staff-attendance-header"><div className="staff-attendance-heading"><h2 className="card-title" id="staff-attendance-title">Staff attendance</h2><p>Check specialists in for the day or check them out when their work is complete.</p><div className="staff-attendance-summary"><span className="status-badge status-success">{presentCount} present</span><span className="status-badge status-blue">{availableCount} available</span></div></div><div className="staff-attendance-header-tools"><label className="staff-search-field"><Search size={17} aria-hidden="true" /><span className="staff-search-label">Find staff</span><input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Type a name…" aria-label="Search staff by name" />{searchQuery ? <button type="button" className="staff-search-clear" onClick={clearSearch} aria-label="Clear staff search"><X size={17} aria-hidden="true" /></button> : null}</label></div></div>
     <span className="sr-only" aria-live="polite">{normalizedQuery ? `${filteredStaff.length} staff ${filteredStaff.length === 1 ? 'member' : 'members'} found` : ''}</span>
-    {!viewerRole ? <div className="staff-attendance-login" role="note"><Users size={20} aria-hidden="true" /><div><strong>Staff actions are protected</strong><span>Sign in to manage attendance and verify each action with a staff PIN.</span></div><Link className="button button-secondary button-sm" href="/sign-in"><LogIn size={15} aria-hidden="true" /> Log in</Link></div> : null}
+    {!viewerRole ? <div className="staff-attendance-login" role="note"><Users size={20} aria-hidden="true" /><div><strong>Staff actions are protected</strong><span>Sign in to manage attendance and verify each action with a staff PIN.</span></div><SafariLoginLink className="button button-secondary button-sm" href="/sign-in"><LogIn size={15} aria-hidden="true" /> Log in</SafariLoginLink></div> : null}
     {staff.length ? filteredStaff.length ? <div className="staff-attendance-grid">{staffCards}</div> : <div className="empty-state staff-search-empty"><Search size={27} aria-hidden="true" /><div><strong>No staff found</strong><span>Try another name or clear your search.</span><button type="button" className="button button-quiet button-sm" onClick={clearSearch}>Clear search</button></div></div> : <div className="empty-state"><Users size={28} aria-hidden="true" /><span>No active staff records.</span></div>}
+  </section>;
+}
+
+function StaffAvailabilityRail({ staff }: { staff: Staff[] }) {
+  const presentCount = staff.filter((member) => member.isPresent).length;
+  const availableCount = staff.filter((member) => member.isPresent && member.availability === 'AVAILABLE').length;
+  const visibleStaff = staff
+    .filter((member) => member.isPresent)
+    .sort((left, right) => Number(left.availability === 'BUSY') - Number(right.availability === 'BUSY'))
+    .slice(0, 5);
+
+  return <section className="card card-pad staff-availability-rail" aria-labelledby="staff-availability-title">
+    <div className="card-title-row">
+      <div>
+        <div className="eyebrow">Team pulse</div>
+        <h2 className="card-title" id="staff-availability-title">Staff availability</h2>
+        <p>Who is ready for the next service.</p>
+      </div>
+      <span className="status-badge status-success">{availableCount} ready</span>
+    </div>
+    <div className="staff-availability-summary" aria-label={`${presentCount} staff checked in, ${availableCount} available`}>
+      <strong>{presentCount}</strong>
+      <span>checked in</span>
+    </div>
+    {visibleStaff.length ? <div className="staff-availability-list">
+      {visibleStaff.map((member) => <div className="staff-availability-row" key={member.id}>
+        <InitialsAvatar initials={member.initials} tone={member.availability === 'BUSY' ? 'orange' : 'teal'} />
+        <div>
+          <strong>{member.name}</strong>
+          <span>{member.availability === 'BUSY' ? 'Serving a guest' : 'Ready for next guest'}</span>
+        </div>
+        <span className={`staff-availability-dot ${member.availability === 'BUSY' ? 'is-busy' : 'is-ready'}`} aria-label={member.availability === 'BUSY' ? 'Busy' : 'Available'} />
+      </div>)}
+    </div> : <div className="staff-availability-empty">
+      <Users size={20} aria-hidden="true" />
+      <span>No staff checked in yet.</span>
+    </div>}
+    {presentCount > visibleStaff.length ? <span className="staff-availability-more">+{presentCount - visibleStaff.length} more on the Staff tab</span> : null}
   </section>;
 }
 
@@ -63,6 +113,8 @@ export default function BoardPage() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('POLLING');
   const [activeTab, setActiveTab] = useState<BoardTab>('turns');
   const [expandedQueueItems, setExpandedQueueItems] = useState<Record<string, boolean>>({});
+  const [verifiedStaffSession, setVerifiedStaffSession] = useState<StaffVerification | null>(null);
+  const [verificationNow, setVerificationNow] = useState(() => Date.now());
   const actionSequenceRef = useRef(0);
   const requestSequenceRef = useRef(0);
   const requestControllerRef = useRef<AbortController | null>(null);
@@ -72,6 +124,18 @@ export default function BoardPage() {
   const availableStaff = board.staff.filter((member) => member.isPresent && member.availability === 'AVAILABLE');
   const modalStaff = modal?.action === 'ADD_SUPPORT' ? availableStaff : board.staff;
   const selectedStaffIsValid = modalStaff.some((member) => member.id === selectedStaffId);
+  const selectedStaff = modalStaff.find((member) => member.id === selectedStaffId);
+  const activeVerifiedStaff = verifiedStaffSession && verifiedStaffSession.expiresAt > verificationNow ? verifiedStaffSession : null;
+  const selectedStaffIsVerified = Boolean(activeVerifiedStaff && selectedStaff && activeVerifiedStaff.staffId === selectedStaff.id);
+  const staffSelectionLocked = Boolean(modal && ['ACCEPT', 'SKIP', 'FINISH', 'CONTINUE_WITH_ME'].includes(modal.action));
+  const verificationActionLabel = modal ? ({ ACCEPT: 'accept this service', SKIP: 'skip this service', FINISH: 'finish this service', CHECK_IN: 'check in', CHECK_OUT: 'check out', ADD_SUPPORT: 'add support', CONTINUE_WITH_ME: 'continue with this specialist' } as const)[modal.action] : '';
+  const pinCanSubmit = selectedStaffIsVerified ? pin.length === 0 || pin.length === 4 : pin.length === 4;
+
+  useEffect(() => {
+    if (!verifiedStaffSession) return;
+    const timer = window.setInterval(() => setVerificationNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [verifiedStaffSession]);
 
   const closeActionModal = useCallback(() => {
     setModal(null);
@@ -177,7 +241,7 @@ export default function BoardPage() {
 
   async function submitAction(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!modal) return;
+    if (!modal || !selectedStaffIsValid || !pinCanSubmit) return;
     setLoading(true);
     setNotice('');
     try {
@@ -197,9 +261,15 @@ export default function BoardPage() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? 'Action failed');
-      const selectedStaffName = modalStaff.find((member) => member.id === selectedStaffId)?.name ?? 'Staff member';
+      const selectedStaffName = selectedStaff?.name ?? 'Staff member';
+      const returnedExpiry = payload.verifiedStaffSessionExpiresAt ? new Date(payload.verifiedStaffSessionExpiresAt).getTime() : null;
+      const nextExpiry = returnedExpiry && Number.isFinite(returnedExpiry) ? returnedExpiry : selectedStaffIsVerified ? activeVerifiedStaff?.expiresAt ?? null : null;
+      if (nextExpiry && nextExpiry > Date.now()) {
+        setVerifiedStaffSession({ staffId: selectedStaffId, staffName: selectedStaffName, expiresAt: nextExpiry });
+        setVerificationNow(Date.now());
+      }
       const updatedAppointmentCode = payload.appointment?.code ?? modal.appointmentId ?? 'this appointment';
-      setBoardNotice(modal.action === 'ADD_SUPPORT' ? `${selectedStaffName} added as support to ${updatedAppointmentCode}.` : 'Board updated.');
+      setBoardNotice(modal.action === 'ADD_SUPPORT' ? `${selectedStaffName} added as support to ${updatedAppointmentCode}.` : `${selectedStaffName} verified · Board updated.`);
       setModal(null);
       setSelectedStaffId('');
       setPin('');
@@ -227,15 +297,15 @@ export default function BoardPage() {
   }
 
   return (
-    <main className="board-shell page-root">
+    <main className={`board-shell page-root board-sync-${syncStatus.toLowerCase()}`}>
       <header className="app-topbar">
         <Link className="brand" href="/">
           <span className="brand-mark"><Sparkles size={19} aria-hidden="true" /></span>
           <span className="brand-copy">Wellness Salon <small>Queue board</small></span>
         </Link>
         <div className="topbar-actions">
-          {board.viewerRole === 'ADMIN' ? <Link className="button button-admin-nav" href="/admin"><span className="nav-action-icon"><ArrowLeft size={18} aria-hidden="true" /></span><span>Back to Admin</span></Link> : null}
-          {board.viewerRole ? <SignOutButton callbackUrl="/sign-in" className="button button-outline button-sm" /> : <Link className="button button-quiet button-sm" href="/sign-in"><LogIn size={16} aria-hidden="true" /> Log in</Link>}
+          {board.viewerRole === 'ADMIN' ? <Link className="button button-admin-nav" href="/admin"><span className="nav-action-icon"><ArrowLeft size={18} aria-hidden="true" /></span><span>Admin</span></Link> : null}
+          {board.viewer ? <AccountMenu viewer={board.viewer} callbackUrl="/sign-in" /> : board.viewerRole ? <SignOutButton callbackUrl="/sign-in" className="button button-outline button-sm" /> : <SafariLoginLink className="button button-quiet button-sm" href="/sign-in"><LogIn size={16} aria-hidden="true" /> Log in</SafariLoginLink>}
         </div>
       </header>
 
@@ -247,7 +317,8 @@ export default function BoardPage() {
             <p>View current appointments and the next guests in line. Sign in to manage queue actions.</p>
           </div>
           <div className="topbar-actions board-heading-actions">
-            <span className="board-last-updated" role="status" aria-live="polite">{board.at ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: board.shop.timezone }).format(new Date(board.at))}` : 'Waiting for update'} · {syncStatus === 'LIVE' ? 'Live' : syncStatus === 'POLLING' ? 'Checking' : syncStatus === 'RECONNECTING' ? 'Reconnecting' : 'Stale'}</span>
+            <span className={`board-last-updated board-sync-indicator board-sync-indicator-${syncStatus.toLowerCase()}`} role="status" aria-live="polite"><span className="board-sync-dot" aria-hidden="true" />{board.at ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: board.shop.timezone }).format(new Date(board.at))}` : 'Waiting for update'} · {syncStatus === 'LIVE' ? 'Live' : syncStatus === 'POLLING' ? 'Checking' : syncStatus === 'RECONNECTING' ? 'Reconnecting' : 'Stale'}</span>
+            {activeVerifiedStaff ? <span className="board-staff-verification" role="status" aria-live="polite"><ShieldCheck size={15} aria-hidden="true" /> {activeVerifiedStaff.staffName} verified · {formatVerificationRemaining(activeVerifiedStaff.expiresAt, verificationNow)}</span> : null}
             <button className="button button-outline button-sm" onClick={loadBoard}><RefreshCcw size={15} aria-hidden="true" /> Refresh</button>
           </div>
         </div>
@@ -354,18 +425,28 @@ export default function BoardPage() {
               </div>
             </section>
 
+            <StaffAvailabilityRail staff={board.staff} />
+
           </div>
         </div> : <div id="staff-panel" role="tabpanel" aria-labelledby="staff-tab"><StaffAttendancePanel staff={board.staff} viewerRole={board.viewerRole} onAction={(action, staffId) => openAction(action, undefined, staffId)} /></div>}
       </div>
 
       {modal ? <div className="modal-backdrop" role="presentation"><div className="modal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="verify-title">
-        <div className="modal-header"><div><h2 id="verify-title">{modal.action === 'CONTINUE_WITH_ME' ? 'Continue with this specialist?' : 'Verify this action'}</h2><p>{modal.action === 'CONTINUE_WITH_ME' ? 'The next service will move to the specialist currently serving this guest. The current assignment will be released.' : 'Select a staff member and enter the 4-digit PIN to confirm this action.'}</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={closeActionModal}><X size={18} aria-hidden="true" /></button></div>
+        <div className="modal-header"><div><div className="eyebrow">Staff PIN verification</div><h2 id="verify-title">{modal.action === 'CONTINUE_WITH_ME' ? 'Continue with this specialist?' : `Verify ${verificationActionLabel}`}</h2><p>{selectedStaff ? `Confirm this action for ${selectedStaff.name}.` : 'Choose a staff member, then enter their PIN.'}</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={closeActionModal}><X size={18} aria-hidden="true" /></button></div>
         <form className="form-grid" onSubmit={submitAction}>
-          <div className="field"><label htmlFor="staff-name">Select staff</label><select id="staff-name" value={selectedStaffIsValid ? selectedStaffId : ''} onChange={(event) => { setSelectedStaffId(event.target.value); setPin(''); }} required disabled={!modalStaff.length || ['ACCEPT', 'SKIP', 'FINISH', 'CONTINUE_WITH_ME'].includes(modal.action)}>{modalStaff.length ? modalStaff.map((member) => <option key={member.id} value={member.id}>{member.name}</option>) : <option value="">No staff currently available</option>}</select><span className="field-hint">{['ACCEPT', 'SKIP', 'FINISH'].includes(modal.action) ? 'This appointment is already assigned to the selected specialist.' : modal.action === 'CONTINUE_WITH_ME' ? 'Only the specialist currently serving this guest can continue the next service.' : 'Select the specialist completing this action.'}</span></div>
-          <div className="field"><label htmlFor="staff-pin">4-digit PIN</label><input id="staff-pin" name="verification-pin" type="password" inputMode="numeric" pattern="[0-9]*" maxLength={4} value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, ''))} autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="done" autoFocus placeholder="••••" /><span className="field-hint">Enter the staff PIN. Your verification stays active for the configured session.</span></div>
+          {!staffSelectionLocked ? <div className="field"><label htmlFor="staff-name">Select staff</label><select id="staff-name" value={selectedStaffIsValid ? selectedStaffId : ''} onChange={(event) => { setSelectedStaffId(event.target.value); setPin(''); }} required disabled={!modalStaff.length}>{modalStaff.length ? modalStaff.map((member) => <option key={member.id} value={member.id}>{member.name}</option>) : <option value="">No staff currently available</option>}</select><span className="field-hint">Select the specialist completing this action.</span></div> : null}
+          <div className="staff-verification-card" aria-live="polite"><div className="staff-verification-card-heading"><span className="staff-verification-icon"><ShieldCheck size={20} aria-hidden="true" /></span><div><span>Verifying for</span><strong>{selectedStaff?.name ?? 'Select a staff member'}</strong></div>{selectedStaffIsVerified ? <span className="status-badge status-success">PIN active</span> : null}</div>{selectedStaff ? <div className="staff-verification-meta"><span>{selectedStaff.isPresent ? 'Checked in today' : 'Not checked in today'}</span><span>{selectedStaff.availability === 'BUSY' ? 'Busy with a guest' : 'Available'}</span></div> : null}</div>
+          <PinKeypad
+            value={pin}
+            onChange={(nextPin) => { setPin(nextPin); if (notice) setNotice(''); }}
+            maxLength={4}
+            label={selectedStaff ? `${selectedStaff.name}’s 4-digit PIN` : 'Staff 4-digit PIN'}
+            hint={selectedStaffIsVerified ? `${selectedStaff?.name} is already verified for ${formatVerificationRemaining(activeVerifiedStaff?.expiresAt ?? verificationNow, verificationNow)}. You can confirm without entering the PIN again.` : selectedStaff ? `Enter ${selectedStaff.name}’s PIN. Verification stays active for the configured session.` : 'Choose a staff member before entering a PIN.'}
+            error={notice}
+            disabled={loading || !selectedStaffIsValid}
+          />
           {modal.action === 'SKIP' ? <div className="field"><label htmlFor="skip-reason">Reason for skip</label><select id="skip-reason" value={skipReasonId} onChange={(event) => setSkipReasonId(event.target.value)} required><option value="" disabled>Select a reason</option>{board.skipReasons.map((skipReason) => <option value={skipReason.id} key={skipReason.id}>{skipReason.name}</option>)}</select><span className="field-hint">This exclusion stays attached to this service until a manager explicitly overrides it.</span></div> : null}
-          {notice ? <p role="alert" className="subtle" style={{ color: 'var(--color-danger)' }}>{notice}</p> : null}
-          <div className="form-actions"><button className="button button-quiet" type="button" onClick={closeActionModal}>Cancel</button><button className="button button-primary" disabled={loading || !selectedStaffIsValid || (pin.length > 0 && pin.length !== 4)}>{loading ? 'Saving…' : <><UserCheck size={16} aria-hidden="true" /> {modal.action === 'CONTINUE_WITH_ME' ? 'Continue with me' : 'Confirm action'}</>}</button></div>
+          <div className="form-actions"><button className="button button-quiet" type="button" onClick={closeActionModal}>Cancel</button><button className="button button-primary" disabled={loading || !selectedStaffIsValid || !pinCanSubmit}>{loading ? 'Saving…' : <><UserCheck size={16} aria-hidden="true" /> {modal.action === 'CONTINUE_WITH_ME' ? selectedStaffIsVerified ? `Continue as ${selectedStaff?.name ?? 'staff'}` : 'Verify & continue' : selectedStaffIsVerified ? `Confirm for ${selectedStaff?.name ?? 'staff'}` : 'Verify & confirm'}</>}</button></div>
         </form>
       </div></div> : null}
       {boardNotice ? <div className="toast" role="status" aria-live="polite"><Check size={17} aria-hidden="true" />{boardNotice}</div> : null}

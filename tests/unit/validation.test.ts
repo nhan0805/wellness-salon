@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adminShopConfigSchema, checkInSchema, kioskCustomerLookupSchema } from '@/src/server/validation';
+import { adminServiceCreateSchema, adminShopConfigSchema, checkInSchema, kioskCustomerLookupSchema } from '@/src/server/validation';
 import { normalizePhoneNumber } from '@/src/domain/phone';
 
 describe('phone validation', () => {
@@ -24,5 +24,13 @@ describe('phone validation', () => {
     expect(adminShopConfigSchema.safeParse({ ...base, closingTime: '25:00' }).success).toBe(false);
     expect(adminShopConfigSchema.safeParse({ ...base, timezone: 'Not/A_Timezone' }).success).toBe(false);
     expect(adminShopConfigSchema.safeParse({ ...base, openingTime: '22:00', closingTime: '08:00' }).success).toBe(false);
+  });
+
+  it('supports a short optional service description', () => {
+    const base = { name: 'Gel Manicure', categoryId: 'category-manicure', durationMin: 45, price: 40, skillIds: ['skill-1'] };
+    const parsed = adminServiceCreateSchema.safeParse(base);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.description).toBe('');
+    expect(adminServiceCreateSchema.safeParse({ ...base, description: 'x'.repeat(141) }).success).toBe(false);
   });
 });

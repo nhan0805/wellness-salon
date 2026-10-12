@@ -1,5 +1,11 @@
 # Implementation changelog
 
+## 2026-10-12 payment confirmation follow-up
+
+- Added the shared `AmountKeypad` component to payment confirmation for final amount, card-terminal tip, cash tip, and cash received. The USD-first keypad collapses until focus/click, supports quick values, and remains keyboard/paste/delete accessible.
+- Removed `adjustmentReason` from the initial `confirmPaymentSchema`, confirm-payment service input, `payment.confirmed` audit metadata, and payment-history summary. The initial confirmation flow no longer asks for a reason when the final amount differs; later adjustment/correction/refund commands remain reasoned and audited.
+- Re-verified lint, typecheck, 34 default tests with 9 DB-gated skips, and the production build. No database migration is required for this contract/UI change.
+
 ## 2026-10-11 follow-up
 
 - Restored `ServiceCategory` as an explicit catalog taxonomy after the earlier category-free interim decision; added ordered/archive-safe category CRUD, migration backfill, Admin filtering, grouped kiosk presentation, and seeded categories.

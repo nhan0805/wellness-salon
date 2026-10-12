@@ -2,6 +2,23 @@
 
 Release-style history of meaningful repository changes. Dates use the project timezone context and are based on the artifacts currently present in the workspace.
 
+## Unreleased — 2026-10-12
+
+### Changed
+
+- Restored iPad standalone PWA mode with `display: standalone`, versioned manifest URL `?v=10`, Apple web-app capability/title/status metadata, and the existing 192px/512px app icons.
+- Kept the staff/admin login form available inside the installed PWA and removed the standalone-only “Testing the installed app” instruction banner from the production login screen.
+- Kept login credentials environment-only; no password or secret was hard-coded into the UI or client bundle.
+- Added one shared amount keypad for payment confirmation: final amount, card/cash tip, and cash received use the same USD-first input, quick values, keyboard support, and focus-to-expand behavior.
+- Removed `adjustmentReason` from the initial payment-confirmation schema, service, audit metadata, and history summary. Changing the final amount no longer opens or requires a reason field; post-confirmation adjustment, correction, and refund commands keep their own reason requirements.
+
+### Verification
+
+- `npm run lint`, `npm run typecheck`, `npm test -- --run` (34 passed, 9 DB-gated skips), and `npm run build` passed.
+- Docker Compose production rebuild passed; `docker-app-1` and PostgreSQL are healthy, `/api/health` returned `status: ok`, and the live manifest reports `display: standalone` with Apple capability/status/title tags.
+- The payment-confirmation keypad/API follow-up passed the same static gates; no database migration is required for the removed confirm-only field.
+- Physical iPad reinstall and WebKit keyboard behavior remain manual checks; remove and re-add the existing Home Screen icon before testing because iPad can cache install metadata.
+
 ## Unreleased — 2026-10-11
 
 ### Added

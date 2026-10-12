@@ -24,6 +24,14 @@ This tracker records the implementation authorized by the product/engineering br
 
 The current tree adds category-aware service catalog management, searchable service icons, append-only turn-event history, payment history, audited payment adjustment/correction/refund commands, and the compact appointment action menu. Static gates pass after the follow-up; dedicated disposable DB/E2E coverage for these new paths remains a backlog item. The earlier 2026-10-10 hardening phases and their evidence remain valid for the code paths they cover.
 
+## 2026-10-12 PWA follow-up
+
+Standalone PWA mode was restored for iPad testing: the manifest now uses `display: standalone`, the root layout emits Apple web-app metadata, and the manifest URL is versioned at `?v=10`. The login form remains visible inside the installed app without an extra PWA instruction banner. Credentials remain environment-only and are not prefilled in the client. Local lint/typecheck/build and 34 default tests (9 DB-gated skips without test DB variables) pass; Docker app/PostgreSQL health and the live manifest were verified. Physical iPad/WebKit behavior and secure-context service-worker checks remain open.
+
+## 2026-10-12 payment confirmation follow-up
+
+Payment confirmation now uses one shared, focus-to-expand amount keypad for the final amount, card-terminal tip, cash tip, and cash received fields. The initial confirm contract no longer carries `adjustmentReason`, and the confirm audit/history projection no longer stores or displays it; amount changes remain traceable through original/current amounts. Reason requirements remain on post-confirmation adjustment, correction, and refund commands. No migration is required. Keypad interaction on physical iPad/WebKit remains part of the manual QA gate.
+
 ## Baseline commands and outcomes
 
 These checks were run before implementation changes:

@@ -1,6 +1,6 @@
 # Project state
 
-Last updated: 2026-10-11
+Last updated: 2026-10-12
 
 ## Current project goal
 
@@ -71,6 +71,8 @@ Validate the hardening batch on real iPad/WebKit and staging-like infrastructure
 - Standardized the PWA, browser, Apple, and in-app brand icons on one rounded-square artwork set; versioned the manifest and icon URLs so installed clients can refresh the corrected assets.
 - Renamed the app metadata and installed PWA display name to `Wellness Salon` to match the app's visible brand and bumped the manifest URL cache version.
 - Replaced the PWA/browser icon artwork with the official Lucide `Sparkles` icon and new `icon-sparkles-*` asset URLs.
+- Restored standalone PWA mode for iPad testing: the manifest uses `display: standalone`, Apple web-app metadata is emitted by the root layout, the manifest URL is versioned at `?v=10`, and the sign-in form remains usable inside the installed app without an extra PWA instruction banner. Credentials remain environment-only.
+- Added the shared focus-to-expand amount keypad to payment confirmation for final amount, card/cash tip, and cash received; removed `adjustmentReason` completely from the initial confirm schema/service/audit/history path while retaining reasons for later adjustment/correction/refund commands.
 - Fixed the KPI seed script's Prisma types so the Docker production build remains reproducible after client generation.
 - Completed the iPad-first design pass: shared touch sizing, pastel status treatment, safe-area/reduced-motion rules, responsive queue cards, live refresh affordances, and audited Lucide icon usage across the three operational surfaces.
 - Removed the separate board `START` action; Accept transitions directly into service through `ACCEPTED`, and the legacy `STARTED` appointments/state are removed by migration.
@@ -78,7 +80,7 @@ Validate the hardening batch on real iPad/WebKit and staging-like infrastructure
 
 ## Build and test status
 
-Latest local static verification on 2026-10-11: `npm run db:generate`, `npm run lint`, `npm run typecheck`, `npm test -- --run` (31 passed, 9 DB-gated skipped without DB env), `npx prisma validate`, `npm run test:coverage`, and `npm run build` pass. Coverage currently reports 24.88% statements/lines, 68.75% branches, and 11.39% functions. The implementation verification recorded 14 migrations + seed, sequential PostgreSQL tests (`postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5), protected tablet E2E 7/7, returning-guest kiosk E2E 2/2, resilience E2E 3/3, and Chromium viewport review at 810×1080/1080×810 with no horizontal overflow. No production database, deployment, or infrastructure was changed.
+Latest local static verification on 2026-10-12: `npm run db:generate`, `npm run lint`, `npm run typecheck`, `npm test -- --run` (34 passed, 9 DB-gated skipped without DB env), `npx prisma validate`, `npm run test:coverage`, and `npm run build` pass. Coverage currently reports 24.88% statements/lines, 68.75% branches, and 11.39% functions. The implementation verification recorded 14 migrations + seed, sequential PostgreSQL tests (`postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5), protected tablet E2E 7/7, returning-guest kiosk E2E 2/2, resilience E2E 3/3, and Chromium viewport review at 810×1080/1080×810 with no horizontal overflow. No production database, deployment, or infrastructure was changed.
 
 Detailed evidence and scenario-level gaps are maintained in [`docs/implementation/FINAL_REPORT.md`](implementation/FINAL_REPORT.md), [`docs/implementation/RELEASE_CHECKLIST.md`](implementation/RELEASE_CHECKLIST.md), and [`docs/implementation/TEST_MATRIX.md`](implementation/TEST_MATRIX.md).
 
@@ -88,12 +90,12 @@ Verification evidence from the baseline and the 2026-10-10 hardening run:
 | --- | --- | --- |
 | `npm run lint` | PASS | No lint errors or warnings in the final run. |
 | `npm run typecheck` | PASS | Must be run after `next build`; a concurrent build can replace `.next/types` while TypeScript is reading it. |
-| `npm test -- --run` | PASS | 31 tests passed; 9 DB-gated tests skipped when no disposable DB variables are provided. |
+| `npm test -- --run` | PASS | 34 tests passed; 9 DB-gated tests skipped when no disposable DB variables are provided. |
 | `npm run test:coverage` | PASS | Current rerun: 24.88% statements/lines, 68.75% branches, 11.39% functions. |
 | `npm run build` | PASS | Next.js 16.4.0 Turbopack production build completed and compiled the current route inventory. |
 | DB-gated Vitest | PASS (recorded implementation run) | Disposable PostgreSQL: `postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5; sequential execution required. |
 | Playwright/viewport evidence | PASS with limitations | Protected tablet 7/7, returning kiosk 2/2, resilience 3/3, and Chromium portrait/landscape review; physical iPad/WebKit and real Wi-Fi remain. |
-| Docker health | Previously PASS; not re-verified here | Earlier Compose verification recorded healthy app/PostgreSQL and applied phone/legacy-`STARTED` migrations. The current restricted shell cannot access the Docker socket. |
+| Docker health | PASS on 2026-10-12 | Rebuilt with `docker compose --env-file .env -f docker/docker-compose.yml up -d --build`; app/PostgreSQL healthy, migration service completed, and `/api/health` returned `status: ok`. |
 
 ## Runtime
 
@@ -102,8 +104,8 @@ Verification evidence from the baseline and the 2026-10-10 hardening run:
 
 ## Open issues
 
-- Earlier Docker verification recorded a passing app healthcheck after the latest rebuild; the current restricted shell cannot re-query it.
-- The current restricted shell cannot access the Docker socket or bind/probe a local web server; the recorded E2E pass used an approved isolated runtime.
+- Physical iPad/WebKit and real-network behavior remain unverified after the standalone PWA switch; the Docker runtime itself was freshly verified on 2026-10-12.
+- A future restricted shell may not access the Docker socket or bind/probe a local web server; use a Docker-enabled host or the in-app browser for runtime checks.
 - `POST /api/jobs/closing` requires `CRON_SECRET` or an admin session in every runtime.
 - `scripts/trigger-closing.sh` fails when `CRON_SECRET` is missing.
 - The workspace still has no `.git` directory; this snapshot is tracked through the attached external Git metadata at `/private/tmp/wellness-salon-git` and pushed to `origin/main`.
@@ -119,7 +121,6 @@ Verification evidence from the baseline and the 2026-10-10 hardening run:
 
 ## Next recommended task
 
-1. From a host with Docker access, verify Compose health and run the closing trigger against the disposable/approved stack without printing `.env`.
+1. Execute the physical tablet/WebKit and real-network run sheet in `docs/implementation/TABLET_QA_PLAN.md`, including removing/re-adding the standalone PWA icon.
 2. Run `RUN_DB_TESTS=true` with an isolated `TEST_DATABASE_URL` and capture any new DB-gated coverage result.
-3. Execute the physical tablet/WebKit and real-network run sheet in `docs/implementation/TABLET_QA_PLAN.md`.
-4. Only after those checks pass, take the production TLS, secret, scheduler, and deploy approvals described in `docs/lifecycle/approvals/README.md`.
+3. Only after those checks pass, take the production TLS, secret, scheduler, and deploy approvals described in `docs/lifecycle/approvals/README.md`.

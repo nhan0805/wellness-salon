@@ -80,7 +80,7 @@ docker/                      Build, Compose, entrypoint, nginx
 | GET | `/api/sse/board` | Initial PostgreSQL board snapshot and keepalives for the public read-only board. | Public |
 | GET | `/api/admin/appointments` | Appointments for the requested business date (`?date=YYYY-MM-DD`), defaulting to the current business date. | `ADMIN` |
 | GET | `/api/admin/reports` | Revenue, payment split, service/staff attribution, reconciliation for the requested business date (`?date=YYYY-MM-DD`), defaulting to the current business date. | `ADMIN` |
-| POST | `/api/admin/payments/confirm` | Record CARD/CASH payment and complete appointment. | `ADMIN` |
+| POST | `/api/admin/payments/confirm` | Record CARD/CASH payment, final amount, optional tip/cash details, and complete the appointment after the external terminal action. Initial confirmation has no `adjustmentReason` field. | `ADMIN` |
 | GET/POST | `/api/admin/attendance` | Read daily attendance or perform admin check-in/check-out. | `ADMIN` |
 | GET/POST/PATCH/DELETE | `/api/admin/customers` | Read, create, update, or safely delete customer profiles. | `ADMIN` |
 | GET/POST/PATCH/DELETE | `/api/admin/staff` | Read, create, update, deactivate, or reactivate staff and skills. | `ADMIN` |
@@ -154,6 +154,7 @@ This serializes competing queue operations even when the candidate row does not 
 - Admin appointment actions use a compact menu for payment/history/change/reassign/override/cancel operations; turn history stores actor and assigned-staff snapshots so later staff/account changes do not erase operational context.
 - The service catalog supports category CRUD/archive, category filtering on Admin, category grouping on the kiosk, and searchable service-icon selection. Static timezone/currency option lists keep configuration labels deterministic across server and browser renders.
 - Payment history is audit-backed rather than a separate adjustment table: current payment values remain queryable for reports, while adjustment/correction/refund events retain reason, actor, and previous/current or refunded amounts.
+- Payment confirmation uses the shared `AmountKeypad` for final amount, card/cash tip, and cash received; the keypad expands on focus/click and is collapsed by default. Initial confirmation keeps the original amount in the audit metadata for traceability but does not require a reason; later adjustment/correction/refund commands remain reasoned and audited.
 - Critical APIs emit request IDs and structured completion timings; rejected commands, advisory-lock waits, board snapshot version/time, and closing/retention outcomes are available for deployment logging.
 - Closing and retention are protected job endpoints. The application does not run an internal scheduler; deployment operators own scheduling, retries, alerting, and secret rotation.
 

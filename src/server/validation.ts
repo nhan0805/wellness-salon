@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { DEFAULT_SERVICE_ICON_KEY, SERVICE_ICON_KEYS } from '@/src/domain/service-icons';
 
-const phoneSchema = z.string()
+const phoneSchema = z
+  .string()
   .trim()
   .min(7, 'Enter a valid phone number')
   .max(20, 'Enter a valid phone number')
@@ -11,13 +12,18 @@ const phoneSchema = z.string()
     return digits.length >= 7 && digits.length <= 15;
   }, 'Enter a phone number with 7–15 digits');
 
-export const checkInSchema = z.object({
-  serviceId: z.string().min(1).optional(),
-  serviceIds: z.array(z.string().min(1)).min(1).max(8).optional(),
-  phone: phoneSchema,
-  name: z.string().trim().min(2).max(80),
-  idempotencyKey: z.string().min(8).max(120).optional(),
-}).refine((value) => Boolean(value.serviceIds?.length || value.serviceId), { message: 'Choose at least one service', path: ['serviceIds'] });
+export const checkInSchema = z
+  .object({
+    serviceId: z.string().min(1).optional(),
+    serviceIds: z.array(z.string().min(1)).min(1).max(8).optional(),
+    phone: phoneSchema,
+    name: z.string().trim().min(2).max(80),
+    idempotencyKey: z.string().min(8).max(120).optional(),
+  })
+  .refine((value) => Boolean(value.serviceIds?.length || value.serviceId), {
+    message: 'Choose at least one service',
+    path: ['serviceIds'],
+  });
 
 export const kioskCustomerLookupSchema = z.object({
   phone: phoneSchema,
@@ -29,7 +35,6 @@ export const confirmPaymentSchema = z.object({
   amount: z.number().finite().min(0).max(100000).optional(),
   tip: z.number().finite().min(0).max(100000).optional(),
   cashReceived: z.number().finite().min(0).max(100000).optional(),
-  adjustmentReason: z.string().trim().max(200).optional(),
   idempotencyKey: z.string().min(8).max(120),
 });
 
@@ -60,11 +65,22 @@ export const refundPaymentSchema = z.object({
 });
 
 export const staffActionSchema = z.object({
-  action: z.enum(['ACCEPT', 'SKIP', 'FINISH', 'CHECK_IN', 'CHECK_OUT', 'ADD_SUPPORT', 'CONTINUE_WITH_ME']),
+  action: z.enum([
+    'ACCEPT',
+    'SKIP',
+    'FINISH',
+    'CHECK_IN',
+    'CHECK_OUT',
+    'ADD_SUPPORT',
+    'CONTINUE_WITH_ME',
+  ]),
   appointmentId: z.string().optional(),
   appointmentServiceId: z.string().optional(),
   staffId: z.string().min(1),
-  pin: z.string().regex(/^\d{4}$/, 'Enter a 4-digit PIN').optional(),
+  pin: z
+    .string()
+    .regex(/^\d{4}$/, 'Enter a 4-digit PIN')
+    .optional(),
   reason: z.string().trim().max(140).optional(),
   skipReasonId: z.string().min(1).optional(),
   idempotencyKey: z.string().min(8).max(120),
@@ -75,11 +91,27 @@ const adminPhone = phoneSchema;
 const skillIds = z.array(z.string().min(1)).min(1, 'Choose at least one skill').max(8);
 const adminSkillName = z.string().trim().min(2).max(80);
 const adminServiceIconKey = z.enum(SERVICE_ICON_KEYS).default(DEFAULT_SERVICE_ICON_KEY);
-const adminAccountEmail = z.string().trim().email('Enter a valid email address').max(160).toLowerCase();
-const adminAccountPassword = z.string().min(8, 'Use at least 8 characters for the password').max(200);
+const adminServiceDescription = z
+  .string()
+  .trim()
+  .max(140, 'Keep the description under 140 characters')
+  .default('');
+const adminAccountEmail = z
+  .string()
+  .trim()
+  .email('Enter a valid email address')
+  .max(160)
+  .toLowerCase();
+const adminAccountDisplayName = z.string().trim().min(2, 'Enter a display name').max(80);
+const adminAccountPassword = z
+  .string()
+  .min(8, 'Use at least 8 characters for the password')
+  .max(200);
 
 export const adminCustomerCreateSchema = z.object({ name: adminName, phone: adminPhone });
-export const adminCustomerUpdateSchema = adminCustomerCreateSchema.extend({ id: z.string().min(1) });
+export const adminCustomerUpdateSchema = adminCustomerCreateSchema.extend({
+  id: z.string().min(1),
+});
 
 export const adminStaffCreateSchema = z.object({
   name: adminName,
@@ -90,7 +122,11 @@ export const adminStaffCreateSchema = z.object({
 export const adminStaffUpdateSchema = z.object({
   id: z.string().min(1),
   name: adminName,
-  pin: z.string().regex(/^\d{4}$/, 'Enter a 4-digit PIN').optional().or(z.literal('')),
+  pin: z
+    .string()
+    .regex(/^\d{4}$/, 'Enter a 4-digit PIN')
+    .optional()
+    .or(z.literal('')),
   skillIds,
   isActive: z.boolean(),
 });
@@ -100,6 +136,7 @@ export const adminSkillUpdateSchema = adminSkillCreateSchema.extend({ id: z.stri
 
 export const adminAccountCreateSchema = z.object({
   email: adminAccountEmail,
+  displayName: adminAccountDisplayName.optional(),
   password: adminAccountPassword,
   role: z.enum(['ADMIN', 'STATION']),
 });
@@ -107,6 +144,7 @@ export const adminAccountCreateSchema = z.object({
 export const adminAccountUpdateSchema = z.object({
   id: z.string().min(1),
   email: adminAccountEmail,
+  displayName: adminAccountDisplayName.optional(),
   password: adminAccountPassword.optional().or(z.literal('')),
   role: z.enum(['ADMIN', 'STATION']),
   isActive: z.boolean(),
@@ -114,6 +152,7 @@ export const adminAccountUpdateSchema = z.object({
 
 export const adminServiceCreateSchema = z.object({
   name: z.string().trim().min(2).max(80),
+  description: adminServiceDescription,
   iconKey: adminServiceIconKey,
   categoryId: z.string().min(1),
   durationMin: z.number().int().min(5).max(480),
@@ -121,7 +160,10 @@ export const adminServiceCreateSchema = z.object({
   skillIds,
 });
 
-export const adminServiceUpdateSchema = adminServiceCreateSchema.extend({ id: z.string().min(1), isActive: z.boolean() });
+export const adminServiceUpdateSchema = adminServiceCreateSchema.extend({
+  id: z.string().min(1),
+  isActive: z.boolean(),
+});
 
 const adminServiceCategoryName = z.string().trim().min(2, 'Enter a category name').max(60);
 export const adminServiceCategoryCreateSchema = z.object({
@@ -179,25 +221,41 @@ export const adminAppointmentServiceChangeSchema = z.object({
   idempotencyKey: z.string().min(8).max(120),
 });
 
-const shopTime = z.string().regex(/^\d{2}:\d{2}$/).refine((value) => {
-  const [hour, minute] = value.split(':').map(Number);
-  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
-}, 'Enter a valid 24-hour time');
+const shopTime = z
+  .string()
+  .regex(/^\d{2}:\d{2}$/)
+  .refine((value) => {
+    const [hour, minute] = value.split(':').map(Number);
+    return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+  }, 'Enter a valid 24-hour time');
 
-const shopTimezone = z.string().trim().min(1).max(80).refine((value) => {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: value }).format();
-    return true;
-  } catch {
-    return false;
-  }
-}, 'Enter a valid IANA timezone');
+const shopTimezone = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .refine((value) => {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: value }).format();
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'Enter a valid IANA timezone');
 
-export const adminShopConfigSchema = z.object({
-  timezone: shopTimezone,
-  openingTime: shopTime,
-  closingTime: shopTime,
-  currency: z.string().trim().regex(/^[A-Z]{3}$/),
-  verifiedSessionTtlMin: z.number().int().min(1).max(15),
-  roundRobinEnabled: z.boolean(),
-}).refine((value) => value.openingTime < value.closingTime, { message: 'Closing time must be later than opening time', path: ['closingTime'] });
+export const adminShopConfigSchema = z
+  .object({
+    timezone: shopTimezone,
+    openingTime: shopTime,
+    closingTime: shopTime,
+    currency: z
+      .string()
+      .trim()
+      .regex(/^[A-Z]{3}$/),
+    verifiedSessionTtlMin: z.number().int().min(1).max(15),
+    roundRobinEnabled: z.boolean(),
+  })
+  .refine((value) => value.openingTime < value.closingTime, {
+    message: 'Closing time must be later than opening time',
+    path: ['closingTime'],
+  });

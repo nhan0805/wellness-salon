@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowRight, Sparkles, LogIn } from 'lucide-react';
+import { ArrowRight, ListOrdered, LogIn, ScanLine, Sparkles } from 'lucide-react';
 import { auth } from '@/src/server/auth';
+import SafariLoginLink from '@/src/components/safari-login-link';
 
 export default async function HomePage() {
   const session = await auth();
@@ -23,21 +24,30 @@ export default async function HomePage() {
           <span className="brand-copy">Wellness Salon <small>Operations</small></span>
         </Link>
         <div className="topbar-actions">
-          <Link className="button button-quiet button-sm" href="/sign-in">
+          <SafariLoginLink className="button button-quiet button-sm" href="/sign-in">
             <LogIn size={16} aria-hidden="true" />
             Log in
-          </Link>
+          </SafariLoginLink>
         </div>
       </header>
       <section className="container entry-screen" aria-labelledby="entry-title">
         <div className="entry-card">
-          <div className="eyebrow">Wellness Salon</div>
+          <div className="eyebrow">Operations hub</div>
           <h1 id="entry-title">Choose where to start</h1>
-          <p>Open customer check-in or the live queue.</p>
-          <div className="entry-actions">
-            <Link className="button button-primary" href="/kiosk">Customer check-in <ArrowRight size={17} aria-hidden="true" /></Link>
-            <Link className="button button-outline" href="/board">Live queue</Link>
+          <p>Choose the workspace that matches what you need to do right now.</p>
+          <div className="entry-choice-grid">
+            <Link className="entry-choice entry-choice-primary" href="/kiosk">
+              <span className="entry-choice-icon"><ScanLine size={22} aria-hidden="true" /></span>
+              <span><strong>Customer check-in</strong><small>Start a new visit at the salon station.</small></span>
+              <ArrowRight size={18} aria-hidden="true" />
+            </Link>
+            <Link className="entry-choice" href="/board">
+              <span className="entry-choice-icon"><ListOrdered size={22} aria-hidden="true" /></span>
+              <span><strong>Live queue</strong><small>Monitor guests, staff, and service progress.</small></span>
+              <ArrowRight size={18} aria-hidden="true" />
+            </Link>
           </div>
+          <div className="entry-card-footer"><span>Staff workspace</span><SafariLoginLink href="/sign-in"><LogIn size={16} aria-hidden="true" /> Sign in to manage operations</SafariLoginLink></div>
         </div>
       </section>
     </main>

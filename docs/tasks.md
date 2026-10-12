@@ -1,6 +1,6 @@
 # Tasks
 
-Last updated: 2026-10-11
+Last updated: 2026-10-12
 
 ## Backlog
 
@@ -33,7 +33,7 @@ Last updated: 2026-10-11
 - [x] Added server-side appointment history pagination/projection and disposable benchmark, service-layer load, authenticated HTTP, and pool-constrained load scripts.
 - [x] Applied and seeded all 14 migrations on an isolated native PostgreSQL cluster; sequential DB tests passed (`postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5).
 - [x] Protected tablet E2E passed 7/7; returning-guest kiosk passed 2/2; browser resilience passed 3/3; Chromium portrait/landscape review passed with the physical-device limitation recorded.
-- [x] Fresh static gates passed: lint, typecheck, 31 default tests with 9 DB-gated skips, Prisma validate, and production build.
+- [x] Fresh static gates passed: lint, typecheck, 34 default tests with 9 DB-gated skips, Prisma validate, and production build.
 - [x] Restored the service-category taxonomy with ordered/archivable categories, migration backfill, Admin CRUD, category filtering, grouped kiosk presentation, and searchable service-icon selection.
 - [x] Added append-only `TurnEvent` history with actor/staff snapshots and an Admin appointment turn-history view.
 - [x] Added Admin payment history plus audited, idempotent adjustment/correction/refund commands; refunds record an external terminal action and do not process card data.
@@ -54,6 +54,7 @@ Last updated: 2026-10-11
 - [x] Made the dashboard `Open turns` KPI open the Payments screen directly with visible and keyboard-accessible action affordance.
 - [x] Added dashboard KPI navigation to Reports, Queue, and filtered Completed Appointments screens.
 - [x] Updated Admin Queue to show all services per appointment with individual and total durations.
+- [x] Restored standalone PWA metadata for iPad testing, kept the login form visible inside the installed app, and rebuilt/health-checked the Docker production container without exposing seed credentials.
 
 - [x] Customer kiosk check-in flow with service catalog, validation, ticket code, assignment/waiting response.
 - [x] Staff board with current/up-next queue, staff roster, SSE/polling refresh, verified actions, skip reasons, and rerouting.

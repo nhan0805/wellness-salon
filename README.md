@@ -18,7 +18,7 @@ npx prisma validate
 npm run build
 ```
 
-Kết quả kiểm chứng ngày 11/10/2026: Prisma generate/validate, lint, typecheck, production build và test mặc định PASS; 31 tests PASS và 9 DB-gated tests được bỏ qua có chủ đích khi chưa có `TEST_DATABASE_URL`. Coverage hiện tại ghi nhận 24.88% statements/lines, 68.75% branches và 11.39% functions. Bằng chứng PostgreSQL disposable, protected tablet E2E, returning-guest kiosk, resilience và viewport Chromium được ghi lại từ đợt hardening 10/10; các kết quả này không thay thế kiểm thử iPad/WebKit, Wi‑Fi thật, staging hay production.
+Kết quả kiểm chứng ngày 12/10/2026: Prisma generate/validate, lint, typecheck, production build và test mặc định PASS; 34 tests PASS và 9 DB-gated tests được bỏ qua có chủ đích khi chưa có `TEST_DATABASE_URL`. Coverage hiện tại ghi nhận 24.88% statements/lines, 68.75% branches và 11.39% functions. Bằng chứng PostgreSQL disposable, protected tablet E2E, returning-guest kiosk, resilience và viewport Chromium được ghi lại từ đợt hardening 10/10; các kết quả này không thay thế kiểm thử iPad/WebKit, Wi‑Fi thật, staging hay production.
 
 ## Chạy app
 

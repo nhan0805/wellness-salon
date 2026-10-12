@@ -28,6 +28,7 @@ The automated unit suite is intentionally fast and database-independent. Postgre
 | Cancellation | In-service cancellation requires manager/reason | PARTIAL | Protected admin UI cancellation passes; dedicated in-service role/reason matrix remains |
 | Cancellation | Payment pending/completed cancellation rejected | PASS at state-machine/critical path | Critical cancellation fixture exercises idempotency and terminal status; separate payment-pending rejection remains |
 | Payments | Cancelled services excluded from payment items | PARTIAL | Code path and protected payment flow pass; dedicated multi-service payment fixture remains |
+| Payments | Confirm final amount, card/cash tip, and cash details with shared keypad; no initial-confirm reason prompt | PARTIAL | Static type/lint/build checks pass and the modal/schema/service align; authenticated keypad interaction on physical iPad/WebKit remains a manual QA item |
 | Payments | Adjustment/correction preserves reason and previous/current details | NOT RUN | Admin route and audit path are implemented; dedicated disposable DB/API assertion remains |
 | Payments | Full/partial refund records an external action and caps refundable amount | NOT RUN | Admin route and payment-history projection are implemented; dedicated disposable DB/API assertion remains |
 | Service change | Preview and apply active service change | PASS | Critical PostgreSQL workflow verifies service replacement and old snapshot audit |

@@ -1,6 +1,6 @@
 # Handoff
 
-Last updated: 2026-10-11
+Last updated: 2026-10-12
 
 ## Project summary
 
@@ -9,7 +9,7 @@ Nail Shop Management is a Next.js 16 tablet-first operations app for one nail sh
 ## Current status
 
 - V1 implementation, the authorized 2026-10-10 reliability-hardening batch, and the 2026-10-11 catalog/payment traceability follow-up are present and build successfully.
-- Fresh static gates pass: `npm run lint`, `npm run typecheck`, `npm test -- --run` (31 passed, 9 DB-gated skipped without a disposable DB), `npx prisma validate`, and `npm run build`.
+- Fresh static gates pass: `npm run lint`, `npm run typecheck`, `npm test -- --run` (34 passed, 9 DB-gated skipped without a disposable DB), `npx prisma validate`, and `npm run build`.
 - The current coverage rerun reports 24.88% statements/lines, 68.75% branches, and 11.39% functions; this is a broad V8 report that includes untested UI/server modules and is not a release threshold.
 - Disposable PostgreSQL verification is recorded separately: all 14 migrations plus seed passed; `postgres` passed 3/3, `admin-access` 1/1, and `critical-workflows` 5/5 when run sequentially against `127.0.0.1:55432/nailshop_test`.
 - Browser verification is recorded separately: protected tablet workflows 7/7, returning-guest kiosk 2/2, and resilience 3/3. Chromium viewport review at 810×1080 and 1080×810 found no horizontal overflow and primary controls at least 44px.
@@ -23,14 +23,18 @@ Nail Shop Management is a Next.js 16 tablet-first operations app for one nail sh
 - Admin Appointments date filters now apply immediately without an `Apply date` button. Parent dashboard polling no longer replaces a manually loaded Day, Month, or valid Range scope with today's rows; stale date requests are ignored.
 - The desktop Admin sidebar now has its own viewport-height vertical scroll area so all navigation items remain reachable; the mobile menu keeps its horizontal scroll behavior.
 - The Admin payment modal now uses two large Cash/Card buttons with pressed state and the same `CARD`/`CASH` API contract.
+- Payment confirmation now uses one shared, USD-first `AmountKeypad` for final amount, card/cash tip, and cash received; each field expands the keypad on focus/click and supports quick values.
+- Initial payment confirmation no longer prompts for or accepts `adjustmentReason`; original/current amounts remain in the confirmation audit trail, while later adjustment/correction/refund commands remain reasoned and audited.
 - Service visibility and Shop configuration fair-turn routing now use balanced `Yes`/`No` segmented controls with `aria-pressed`; the existing `isActive` and `roundRobinEnabled` API values are unchanged.
 - Shared modal typography and spacing are now normalized for iPad: 24px title, 15–16px context/labels and controls, 14px helper copy, 15px actions, and a clear gap between payment method buttons and Tip.
 - All Admin and Turn board modal families were audited together so payment, access, appointment-action, management/history, and staff-verification dialogs use the same readable hierarchy.
 - Playwright is configured for database-backed desktop/tablet tests with station/admin sign-in and Admin customer Add/Edit/Delete; it needs a seeded PostgreSQL environment and an allowed local listener.
-- Earlier implementation verification rebuilt Docker with the root `.env` file using `docker compose --env-file .env -f docker/docker-compose.yml up -d --build`; PostgreSQL and the app were healthy and the migration service completed successfully. The current restricted shell cannot re-query the Docker socket or published port, so treat that as recorded prior evidence rather than a fresh runtime check.
+- Docker was rebuilt and checked on 2026-10-12 with the root `.env` file using `docker compose --env-file .env -f docker/docker-compose.yml up -d --build`; PostgreSQL and the app were healthy, the migration service completed, and `/api/health` returned `status: ok`.
 - Migration `20261010160000_remove_legacy_started_turn_state` removed the old `A003`/`A005` appointment data and the `STARTED` PostgreSQL enum value. `ACCEPTED` remains the active turn marker after Accept.
 - PWA and browser icon metadata now use the same rounded-square PNG artwork at 192px and 512px; the manifest/icon URLs are versioned to avoid retaining the prior circular mask treatment.
 - The PWA/browser artwork now uses the official Lucide `Sparkles` paths with new `icon-sparkles-192.png` and `icon-sparkles-512.png` URLs; reinstall an existing PWA if the operating system still shows its cached icon.
+- Standalone PWA mode is enabled again for iPad testing: `public/manifest-v1.json` uses `display: standalone`, the root layout emits Apple web-app metadata, and the manifest URL is now `?v=10`. The sign-in form remains available inside the installed app without an extra PWA instruction banner. Remove and re-add the old Home Screen icon so iPad does not retain the previous browser-mode manifest.
+- PWA metadata and login behavior were rebuilt and verified on 2026-10-12: Docker app healthy, `/api/health` returned `status: ok`, manifest returned `display: standalone`, and the sign-in HTML contained the Apple capability/status/title tags. Seed credentials remain `.env`-only and are not prefilled or committed into the client bundle.
 - The turn board queue now uses a filled blue `Accept` CTA with an icon, a visible `Waiting` badge for unassigned turns, and higher-contrast status badges across the board.
 - The turn board `Up next` queue now renders the complete ordered service bundle for multi-service appointments, with `Done`/`Next`/`Queued` labels and the combined duration.
 - Today’s turn board is split into `Turn board` and `Staff attendance` tabs; attendance actions are prominent labeled Check in/Check out buttons and still open the protected staff verification modal.
@@ -95,7 +99,7 @@ The latest follow-up is committed/pushed through the attached external Git metad
 - Runtime/domain: `src/server/services/prisma-operations.ts`, `src/server/services/admin-operations.ts`, `src/server/auth.ts`, `src/server/security.ts`, `src/server/observability.ts`, `src/domain/*`.
 - API/UI: `app/api/admin/appointments/*`, `app/api/admin/queue/reconcile`, `app/api/admin/config`, `app/api/admin/skip-reasons`, `app/api/jobs/*`, board/kiosk/admin routes and components.
 - Persistence: `prisma/schema.prisma` and the 2026-10-09/10 migrations for snapshots, multi-service work, icons, normalized phones, legacy `STARTED` removal, operational safety, support release, turn events, and service categories.
-- Follow-up API/UI: `app/api/admin/service-categories`, appointment turn history, customer/payment history, payment adjustment/correction/refund routes, `app/(admin)/admin/page.tsx`, `src/components/admin-management.tsx`, and `src/domain/locale-options.ts`.
+- Follow-up API/UI: `app/api/admin/service-categories`, appointment turn history, customer/payment history, payment adjustment/correction/refund routes, `app/(admin)/admin/page.tsx`, `src/components/amount-keypad.tsx`, `src/components/admin-management.tsx`, `src/domain/locale-options.ts`, `src/server/validation.ts`, and `src/server/services/prisma-operations.ts`.
 - Verification/tooling: `tests/integration/critical-workflows.test.ts`, `tests/e2e/protected-workflows.spec.ts`, `tests/e2e/resilience.spec.ts`, `scripts/seed-benchmark-fixture.ts`, `scripts/load-profile.ts`, and `scripts/http-load-profile.ts`.
 - Documentation: project-memory files plus `docs/implementation/*`; the read-only audit remains unchanged as the pre-hardening baseline.
 
@@ -123,7 +127,8 @@ The latest follow-up is committed/pushed through the attached external Git metad
 ## Known issues and risks
 
 - E2E requires a runtime that permits the local server listener; the recorded protected tablet run passed 7/7, returning-guest kiosk 2/2, and resilience 3/3.
-- The current restricted shell cannot access the Docker socket or published localhost port; use a host with Docker access or the in-app browser for runtime checks.
+- Docker verification for the standalone PWA was completed on 2026-10-12 with the host Docker socket; future restricted shells may still need a Docker-enabled host or the in-app browser for runtime checks.
+- The physical iPad has not yet been reinstalled and exercised after the standalone switch. On LAN HTTP, the manifest can be inspected, but service-worker behavior still requires a secure context such as HTTPS (localhost is the browser exception).
 - Dashboard and report values are database projections for the selected business date; Queue and Payments remain scoped to the current business date.
 - PIN lockout has a database-backed record plus a process-local fast path; deployment rate limiting and abuse monitoring remain operator concerns.
 - SSE database mode sends snapshots/keepalives but does not yet have a cross-instance event bus.

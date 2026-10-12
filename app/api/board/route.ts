@@ -5,6 +5,7 @@ import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
 import { getDbBoardState, staffActionDb } from '@/src/server/services/prisma-operations';
 import { observeApiRequest } from '@/src/server/observability';
 import { logEvent } from '@/src/server/logger';
+import { makeAccountViewer } from '@/src/domain/viewer';
 
 export const runtime = 'nodejs';
 
@@ -14,8 +15,13 @@ export async function GET(request: Request) {
     const role = session?.user?.role;
     const isStaffViewer = ['STATION', 'ADMIN'].includes(role ?? '');
     const board = await getDbBoardState({ publicView: !isStaffViewer });
+    const viewer = makeAccountViewer({
+      email: session?.user?.email,
+      displayName: (session?.user as { name?: string | null } | undefined)?.name,
+      role: isStaffViewer ? role : null,
+    });
     logEvent('info', 'board.snapshot.served', { stateVersion: board.version, publicView: !isStaffViewer, snapshotAt: board.at });
-    const response = NextResponse.json({ ...board, viewerRole: isStaffViewer ? role : null });
+    const response = NextResponse.json({ ...board, viewerRole: isStaffViewer ? role : null, viewer });
     response.headers.set('X-Board-Version', String(board.version));
     response.headers.set('X-Board-Snapshot-At', board.at);
     return response;

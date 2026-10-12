@@ -10,6 +10,7 @@ export type AttendanceClosedBy = 'STAFF' | 'ADMIN' | 'AUTO';
 export interface ServiceCandidate {
   id: string;
   name: string;
+  description: string;
   iconKey: ServiceIconKey;
   category: ServiceCategorySnapshot;
   durationMin: number;
@@ -177,6 +178,7 @@ export interface AdminSkipReasonSnapshot {
 export interface AdminAccountSnapshot {
   id: string;
   email: string;
+  displayName: string;
   role: 'ADMIN' | 'STATION';
   isActive: boolean;
   isCurrent: boolean;
@@ -262,6 +264,7 @@ export interface AdminStaffSnapshot {
 export interface AdminServiceSnapshot {
   id: string;
   name: string;
+  description: string;
   iconKey: ServiceIconKey;
   categoryId: string;
   category: ServiceCategorySnapshot;

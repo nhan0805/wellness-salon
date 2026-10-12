@@ -1,6 +1,6 @@
 # Architecture decisions
 
-Last updated: 2026-10-11
+Last updated: 2026-10-12
 
 Historical decisions are retained here. The original lifecycle ADR remains in `docs/lifecycle/ADR-001-advisory-lock.md`.
 The implementation-specific BR-01 through BR-06 rules and hardening choices are detailed in [`docs/implementation/DECISIONS.md`](implementation/DECISIONS.md).
@@ -267,3 +267,26 @@ The implementation-specific BR-01 through BR-06 rules and hardening choices are 
 - Alternatives considered: Generate options with runtime `Intl` on each render; expose unrestricted text inputs; support only the default locale.
 - Reason: Deterministic labels and validation are more important than runtime-generated completeness for this tablet admin surface.
 - Consequences: Locale option data must be refreshed deliberately when the supported runtime/CLDR dataset changes.
+
+## ADR-023 — Restore standalone PWA mode without adding login guidance copy
+
+- ID: ADR-023
+- Date: 2026-10-12
+- Status: Accepted for supervised iPad testing
+- Context: The previous browser-display mode made the Home Screen shortcut open with browser chrome, while iPadOS 15-era WebKit can hide the software keyboard in installed web apps during credential entry.
+- Decision: Keep the manifest and service worker PWA assets, set the manifest to `display: standalone`, emit Apple web-app capability/title/status metadata, and keep the login form visible in standalone mode without an extra PWA instruction banner.
+- Alternatives considered: Keep `display: browser`; force every PWA login into Safari; expose seed credentials in the client to bypass typing.
+- Reason: The app should be testable as an installed iPad app without weakening credential handling, hiding the primary login flow, or adding environment-specific copy to the production-facing screen.
+- Tradeoffs: Existing Home Screen installs must be removed and re-added to refresh cached manifest metadata; physical iPad/WebKit behavior remains a manual release gate. LAN HTTP can serve the shell but is not a secure context for service-worker/offline verification.
+- Consequences: Seed credentials remain in `.env` only. Do not prefill or expose passwords in production; use Safari Password AutoFill or a disposable local test account for device testing. If the old iPad keyboard issue appears, open the same route in Safari manually.
+
+## ADR-024 — Initial payment confirmation does not collect an adjustment reason
+
+- ID: ADR-024
+- Date: 2026-10-12
+- Status: Accepted
+- Context: The admin confirms a payment after the external terminal action and may need to enter the final collected amount, terminal-confirmed tip, and cash details. Requiring a free-text reason in this first confirmation step adds friction without representing a separate post-confirmation correction.
+- Decision: Keep `confirmPaymentSchema` limited to appointment, method, amount, tip, cash details, and idempotency. Do not expose or persist `adjustmentReason` in the initial confirm UI, service input, confirmation audit metadata, or history summary. Preserve original/current amounts for traceability; later adjustment, correction, and refund commands continue to require their own reason and audit metadata.
+- Alternatives considered: Require a reason whenever the final amount differs; keep an optional unused reason field for compatibility; silently discard the UI value while accepting it server-side.
+- Reason: Keeps the confirmation flow focused on recording the external collection while preserving a separate, explicit audit boundary for later financial corrections.
+- Consequences: Changing the final amount during initial confirmation is allowed without an extra prompt. Clients must not send `adjustmentReason`; the post-confirmation administrative commands remain the place for reasoned corrections.

@@ -1,4 +1,4 @@
-# Tablet and network QA plan — 2026-10-10
+# Tablet and network QA plan — 2026-10-12
 
 ## Proposed test target
 
@@ -32,10 +32,14 @@ Use the salon Wi-Fi in both normal conditions and a controlled interruption. A 5
 
 ## Manual run sheet for the next device session
 
-1. Open the three roles on separate Safari tabs/devices and confirm the same business date.
-2. Check in one staff member, create one kiosk visit, and confirm board assignment appears without a full-page refresh.
-3. Accept/finish the assigned turn from the staff display while management observes the state change; Accept enters service directly.
-4. Tap kiosk submit twice and confirm one ticket; refresh or navigate away only after recording the observed result.
-5. Disable Wi-Fi for 10–15 seconds on the board, then restore it; record time to `Live` and whether any stale snapshot overwrites a newer one.
-6. Repeat one admin mutation during a short interruption and verify the final state before retrying.
-7. Repeat in portrait and landscape, then capture screenshots for any clipping, focus, or readability issue.
+1. If an older Wellness Salon Home Screen icon exists, remove it first; open the LAN URL in Safari, use Share → Add to Home Screen, then launch the new icon. Confirm the app opens without Safari chrome and that the URL uses the current manifest version.
+2. Open the three roles on separate Safari tabs/devices and confirm the same business date. For the installed PWA login, verify the email/password fields are visible; if the keyboard is missing, open the same login URL in a Safari tab and record the iPadOS version.
+3. Check in one staff member, create one kiosk visit, and confirm board assignment appears without a full-page refresh.
+4. Accept/finish the assigned turn from the staff display while management observes the state change; Accept enters service directly.
+5. Open Admin → Payments → Confirm payment. Focus the final amount, card-terminal tip, and cash-received fields one at a time; verify the same keypad expands, quick values work, and no reason field appears when the final amount differs. Confirm Card still records the terminal-confirmed tip as a numeric amount.
+6. Tap kiosk submit twice and confirm one ticket; refresh or navigate away only after recording the observed result.
+7. Disable Wi-Fi for 10–15 seconds on the board, then restore it; record time to `Live` and whether any stale snapshot overwrites a newer one.
+8. Repeat one admin mutation during a short interruption and verify the final state before retrying.
+9. Repeat in portrait and landscape, then capture screenshots for any clipping, focus, or readability issue.
+
+For service-worker/offline checks, use HTTPS on the LAN. A plain `http://192.168.x.x` origin is not a secure context, so service-worker registration may be unavailable even when the Home Screen app shell opens.

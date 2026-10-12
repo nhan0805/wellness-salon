@@ -185,8 +185,8 @@ export async function updateDbShopConfig(input: ShopOperationalConfig & { adminI
   });
 }
 
-function mapAccount(row: { id: string; email: string; role: AuthRole; isActive: boolean; createdAt: Date; updatedAt: Date }, currentId: string): AdminAccountSnapshot {
-  return { id: row.id, email: row.email, role: row.role, isActive: row.isActive, isCurrent: row.id === currentId, createdAt: row.createdAt, updatedAt: row.updatedAt };
+function mapAccount(row: { id: string; email: string; displayName: string | null; role: AuthRole; isActive: boolean; createdAt: Date; updatedAt: Date }, currentId: string): AdminAccountSnapshot {
+  return { id: row.id, email: row.email, displayName: row.displayName?.trim() || (row.role === AuthRole.ADMIN ? 'Administrator' : 'Station account'), role: row.role, isActive: row.isActive, isCurrent: row.id === currentId, createdAt: row.createdAt, updatedAt: row.updatedAt };
 }
 
 export async function getDbAdminAccounts(currentId: string): Promise<AdminAccountSnapshot[]> {
@@ -194,15 +194,16 @@ export async function getDbAdminAccounts(currentId: string): Promise<AdminAccoun
   return rows.map((row) => mapAccount(row, currentId));
 }
 
-export async function createDbAdminAccount(input: { email: string; password: string; role: 'ADMIN' | 'STATION'; adminId?: string }) {
+export async function createDbAdminAccount(input: { email: string; displayName?: string; password: string; role: 'ADMIN' | 'STATION'; adminId?: string }) {
   return prisma.$transaction(async (tx) => {
-    const account = await tx.authUser.create({ data: { email: input.email.toLowerCase(), passwordHash: await hashSecret(input.password), role: input.role } });
-    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'account.created', entity: 'AuthUser', entityId: account.id, metadata: { email: account.email, role: account.role } } });
+    const displayName = input.displayName?.trim() || (input.role === 'ADMIN' ? 'Administrator' : 'Station account');
+    const account = await tx.authUser.create({ data: { email: input.email.toLowerCase(), displayName, passwordHash: await hashSecret(input.password), role: input.role } });
+    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'account.created', entity: 'AuthUser', entityId: account.id, metadata: { email: account.email, displayName: account.displayName, role: account.role } } });
     return mapAccount(account, input.adminId ?? '');
   });
 }
 
-export async function updateDbAdminAccount(input: { id: string; email: string; password?: string; role: 'ADMIN' | 'STATION'; isActive: boolean; adminId?: string }) {
+export async function updateDbAdminAccount(input: { id: string; email: string; displayName?: string; password?: string; role: 'ADMIN' | 'STATION'; isActive: boolean; adminId?: string }) {
   return prisma.$transaction(async (tx) => {
     const current = await tx.authUser.findUnique({ where: { id: input.id } });
     if (!current) throw new Error('Account not found');
@@ -211,11 +212,12 @@ export async function updateDbAdminAccount(input: { id: string; email: string; p
       const activeAdminCount = await tx.authUser.count({ where: { role: 'ADMIN', isActive: true } });
       if (activeAdminCount <= 1) throw new Error('Keep at least one active admin account');
     }
-    const data: Prisma.AuthUserUpdateInput = { email: input.email.toLowerCase(), role: input.role, isActive: input.isActive, sessionVersion: { increment: 1 } };
+    const displayName = input.displayName?.trim() || current.displayName?.trim() || (input.role === 'ADMIN' ? 'Administrator' : 'Station account');
+    const data: Prisma.AuthUserUpdateInput = { email: input.email.toLowerCase(), displayName, role: input.role, isActive: input.isActive, sessionVersion: { increment: 1 } };
     if (input.password) data.passwordHash = await hashSecret(input.password);
     const account = await tx.authUser.update({ where: { id: input.id }, data });
     await tx.verifiedStaffSession.updateMany({ where: { stationUserId: input.id, revokedAt: null }, data: { revokedAt: new Date(), revokedReason: 'Account settings changed' } });
-    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'account.updated', entity: 'AuthUser', entityId: account.id, metadata: { email: account.email, role: account.role, isActive: account.isActive, passwordChanged: Boolean(input.password) } } });
+    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'account.updated', entity: 'AuthUser', entityId: account.id, metadata: { email: account.email, displayName: account.displayName, role: account.role, isActive: account.isActive, passwordChanged: Boolean(input.password) } } });
     return mapAccount(account, input.adminId ?? '');
   });
 }
@@ -471,6 +473,7 @@ function serviceInclude() {
 function mapService(row: {
   id: string;
   name: string;
+  description: string;
   iconKey: string;
   categoryId: string;
   category: ServiceCategorySnapshot;
@@ -485,6 +488,7 @@ function mapService(row: {
   return {
     id: row.id,
     name: row.name,
+    description: row.description,
     iconKey: normalizeServiceIconKey(row.iconKey),
     categoryId: row.categoryId,
     category: row.category,
@@ -507,25 +511,25 @@ export async function getDbAdminServices(): Promise<{ services: AdminServiceSnap
   return { services: rows.map(mapService), skills, categories };
 }
 
-export async function createDbAdminService(input: { name: string; iconKey: ServiceIconKey; categoryId: string; durationMin: number; price: number; skillIds: string[]; adminId?: string }) {
+export async function createDbAdminService(input: { name: string; description: string; iconKey: ServiceIconKey; categoryId: string; durationMin: number; price: number; skillIds: string[]; adminId?: string }) {
   return prisma.$transaction(async (tx) => {
     const selectedSkillIds = await assertSkillIds(tx, input.skillIds);
     await assertActiveServiceCategory(tx, input.categoryId);
-    const service = await tx.service.create({ data: { name: input.name, iconKey: input.iconKey, categoryId: input.categoryId, durationMin: input.durationMin, price: input.price, isActive: true } });
+    const service = await tx.service.create({ data: { name: input.name, description: input.description, iconKey: input.iconKey, categoryId: input.categoryId, durationMin: input.durationMin, price: input.price, isActive: true } });
     await tx.serviceSkill.createMany({ data: selectedSkillIds.map((skillId) => ({ serviceId: service.id, skillId })) });
-    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'service.created', entity: 'Service', entityId: service.id, metadata: { name: service.name, iconKey: service.iconKey, skillIds: selectedSkillIds } } });
+    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'service.created', entity: 'Service', entityId: service.id, metadata: { name: service.name, description: service.description, iconKey: service.iconKey, skillIds: selectedSkillIds } } });
     return tx.service.findUniqueOrThrow({ where: { id: service.id }, include: serviceInclude() });
   }).then(mapService);
 }
 
-export async function updateDbAdminService(input: { id: string; name: string; iconKey: ServiceIconKey; categoryId: string; durationMin: number; price: number; skillIds: string[]; isActive: boolean; adminId?: string }) {
+export async function updateDbAdminService(input: { id: string; name: string; description: string; iconKey: ServiceIconKey; categoryId: string; durationMin: number; price: number; skillIds: string[]; isActive: boolean; adminId?: string }) {
   return prisma.$transaction(async (tx) => {
     const selectedSkillIds = await assertSkillIds(tx, input.skillIds);
     await assertActiveServiceCategory(tx, input.categoryId);
-    const service = await tx.service.update({ where: { id: input.id }, data: { name: input.name, iconKey: input.iconKey, categoryId: input.categoryId, durationMin: input.durationMin, price: input.price, isActive: input.isActive } });
+    const service = await tx.service.update({ where: { id: input.id }, data: { name: input.name, description: input.description, iconKey: input.iconKey, categoryId: input.categoryId, durationMin: input.durationMin, price: input.price, isActive: input.isActive } });
     await tx.serviceSkill.deleteMany({ where: { serviceId: service.id } });
     await tx.serviceSkill.createMany({ data: selectedSkillIds.map((skillId) => ({ serviceId: service.id, skillId })) });
-    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'service.updated', entity: 'Service', entityId: service.id, metadata: { name: service.name, iconKey: service.iconKey, skillIds: selectedSkillIds, isActive: service.isActive } } });
+    await tx.auditEvent.create({ data: { actorType: 'ADMIN', actorId: input.adminId, action: 'service.updated', entity: 'Service', entityId: service.id, metadata: { name: service.name, description: service.description, iconKey: service.iconKey, skillIds: selectedSkillIds, isActive: service.isActive } } });
     return tx.service.findUniqueOrThrow({ where: { id: service.id }, include: serviceInclude() });
   }).then(mapService);
 }

@@ -99,6 +99,7 @@ model ServiceCategory {
 model Service {
   id                  String               @id @default(cuid())
   name                String
+  description         String               @default("")
   iconKey             String               @default("sparkles") @map("icon_key")
   categoryId          String               @map("category_id")
   durationMin         Int                  @map("duration_min")
@@ -163,6 +164,7 @@ model StaffSkill {
 model AuthUser {
   id                String                 @id @default(cuid())
   email             String                 @unique
+  displayName       String?                @map("display_name")
   passwordHash      String                 @map("password_hash")
   role              AuthRole
   isActive          Boolean                @default(true) @map("is_active")

@@ -27,24 +27,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!user?.isActive) return null;
         const valid = await verifySecret(user.passwordHash, parsed.data.password);
         if (!valid) return null;
-        return { id: user.id, email: user.email, role: user.role, sessionVersion: user.sessionVersion };
+        return { id: user.id, name: user.displayName?.trim() || (user.role === 'ADMIN' ? 'Administrator' : 'Station account'), email: user.email, role: user.role, sessionVersion: user.sessionVersion };
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        token.name = (user as { name?: string }).name;
         token.role = (user as { role?: 'ADMIN' | 'STATION' }).role;
         token.sessionVersion = (user as { sessionVersion?: number }).sessionVersion;
       }
       if (token.sub) {
-        const current = await prisma.authUser.findUnique({ where: { id: token.sub }, select: { role: true, isActive: true, sessionVersion: true } });
+        const current = await prisma.authUser.findUnique({ where: { id: token.sub }, select: { role: true, isActive: true, sessionVersion: true, displayName: true } });
         if (!current?.isActive || (token.sessionVersion !== undefined && token.sessionVersion !== current.sessionVersion)) {
           token.invalid = true;
           token.role = undefined;
         } else {
           token.role = current.role;
           token.sessionVersion = current.sessionVersion;
+          token.name = current.displayName?.trim() || (current.role === 'ADMIN' ? 'Administrator' : 'Station account');
           token.invalid = false;
         }
       }
@@ -53,6 +55,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     session({ session, token }) {
       if (session.user) {
         if (token.sub) session.user.id = token.sub;
+        session.user.name = token.name ?? (token.role === 'ADMIN' ? 'Administrator' : 'Station account');
         session.user.role = token.invalid ? undefined as never : token.role as 'ADMIN' | 'STATION';
       }
       return session;
