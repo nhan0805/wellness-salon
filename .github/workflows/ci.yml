@@ -23,7 +23,7 @@ jobs:
       STATION_EMAIL: station@ci.invalid
       STATION_PASSWORD: ci-only-station-password
       STAFF_DEFAULT_PIN: '1234'
-      D1_TEST_PERSIST_TO: ${{ runner.temp }}/wellness-salon-d1
+      D1_TEST_PERSIST_TO: .d1-test-state
       D1_TEST_ADMIN_EMAIL: d1-admin@ci.invalid
       D1_TEST_ADMIN_PASSWORD: d1-ci-admin-password
       D1_TEST_STATION_EMAIL: d1-station@ci.invalid
