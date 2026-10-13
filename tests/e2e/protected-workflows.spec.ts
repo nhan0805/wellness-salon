@@ -81,7 +81,7 @@ test('protected tablet workflow completes a turn and payment', async ({ page }) 
     await finish.click();
     await enterPin(stationPage, '1234');
     await confirmStaffAction(stationPage);
-    await expect(stationPage.getByText('Awaiting payment', { exact: true })).toBeVisible();
+    await expect(currentTurn.getByText('Awaiting payment', { exact: true })).toBeVisible();
   } finally {
     await stationPage.close();
   }
