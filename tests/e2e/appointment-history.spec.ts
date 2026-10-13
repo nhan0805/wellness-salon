@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { signIn } from './helpers';
+import { openAdminSection, signIn } from './helpers';
 
 async function createKioskVisit(page: import('@playwright/test').Page, name: string) {
   const phone = `+1 415 777 ${String(Date.now()).slice(-7)}`;
@@ -28,11 +28,12 @@ test('admin can view and filter appointment turn history', async ({ page }, test
   const code = await createKioskVisit(page, `Turn History Guest ${testInfo.project.name}-${Date.now()}`);
 
   await page.goto('/admin');
-  await page.getByRole('button', { name: 'Appointments', exact: true }).click();
+  await openAdminSection(page, 'Appointments');
 
   const row = page.locator('tbody tr').filter({ hasText: code });
   await expect(row).toBeVisible();
-  await row.getByRole('button', { name: `View appointment history for ${code}`, exact: true }).click();
+  await row.getByRole('button', { name: `Open actions for appointment ${code}`, exact: true }).click();
+  await page.getByRole('menuitem', { name: 'History', exact: true }).click();
 
   const dialog = page.getByRole('dialog', { name: 'Appointment history' });
   await expect(dialog).toBeVisible();

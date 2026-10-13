@@ -1,5 +1,14 @@
 # Implementation changelog
 
+## 2026-10-12 Cloudflare Free migration audit
+
+- Added the official vinext/Cloudflare build path, Cloudflare Worker configuration, and a named D1 binding scaffold without creating a remote resource.
+- Replaced Worker-visible native Argon2 loading with `hash-wasm` Argon2id while retaining native `argon2` only for the Node seed path; verified PHC compatibility.
+- Neutralized runtime/bootstrap timezone defaults to an explicit UTC sentinel and documented the owner IANA timezone gate.
+- Added the complete Cloudflare migration documentation set under `docs/cloudflare/`, covering compatibility, architecture, D1 migration, auth, concurrency, realtime, timezone, performance, capacity, tests, deployment, backup, rollback, and final readiness.
+- Added a separate SQLite/D1 schema and fresh local migration, generated a client-only D1 Prisma client, and added a Worker adapter/WASM runtime bridge without replacing the PostgreSQL reference schema.
+- Verified local D1 health/catalog/board/page smoke, kiosk check-in, idempotent replay, conflicting-payload rejection, and three concurrent unique appointment codes. The application lease is a compatibility bridge without rollback; production readiness remains blocked by explicit D1 command atomicity, money representation, auth, and full Worker coverage. No Cloudflare login, remote D1, secret upload, or deployment was performed.
+
 ## 2026-10-12 payment confirmation follow-up
 
 - Added the shared `AmountKeypad` component to payment confirmation for final amount, card-terminal tip, cash tip, and cash received. The USD-first keypad collapses until focus/click, supports quick values, and remains keyboard/paste/delete accessible.

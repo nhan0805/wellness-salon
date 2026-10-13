@@ -2,6 +2,18 @@
 
 This tracker records the implementation authorized by the product/engineering brief in the attached user instructions. The existing audit remains at `docs/audits/2026-10-10-nail-salon-mvp-audit.md`.
 
+## 2026-10-12 Cloudflare Free migration
+
+Status: **Blocked before deployment**.
+
+- Added official vinext/Cloudflare Worker build configuration and a D1 binding scaffold; no remote resources were created.
+- `npm run build:vinext` and `npx cf build` complete; direct vinext page smoke returns 200 for `/`, `/kiosk`, and `/board`.
+- Worker-visible Argon2id now uses `hash-wasm`; native PHC compatibility was verified.
+- Runtime/bootstrap timezone defaults now use an explicit UTC sentinel. The owner must provide the final IANA timezone before scheduled jobs run.
+- Added a separate D1 schema/migration and client-generation workflow. The local Worker runtime now executes health, catalog, board, public pages, kiosk check-in, idempotent replay, and concurrent code-allocation smoke against disposable local D1 state.
+- The D1 bridge uses an application lease to serialize the existing command callbacks, but it does not provide rollback. Explicit D1 batch/guard/receipt command rewrites, money representation, auth portability, realtime/cron tests, and capacity evidence remain open.
+- Required reports are in `docs/cloudflare/`. Do not authenticate to Cloudflare, create D1, upload secrets, or deploy until the final report's blockers are closed and the owner explicitly approves.
+
 ## Safety baseline
 
 - Repository has no `.git` directory, so a recoverable pre-change source snapshot was created at `/private/tmp/wellness-salon-pre-implementation-20261010.tar.gz`; the current pushed snapshot uses attached metadata at `/private/tmp/wellness-salon-git`.
@@ -56,10 +68,11 @@ These checks were run before implementation changes:
 | `npx prisma generate` | PASS; Prisma Client 6.19.3 generated; Prisma 7 package.json configuration deprecation warning |
 | `npm run typecheck` | PASS |
 | `npm run lint` | PASS |
-| `npm test -- --run` | PASS: 11 files, 31 tests; 3 DB-gated files / 9 tests skipped without DB env |
+| `npm test -- --run` | PASS: 13 files, 37 tests; 3 DB-gated files / 9 tests skipped without DB env |
 | `npm run test:coverage` | PASS: current rerun 24.88% statements/lines, 68.75% branches, 11.39% functions |
 | `npx prisma validate` | PASS; Prisma 7 package.json configuration deprecation warning |
 | `npm run build` | PASS; Next.js 16.4.0 Turbopack; all current app/API routes compiled |
+| Local D1 migration / Worker smoke | PASS with scope; full atomicity remains blocked |
 | Tablet public authorization smoke: board visitor + kiosk | PASS: 2/2; server required approved out-of-sandbox bind |
 | `npm audit --omit=dev --omit=optional --audit-level=high` | NOT VERIFIED after implementation because the audit endpoint was unavailable (`ENOTFOUND registry.npmjs.org`); pre-change baseline was 0 high-severity vulnerabilities and no dependencies were changed in this batch |
 | PostgreSQL migration + seed | PASS on isolated native PostgreSQL `127.0.0.1:55432/nailshop_test`; all 14 migrations applied and seed completed; production DB untouched |

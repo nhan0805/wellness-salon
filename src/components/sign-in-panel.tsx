@@ -4,7 +4,6 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ArrowRight, Eye, EyeOff, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
-import { signIn } from 'next-auth/react';
 
 export default function SignInPanel() {
   const router = useRouter();
@@ -23,17 +22,16 @@ export default function SignInPanel() {
     setError('');
 
     try {
-      const result = await signIn('credentials', {
-        email,
-        password,
-        redirect: false,
-        callbackUrl: '/',
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       });
-
-      if (result?.error) {
+      if (!response.ok) {
         setError('Unable to sign in. Check your email and password and try again.');
       } else {
-        router.replace('/');
+        router.replace(isAdminEntry ? '/admin' : '/board');
+        router.refresh();
       }
     } catch {
       setError('Something went wrong. Please try again.');

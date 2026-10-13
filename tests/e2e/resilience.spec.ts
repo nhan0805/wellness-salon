@@ -27,6 +27,13 @@ test('tablet browser recovers after an emulated board-network interruption', asy
     }
     await route.continue();
   });
+  await page.route('**/api/sse/board', async (route) => {
+    if (networkDown) {
+      await route.abort('internetdisconnected');
+      return;
+    }
+    await route.continue();
+  });
 
   await page.goto('/board');
   await expect(page.getByRole('heading', { name: "Today’s queue", exact: true })).toBeVisible();

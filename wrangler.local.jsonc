@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "nail-shop-management-local",
+  "compatibility_date": "2026-10-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "wellness-salon",
+      "database_id": "03e062f4-935f-4297-aa6a-68628ea66e8a",
+      "migrations_dir": "prisma/d1/migrations"
+    }
+  ]
+}

@@ -12,6 +12,7 @@ curl -fsS http://localhost:3000/api/health
 ```
 
 Compose khởi động PostgreSQL, chạy migration + seed, rồi mới mở app ở port 3000. Healthcheck là `/api/health`; dashboard, kiosk catalog và board đều lấy dữ liệu từ database.
+Trong Compose, app được bind riêng vào `127.0.0.1:3000`; PostgreSQL chỉ bind host port `127.0.0.1:5433` (kết nối nội bộ giữa container vẫn dùng `postgres:5432`). Nếu cần đổi host port PostgreSQL, dùng biến `POSTGRES_HOST_PORT`, không đổi `DATABASE_URL` nội bộ.
 
 Nếu chạy Next.js ngoài Docker, dùng PostgreSQL có sẵn và chạy:
 
@@ -26,7 +27,7 @@ npm run dev
 ## Kiểm tra flow
 
 1. Mở `/kiosk`, chọn service đang active trong database, nhập thông tin khách hàng.
-2. Mở `/board` để xem live queue mà không cần đăng nhập. Board tự lấy lại dữ liệu mỗi 3 giây, nên khách mới check-in sẽ xuất hiện mà không cần reload trang. Đăng nhập station bằng credential trong `.env` khi cần thao tác, rồi dùng PIN staff trong `.env` để finish/skip hoặc check-in/out.
+2. Mở `/board` để xem live queue mà không cần đăng nhập. Board tự lấy lại dữ liệu mỗi 5 giây, nên khách mới check-in sẽ xuất hiện mà không cần reload trang. Đăng nhập station bằng credential trong `.env` khi cần thao tác, rồi dùng PIN staff trong `.env` để finish/skip hoặc check-in/out.
 3. Vào `/admin`, mở Payments và xác nhận CARD/CASH sau khi lượt chuyển PAYMENT_PENDING.
 4. Trong `/admin`, Attendance cho phép check-in/out và chạy closing review; Customers, Staff và Services có Add/Edit cùng lifecycle an toàn (customer có lịch sử không xóa cứng, staff/service deactivate/archive).
 5. Trong `/admin`, Services có hai lớp quản lý: category có thứ tự/trạng thái archive và service có icon, category, skills, duration, price; kiosk nhóm service theo category. Customers mở được history theo filter ngày/status; Appointments có menu `...` cho payment, history, change service, reassignment, override và cancellation.

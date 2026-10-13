@@ -40,9 +40,11 @@ export function AccountMenu({ viewer, callbackUrl }: { viewer: AccountViewer; ca
       <button
         type="button"
         ref={triggerRef}
+        id="account-menu-trigger"
         className="account-menu-trigger"
-        aria-haspopup="dialog"
+        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? 'account-menu-panel' : undefined}
         aria-label={`Account: ${viewer.displayName}`}
         onClick={() => setOpen((current) => !current)}
       >
@@ -57,7 +59,12 @@ export function AccountMenu({ viewer, callbackUrl }: { viewer: AccountViewer; ca
       </button>
 
       {open ? (
-        <div className="account-menu-panel" role="dialog" aria-label="Account menu">
+        <div
+          id="account-menu-panel"
+          className="account-menu-panel"
+          role="menu"
+          aria-labelledby="account-menu-trigger"
+        >
           <div className="account-menu-profile">
             <InitialsAvatar initials={viewer.initials} tone={viewer.role === 'ADMIN' ? 'blue' : 'teal'} />
             <div>

@@ -63,7 +63,7 @@ The implementation-specific BR-01 through BR-06 rules and hardening choices are 
 - Alternatives considered: Polling only; WebSockets; third-party realtime service.
 - Reason: SSE is simple for server-to-client events and fits the one-way board update pattern; polling preserves resilience.
 - Tradeoffs: Two update paths must stay consistent; database mode currently emits snapshots/keepalives rather than a full database event bus.
-- Consequences: nginx must disable buffering for the SSE path; clients should tolerate duplicate/stale snapshots. The board client polls every 3 seconds because the current SSE stream sends snapshots and keepalives rather than database change events.
+- Consequences: nginx must disable buffering for the SSE path; clients should tolerate duplicate/stale snapshots. The board client polls every 5 seconds because the current SSE stream sends snapshots and keepalives rather than database change events.
 
 ## ADR-006 — Standalone Docker runner with separate migration service
 
@@ -290,3 +290,15 @@ The implementation-specific BR-01 through BR-06 rules and hardening choices are 
 - Alternatives considered: Require a reason whenever the final amount differs; keep an optional unused reason field for compatibility; silently discard the UI value while accepting it server-side.
 - Reason: Keeps the confirmation flow focused on recording the external collection while preserving a separate, explicit audit boundary for later financial corrections.
 - Consequences: Changing the final amount during initial confirmation is allowed without an extra prompt. Clients must not send `adjustmentReason`; the post-confirmation administrative commands remain the place for reasoned corrections.
+
+## ADR-025 — Keep the Cloudflare/D1 path additive until atomicity is proven
+
+- ID: ADR-025
+- Date: 2026-10-12
+- Status: Accepted for migration audit; not a production cutover decision
+- Context: The requested Cloudflare Free target uses Workers and D1, while the existing PostgreSQL/Prisma runtime encodes transaction-scoped advisory locks and rollback behavior that D1/Prisma does not provide.
+- Decision: Preserve PostgreSQL schema/migrations as the behavioral reference and add a separate SQLite/D1 schema, migration directory, generated client, and Worker adapter path. Use a disposable local D1 state for smoke testing only. Do not create remote resources or route production traffic until critical commands are rewritten and their atomicity, idempotency, money representation, auth, and concurrency behavior are proven.
+- Alternatives considered: Change the existing Prisma provider in place; replay PostgreSQL migrations against D1; deploy the current lease bridge as if it were a transaction.
+- Reason: An additive boundary protects the known BR-01–BR-06 behavior and keeps rollback to the PostgreSQL reference available while D1-specific semantics are tested honestly.
+- Tradeoffs: Two schemas and runtime paths must be kept synchronized during the migration; the current D1 bridge can serialize a smoke flow but cannot roll back partial writes.
+- Consequences: Local D1 commands use `wrangler.local.jsonc` and `prisma/d1/migrations/0001_init.sql`. Remote Cloudflare authentication, D1 creation, secret upload, and deployment remain explicit owner gates.

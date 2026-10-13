@@ -5,7 +5,6 @@ import { adminAppointmentCancelSchema } from '@/src/server/validation';
 import { cancelDbAppointment } from '@/src/server/services/prisma-operations';
 import { observeApiRequest } from '@/src/server/observability';
 
-export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   return observeApiRequest(request, 'POST /api/admin/appointments/cancel', async () => {

@@ -1,3 +1,9 @@
-import { handlers } from '@/src/server/auth';
+import { handleAuthRequest } from '@/src/server/auth';
 
-export const { GET, POST } = handlers;
+export async function GET(request: Request) {
+  return handleAuthRequest(request);
+}
+
+export async function POST(request: Request) {
+  return handleAuthRequest(request);
+}

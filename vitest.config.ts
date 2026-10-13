@@ -3,7 +3,10 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   resolve: {
-    alias: { '@': path.resolve(__dirname, '.') }
+    alias: {
+      '@': path.resolve(__dirname, '.'),
+      'cloudflare:workers': path.resolve(__dirname, 'tests/shims/cloudflare-workers.ts'),
+    },
   },
   test: {
     environment: 'node',

@@ -1,6 +1,12 @@
 # Project state
 
-Last updated: 2026-10-12
+Last updated: 2026-10-13
+
+## Cloudflare migration gate — current status
+
+The Cloudflare Free migration is at **local D1 readiness-audit stage and blocked before remote deployment**. The official vinext path builds a Worker artifact; the separate D1 schema/migrations power local health, catalog, board, public pages, authentication, kiosk check-in, staff/appointment/admin/payment workflows, and job smoke. Critical mutation branches now use explicit D1 batches and guards; crash/interruption, full concurrency, remote Worker/D1, scheduler authorization, and capacity evidence remain open. The owner-confirmed IANA timezone is `Asia/Ho_Chi_Minh`; Cloudflare login, remote D1, secrets, production migration, and deployment remain owner-gated.
+
+Closing/retention jobs use one guarded `*/15 * * * *` Worker trigger and read the current Admin-configured D1 timezone/closing time before running. Invalid or missing configuration disables them safely; `UTC` remains only the explicit unconfigured bootstrap sentinel. See [`docs/cloudflare/FINAL_REPORT.md`](cloudflare/FINAL_REPORT.md) and the full [`docs/cloudflare/`](cloudflare/) runbook set.
 
 ## Current project goal
 
@@ -8,15 +14,15 @@ Deliver a tablet-first nail-shop operations system that connects customer self-c
 
 ## Current milestone
 
-V1 functional baseline, iPad-first redesign, reliability hardening, and the follow-up catalog/payment traceability batch are implemented. The repository is now at supervised-pilot release verification: every operational surface uses PostgreSQL, credentials come from deployment secrets, and physical-device/staging/deployment checks remain before unattended production use.
+V1 functional baseline, iPad-first redesign, reliability hardening, and the follow-up catalog/payment traceability batch are implemented. The PostgreSQL reference runtime remains at supervised-pilot release verification; the separate Cloudflare Free migration is blocked at D1 data-layer portability and must not be treated as a production cutover.
 
 ## Current sprint
 
-Close the physical tablet, deployed-network, scheduler, and production approval gates without weakening the PostgreSQL workflow.
+Complete failure-injection/concurrency, scheduler, capacity, and remote Worker/D1 evidence for the explicit D1 command branches, settle money representation, preserve the PostgreSQL workflow, and then request production approval.
 
 ## Current task
 
-Validate the hardening batch on real iPad/WebKit and staging-like infrastructure, then close the remaining release gates.
+Verify the Cloudflare Worker/D1 runtime without weakening BR-01–BR-06, record the owner-reviewed readiness decision, and keep remote resource creation/deployment behind explicit approval. Local D1 smoke is broad but deployment remains intentionally out of scope until the open evidence gates close.
 
 ## Last completed work
 
@@ -54,6 +60,7 @@ Validate the hardening batch on real iPad/WebKit and staging-like infrastructure
 
 - Implemented kiosk, board, admin, sign-in, API route handlers, domain state machines, fairness routing, reconciliation, and PostgreSQL services.
 - Implemented PostgreSQL/Prisma schema, versioned migrations, idempotent seed data, Auth.js credentials, Argon2id hashing, verified staff sessions, audit events, command receipts, and advisory-lock routing.
+- Added the additive Cloudflare path: separate `prisma/d1/schema.prisma`, fresh `prisma/d1/migrations/0001_init.sql`, `wrangler.local.jsonc`, D1 client generation hooks, explicit Worker WASM loading, and a local `__app_locks` compatibility lease.
 - Added Docker multi-stage build, PostgreSQL/migration/app Compose services, optional nginx proxy, health endpoint, CI workflow, unit/integration tests, and Playwright E2E coverage.
 - Added the closing-job trigger script and local runbook instructions.
 - Added this project-memory documentation set and linked it from `README.md`.
@@ -80,7 +87,7 @@ Validate the hardening batch on real iPad/WebKit and staging-like infrastructure
 
 ## Build and test status
 
-Latest local static verification on 2026-10-12: `npm run db:generate`, `npm run lint`, `npm run typecheck`, `npm test -- --run` (34 passed, 9 DB-gated skipped without DB env), `npx prisma validate`, `npm run test:coverage`, and `npm run build` pass. Coverage currently reports 24.88% statements/lines, 68.75% branches, and 11.39% functions. The implementation verification recorded 14 migrations + seed, sequential PostgreSQL tests (`postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5), protected tablet E2E 7/7, returning-guest kiosk E2E 2/2, resilience E2E 3/3, and Chromium viewport review at 810×1080/1080×810 with no horizontal overflow. No production database, deployment, or infrastructure was changed.
+Latest local static verification on 2026-10-13: `npm run lint`, `npm run typecheck`, `npm test -- --run` (51 passed, 9 DB-gated skipped without DB env), `npm run build`, `npm run build:vinext`, `npx vinext check` (94%, no library issues), `npx cf build`, and `npx cf deploy --dry-run` pass. Local D1 migration, bootstrap, broad command/admin/job HTTP smoke, scheduler authorization tests, realtime browser recovery, Docker health, and cleanup pass; remote D1/Worker smoke and Cloudflare CPU/quota metrics require Wrangler authentication. The owner confirmed `Asia/Ho_Chi_Minh` on 2026-10-13; changing the timezone in Admin remains supported. No production database, deployment, or infrastructure was changed.
 
 Detailed evidence and scenario-level gaps are maintained in [`docs/implementation/FINAL_REPORT.md`](implementation/FINAL_REPORT.md), [`docs/implementation/RELEASE_CHECKLIST.md`](implementation/RELEASE_CHECKLIST.md), and [`docs/implementation/TEST_MATRIX.md`](implementation/TEST_MATRIX.md).
 
@@ -90,16 +97,16 @@ Verification evidence from the baseline and the 2026-10-10 hardening run:
 | --- | --- | --- |
 | `npm run lint` | PASS | No lint errors or warnings in the final run. |
 | `npm run typecheck` | PASS | Must be run after `next build`; a concurrent build can replace `.next/types` while TypeScript is reading it. |
-| `npm test -- --run` | PASS | 34 tests passed; 9 DB-gated tests skipped when no disposable DB variables are provided. |
+| `npm test -- --run` | PASS | 42 tests passed; 9 DB-gated tests skipped when no disposable DB variables are provided. |
 | `npm run test:coverage` | PASS | Current rerun: 24.88% statements/lines, 68.75% branches, 11.39% functions. |
 | `npm run build` | PASS | Next.js 16.4.0 Turbopack production build completed and compiled the current route inventory. |
 | DB-gated Vitest | PASS (recorded implementation run) | Disposable PostgreSQL: `postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5; sequential execution required. |
 | Playwright/viewport evidence | PASS with limitations | Protected tablet 7/7, returning kiosk 2/2, resilience 3/3, and Chromium portrait/landscape review; physical iPad/WebKit and real Wi-Fi remain. |
-| Docker health | PASS on 2026-10-12 | Rebuilt with `docker compose --env-file .env -f docker/docker-compose.yml up -d --build`; app/PostgreSQL healthy, migration service completed, and `/api/health` returned `status: ok`. |
+| Docker health | PASS | Final local production-image rebuild completed; app/PostgreSQL reported healthy and `/api/health` returned `status: ok`. No `.env` contents were printed and no volumes were reset. |
 
 ## Runtime
 
-- PostgreSQL is the only application runtime. Route handlers use Prisma, Auth.js role checks, database transactions, advisory locks, and seeded data.
+- PostgreSQL remains the behavioral reference runtime. The Cloudflare Worker selects the D1 adapter when the `DB` binding is present and uses its custom Web Crypto/HS256 auth boundary; unported D1 mutation paths remain release-gated.
 - If `DATABASE_URL` is missing or PostgreSQL is unavailable, `/api/health` returns a failure and the UI reports a database loading error; no synthetic records are created.
 
 ## Open issues

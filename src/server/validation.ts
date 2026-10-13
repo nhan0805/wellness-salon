@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DEFAULT_SERVICE_ICON_KEY, SERVICE_ICON_KEYS } from '@/src/domain/service-icons';
+import { toMinorUnits } from '@/src/domain/money';
 
 const phoneSchema = z
   .string()
@@ -11,6 +12,15 @@ const phoneSchema = z
     const digits = value.replace(/\D/g, '');
     return digits.length >= 7 && digits.length <= 15;
   }, 'Enter a phone number with 7–15 digits');
+
+const moneySchema = z.number().finite().min(0).max(100000).refine((value) => {
+  try {
+    toMinorUnits(value);
+    return true;
+  } catch {
+    return false;
+  }
+}, 'Use no more than two decimal places');
 
 export const checkInSchema = z
   .object({
@@ -32,18 +42,18 @@ export const kioskCustomerLookupSchema = z.object({
 export const confirmPaymentSchema = z.object({
   appointmentId: z.string().min(1),
   method: z.enum(['CARD', 'CASH']),
-  amount: z.number().finite().min(0).max(100000).optional(),
-  tip: z.number().finite().min(0).max(100000).optional(),
-  cashReceived: z.number().finite().min(0).max(100000).optional(),
+  amount: moneySchema.optional(),
+  tip: moneySchema.optional(),
+  cashReceived: moneySchema.optional(),
   idempotencyKey: z.string().min(8).max(120),
 });
 
 export const adjustPaymentSchema = z.object({
   appointmentId: z.string().min(1),
   method: z.enum(['CARD', 'CASH']),
-  amount: z.number().finite().min(0).max(100000),
-  tip: z.number().finite().min(0).max(100000),
-  cashReceived: z.number().finite().min(0).max(100000).optional(),
+  amount: moneySchema,
+  tip: moneySchema,
+  cashReceived: moneySchema.optional(),
   reason: z.string().trim().min(2, 'Enter a reason for the adjustment').max(200),
   idempotencyKey: z.string().min(8).max(120),
 });
@@ -51,14 +61,14 @@ export const adjustPaymentSchema = z.object({
 export const correctPaymentSchema = z.object({
   appointmentId: z.string().min(1),
   method: z.enum(['CARD', 'CASH']),
-  tip: z.number().finite().min(0).max(100000),
+  tip: moneySchema,
   reason: z.string().trim().min(2, 'Enter a reason for the correction').max(200),
   idempotencyKey: z.string().min(8).max(120),
 });
 
 export const refundPaymentSchema = z.object({
   appointmentId: z.string().min(1),
-  amount: z.number().finite().positive().max(100000),
+  amount: moneySchema.refine((value) => value > 0, 'Enter a refund amount'),
   refundMethod: z.enum(['CARD', 'CASH']),
   reason: z.string().trim().min(2, 'Enter a reason for the refund').max(200),
   idempotencyKey: z.string().min(8).max(120),
@@ -156,7 +166,7 @@ export const adminServiceCreateSchema = z.object({
   iconKey: adminServiceIconKey,
   categoryId: z.string().min(1),
   durationMin: z.number().int().min(5).max(480),
-  price: z.number().finite().min(0).max(100000),
+  price: moneySchema,
   skillIds,
 });
 

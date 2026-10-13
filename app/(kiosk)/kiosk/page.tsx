@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { ErrorMessage } from '@/src/components/ui';
 import { ServiceIcon } from '@/src/components/service-icons';
+import { isWithinOperatingHours } from '@/src/domain/operating-hours';
+import { DEFAULT_TIMEZONE } from '@/src/domain/locale-options';
 
 type ServiceCategory = { id: string; name: string; slug: string; sortOrder: number };
 type Service = {
@@ -78,7 +80,7 @@ export default function KioskPage() {
   const [catalogError, setCatalogError] = useState('');
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [shop, setShop] = useState<Shop>({
-    timezone: 'Asia/Ho_Chi_Minh',
+    timezone: DEFAULT_TIMEZONE,
     openingTime: '09:00',
     closingTime: '21:00',
     currency: 'USD',
@@ -90,7 +92,9 @@ export default function KioskPage() {
   const [lookupState, setLookupState] = useState<CustomerLookupState>('idle');
   const [lookupAttempt, setLookupAttempt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const checkInKeyRef = useRef<string | null>(null);
+  const previousStepRef = useRef(step);
   const selectedServices = useMemo(
     () =>
       selectedServiceIds
@@ -149,23 +153,48 @@ export default function KioskPage() {
     [shop.currency],
   );
   const isShopOpen = useMemo(() => {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: shop.timezone,
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(new Date());
-    const currentMinutes =
-      Number(parts.find((part) => part.type === 'hour')?.value ?? 0) * 60 +
-      Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
-    const toMinutes = (value: string) => {
-      const [hour, minute] = value.split(':').map(Number);
-      return hour * 60 + minute;
+    return isWithinOperatingHours(new Date(clockNow), shop);
+  }, [clockNow, shop]);
+
+  const categoryIds = useMemo(
+    () => ['all', ...serviceGroups.map((group) => group.category.id)],
+    [serviceGroups],
+  );
+
+  function handleCategoryKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(event.key))
+      return;
+    event.preventDefault();
+    const nextIndex =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? categoryIds.length - 1
+          : (index + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1) + categoryIds.length) %
+            categoryIds.length;
+    const nextId = categoryIds[nextIndex];
+    setCategoryFilter(nextId);
+    window.requestAnimationFrame(() => document.getElementById('kiosk-category-' + nextId)?.focus());
+  }
+
+  useEffect(() => {
+    const refreshClock = () => setClockNow(Date.now());
+    const interval = window.setInterval(refreshClock, 30_000);
+    window.addEventListener('focus', refreshClock);
+    document.addEventListener('visibilitychange', refreshClock);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshClock);
+      document.removeEventListener('visibilitychange', refreshClock);
     };
-    return (
-      currentMinutes >= toMinutes(shop.openingTime) && currentMinutes < toMinutes(shop.closingTime)
-    );
-  }, [shop]);
+  }, []);
+
+  useEffect(() => {
+    if (previousStepRef.current === step) return;
+    previousStepRef.current = step;
+    const targetId = step === 1 ? 'kiosk-title' : step === 2 ? 'details-title' : 'ticket-title';
+    window.requestAnimationFrame(() => document.getElementById(targetId)?.focus());
+  }, [step]);
 
   useEffect(() => {
     let disposed = false;
@@ -345,11 +374,29 @@ export default function KioskPage() {
         body: JSON.stringify({ serviceIds: selectedServiceIds, phone, name, idempotencyKey }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Unable to check in');
+      if (!response.ok) {
+        if (payload.code === 'KIOSK_CHECK_IN_CLOSED') {
+          setShop((current) => ({
+            ...current,
+            openingTime: payload.openingTime ?? current.openingTime,
+            closingTime: payload.closingTime ?? current.closingTime,
+            timezone: payload.timezone ?? current.timezone,
+          }));
+        }
+        throw new Error(payload.error ?? 'Unable to check in');
+      }
       setTicket(payload);
       setStep(3);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to check in');
+      const networkFailure = typeof navigator !== 'undefined' && !navigator.onLine;
+      const unknownResult = networkFailure || err instanceof TypeError;
+      setError(
+        unknownResult
+          ? 'We could not confirm the check-in because the kiosk connection was interrupted. No success was shown; check the connection and retry. The same request will be reused to prevent a duplicate visit.'
+          : err instanceof Error
+            ? err.message
+            : 'Unable to check in',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -379,8 +426,9 @@ export default function KioskPage() {
       </header>
       <div className="kiosk-main">
         <div className="kiosk-panel">
-          <div className="kiosk-progress" aria-label={`Step ${step} of 3`}>
+          <div className="kiosk-progress" role="list" aria-label={`Step ${step} of 3`}>
             <span
+              role="listitem"
               className={`progress-step ${step >= 1 ? 'active' : ''}`}
               aria-current={step === 1 ? 'step' : undefined}
             >
@@ -389,6 +437,7 @@ export default function KioskPage() {
             </span>
             <span className="progress-line" />
             <span
+              role="listitem"
               className={`progress-step ${step >= 2 ? 'active' : ''}`}
               aria-current={step === 2 ? 'step' : undefined}
             >
@@ -402,6 +451,7 @@ export default function KioskPage() {
             </span>
             <span className="progress-line" />
             <span
+              role="listitem"
               className={`progress-step ${step >= 3 ? 'active' : ''}`}
               aria-current={step === 3 ? 'step' : undefined}
             >
@@ -431,7 +481,7 @@ export default function KioskPage() {
             <section aria-labelledby="kiosk-title">
               <div className="kiosk-copy">
                 <div className="eyebrow">Services</div>
-                <h1 id="kiosk-title">Choose your services</h1>
+                <h1 id="kiosk-title" tabIndex={-1}>Choose your services</h1>
                 <p>
                   Select one or more services for this visit. We’ll match each service with an
                   available specialist.
@@ -492,30 +542,43 @@ export default function KioskPage() {
                     role="tablist"
                     aria-label="Service categories"
                   >
-                    {' '}
                     <button
                       type="button"
                       role="tab"
+                      id="kiosk-category-all"
+                      aria-controls="kiosk-service-category-panel"
                       aria-selected={categoryFilter === 'all'}
+                      tabIndex={categoryFilter === 'all' ? 0 : -1}
                       className={`service-category-chip ${categoryFilter === 'all' ? 'active' : ''}`}
                       onClick={() => setCategoryFilter('all')}
+                      onKeyDown={(event) => handleCategoryKeyDown(event, 0)}
                     >
                       All services <span>{services.length}</span>
                     </button>
-                    {serviceGroups.map((group) => (
+                    {serviceGroups.map((group, index) => (
                       <button
                         type="button"
                         role="tab"
+                        id={`kiosk-category-${group.category.id}`}
+                        aria-controls="kiosk-service-category-panel"
                         key={group.category.id}
                         aria-selected={categoryFilter === group.category.id}
+                        tabIndex={categoryFilter === group.category.id ? 0 : -1}
                         className={`service-category-chip ${categoryFilter === group.category.id ? 'active' : ''}`}
                         onClick={() => setCategoryFilter(group.category.id)}
+                        onKeyDown={(event) => handleCategoryKeyDown(event, index + 1)}
                       >
                         {group.category.name} <span>{group.services.length}</span>
                       </button>
                     ))}
                   </div>
-                  <div className="service-category-groups">
+                  <div
+                    className="service-category-groups"
+                    id="kiosk-service-category-panel"
+                    role="tabpanel"
+                    tabIndex={-1}
+                    aria-labelledby={`kiosk-category-${categoryFilter}`}
+                  >
                     {visibleServiceGroups.map((group) => {
                       const headingId = `service-category-${group.category.slug}`;
                       return (
@@ -626,7 +689,7 @@ export default function KioskPage() {
               </button>
               <div className="kiosk-copy" style={{ marginTop: 28 }}>
                 <div className="eyebrow">Your details</div>
-                <h1 id="details-title" style={{ fontSize: 'clamp(2.3rem, 5vw, 3.6rem)' }}>
+                <h1 id="details-title" tabIndex={-1} style={{ fontSize: 'clamp(2.3rem, 5vw, 3.6rem)' }}>
                   Enter your details
                 </h1>
                 <p>
@@ -734,7 +797,7 @@ export default function KioskPage() {
           {step === 3 && ticket ? (
             <section className="card kiosk-confirm-card" aria-labelledby="ticket-title">
               <div className="eyebrow">You’re checked in</div>
-              <h1 id="ticket-title" className="ticket-code">
+              <h1 id="ticket-title" tabIndex={-1} className="ticket-code">
                 {ticket.code}
               </h1>
               <p className="ticket-message">{ticket.message}</p>

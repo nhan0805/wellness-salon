@@ -4,6 +4,13 @@ Release-style history of meaningful repository changes. Dates use the project ti
 
 ## Unreleased — 2026-10-12
 
+### Cloudflare Free migration audit
+
+- Added the official vinext/Cloudflare build scaffold, Worker configuration, and D1 binding metadata without creating remote Cloudflare resources.
+- Added Worker-safe `hash-wasm` Argon2id verification and removed the hidden Vietnam timezone bootstrap fallback; the final timezone remains an owner decision.
+- Added a separate D1 schema/migration and local Worker runtime bridge. Direct vinext page/data smoke, local check-in idempotency, and concurrent code allocation pass; D1 command atomicity/rollback, money representation, concurrency breadth, Auth.js portability, and production tests remain release blockers.
+- No production deployment, remote D1 database, secret upload, or real production data operation was performed.
+
 ### Changed
 
 - Restored iPad standalone PWA mode with `display: standalone`, versioned manifest URL `?v=10`, Apple web-app capability/title/status metadata, and the existing 192px/512px app icons.
@@ -15,7 +22,7 @@ Release-style history of meaningful repository changes. Dates use the project ti
 ### Verification
 
 - `npm run lint`, `npm run typecheck`, `npm test -- --run` (34 passed, 9 DB-gated skips), and `npm run build` passed.
-- Docker Compose production rebuild passed; `docker-app-1` and PostgreSQL are healthy, `/api/health` returned `status: ok`, and the live manifest reports `display: standalone` with Apple capability/status/title tags.
+- A prior Docker-enabled host recorded a successful Compose production rebuild and live manifest check; Docker socket access was BLOCKED in the current Cloudflare migration environment, so that result is retained as historical evidence only.
 - The payment-confirmation keypad/API follow-up passed the same static gates; no database migration is required for the removed confirm-only field.
 - Physical iPad reinstall and WebKit keyboard behavior remain manual checks; remove and re-add the existing Home Screen icon before testing because iPad can cache install metadata.
 

@@ -15,7 +15,7 @@ This checklist distinguishes implementation evidence from release verification t
 - [x] Retention cleanup is documented and exposed as an admin/cron-protected job; scheduler configuration remains an operator responsibility.
 - [x] Queue reconciliation is an explicit manager action rather than a side effect of board reads.
 - [x] Request IDs, structured API completion timings, mutation receipts, board version signals, and audit events are available in the implemented paths.
-- [x] Critical-path telemetry records rejected mutating commands, advisory-lock waits ≥10ms, board snapshot version/time, and closing/retention job outcomes; deployment dashboards/alerts and full admin-route coverage remain open.
+- [x] Critical-path telemetry records rejected mutating commands, advisory-lock waits ≥10ms, board snapshot version/time, and closing/retention job outcomes; Admin/API operational routes now use the shared request wrapper, while deployment dashboards/alerts remain open.
 - [x] Admin appointment history uses server-side filters, bounded 25-row pagination, period summaries, deterministic ordering, and a lean response projection; the disposable fixture measured 34,360 bytes/p95 6.34ms for the page path.
 - [x] Service categories are restored as ordered/archivable catalog data with migration backfill, Admin CRUD/filtering, and grouped kiosk presentation; active services block category archive.
 - [x] Appointment turn history is append-only and stores actor/assigned-staff snapshots, reasons, and event times.

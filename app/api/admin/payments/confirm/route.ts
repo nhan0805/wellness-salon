@@ -5,7 +5,6 @@ import { auth } from '@/src/server/auth';
 import { confirmDbPayment } from '@/src/server/services/prisma-operations';
 import { observeApiRequest } from '@/src/server/observability';
 
-export const runtime = 'nodejs';
 
 async function adminIdForRequest() {
   const session = await auth();

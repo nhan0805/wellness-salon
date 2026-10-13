@@ -10,6 +10,9 @@ export type CurrencyOption = {
   symbol: string;
 };
 
+/** Safe bootstrap value only; production must set ShopConfig before jobs run. */
+export const DEFAULT_TIMEZONE = 'UTC';
+
 /**
  * Generated from the IANA timezone and CLDR currency data available on
  * 2026-10-10. Keeping this list static avoids SSR/browser hydration drift.

@@ -23,7 +23,7 @@
   --color-card: #ffffff;
   --color-muted: #f7efeb;
   --color-muted-foreground: #756a6d;
-  --color-muted-taupe: #8d8183;
+  --color-muted-taupe: #756a6d;
   --color-text-secondary: #756a6d;
   --color-border: #f0e6e1;
   --color-success: #a8c9a0;
@@ -2861,6 +2861,22 @@ textarea:focus-visible {
 .management-error .button {
   margin-left: auto;
 }
+.admin-data-health-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 32px 16px;
+  border: 1px solid var(--color-warning);
+  border-radius: 14px;
+  background: var(--color-warning-soft);
+  color: var(--color-foreground);
+  padding: 12px 14px;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+.admin-data-health-banner .button {
+  margin-left: auto;
+}
 .management-loading {
   display: flex;
   align-items: center;
@@ -2868,6 +2884,16 @@ textarea:focus-visible {
   gap: 10px;
   min-height: 220px;
   color: var(--color-muted-foreground);
+}
+.management-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 18px;
+  color: var(--color-muted-foreground);
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 .table-note {
   display: block;
@@ -7491,14 +7517,6 @@ p {
   min-width: 190px;
 }
 
-/* On a short tablet landscape viewport, keep the CTA in document flow so it
-   does not cover the first row of service cards while the user scrolls. */
-@media (min-width: 721px) and (max-width: 1100px) and (max-height: 820px) {
-  .kiosk-step-actions {
-    position: static;
-  }
-}
-
 .service-card {
   background: rgb(255 255 255 / 0.76);
   box-shadow: 0 5px 18px rgb(81 70 74 / 0.04);
@@ -7795,6 +7813,12 @@ p {
   color: var(--color-muted-foreground);
   font-size: 0.79rem;
   line-height: 1.4;
+}
+.amount-keypad-error {
+  margin: -4px 0 0;
+  color: var(--color-danger-strong);
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 .amount-keypad-currency {
   flex: 0 0 auto;
@@ -11900,10 +11924,63 @@ p {
   color: var(--color-primary-strong);
 }
 
+/* iPad/Safari can report stale hit-test coordinates for a bottom-sticky
+   action bar after scrolling a long service catalog. Pin the tablet CTA to
+   the viewport so it remains reliably tappable; the compact phone layout keeps
+   its own bottom action treatment above. */
+@media (max-width: 1200px) and (min-width: 601px) {
+  .kiosk-main {
+    padding-bottom: max(160px, calc(112px + env(safe-area-inset-bottom)));
+  }
+
+  .kiosk-step-actions {
+    position: fixed;
+    right: 24px;
+    bottom: max(18px, env(safe-area-inset-bottom));
+    left: 24px;
+    z-index: 30;
+    margin-top: 0;
+  }
+}
+
 /* Give the payment table action its own right-side gutter on wide layouts. */
 @media (min-width: 1101px) {
   .payment-pending-table th:last-child,
   .payment-pending-table td:last-child {
     padding-right: 16px;
+  }
+}
+
+/* Queue cards need a readable text measure on iPad. At portrait tablet
+   widths the side rail must not sit beside Up next, otherwise the queue card
+   becomes narrower than its assigned-staff panel. Landscape keeps the
+   two-column board, but stacks the active service label inside a compact
+   queue card so service names wrap at word boundaries instead of per letter.
+ */
+@media (min-width: 721px) and (max-width: 860px) {
+  .board-side {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 861px) and (max-width: 1100px) {
+  .queue-item {
+    grid-template-columns: 52px minmax(0, 1fr) minmax(160px, 42%);
+  }
+
+  .queue-assignee {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .queue-service-row.is-next {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 2px;
+  }
+
+  .queue-service-row.is-next .queue-service-name {
+    overflow-wrap: normal;
+    word-break: normal;
   }
 }

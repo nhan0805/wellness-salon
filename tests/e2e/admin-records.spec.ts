@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { signIn } from './helpers';
+import { openAdminSection, signIn } from './helpers';
 
 test('admin can add, edit, and delete a customer without appointment history', async ({ page }, testInfo) => {
   const marker = `${testInfo.project.name}-${Date.now()}`;
@@ -8,13 +8,13 @@ test('admin can add, edit, and delete a customer without appointment history', a
   const phone = `+1 415 555 ${String(Date.now()).slice(-4)}`;
 
   await signIn(page, 'ADMIN');
-  await page.getByRole('button', { name: 'Customers', exact: true }).click();
+  await openAdminSection(page, 'Customers');
   await expect(page.getByRole('heading', { name: 'Customers', exact: true, level: 2 })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Add record', exact: true }).click();
+  await page.getByRole('button', { name: 'Add customer', exact: true }).first().click();
   await page.getByLabel('Full name').fill(name);
   await page.getByLabel('Mobile number').fill(phone);
-  await page.getByRole('button', { name: 'Add customer', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add customer', exact: true }).click();
 
   const row = page.locator('tbody tr').filter({ hasText: name });
   await expect(row).toContainText(phone);

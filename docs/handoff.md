@@ -94,9 +94,10 @@ The full hardening evidence is split across [`docs/implementation/FINAL_REPORT.m
 
 ## Files changed in the latest task
 
-The latest follow-up is committed/pushed through the attached external Git metadata; the map below remains useful for review:
+The latest follow-up is present as workspace changes. This environment has no usable writable Git metadata, so no feature branch or commit could be created; the map below remains useful for review:
 
 - Runtime/domain: `src/server/services/prisma-operations.ts`, `src/server/services/admin-operations.ts`, `src/server/auth.ts`, `src/server/security.ts`, `src/server/observability.ts`, `src/domain/*`.
+- Cloudflare runtime/config: `cloudflare.config.ts`, `wrangler.local.jsonc`, `vite.config.ts`, `next.config.mjs`, `src/server/db.ts`, `src/types/cloudflare-workers.d.ts`, `prisma/d1/schema.prisma`, `prisma/d1/migrations/0001_init.sql`, and `tests/shims/cloudflare-workers.ts`.
 - API/UI: `app/api/admin/appointments/*`, `app/api/admin/queue/reconcile`, `app/api/admin/config`, `app/api/admin/skip-reasons`, `app/api/jobs/*`, board/kiosk/admin routes and components.
 - Persistence: `prisma/schema.prisma` and the 2026-10-09/10 migrations for snapshots, multi-service work, icons, normalized phones, legacy `STARTED` removal, operational safety, support release, turn events, and service categories.
 - Follow-up API/UI: `app/api/admin/service-categories`, appointment turn history, customer/payment history, payment adjustment/correction/refund routes, `app/(admin)/admin/page.tsx`, `src/components/amount-keypad.tsx`, `src/components/admin-management.tsx`, `src/domain/locale-options.ts`, `src/server/validation.ts`, and `src/server/services/prisma-operations.ts`.
@@ -107,7 +108,7 @@ The latest follow-up is committed/pushed through the attached external Git metad
 
 - Read `AGENTS.md` before framework code changes. This repository uses the installed Next.js guide under `node_modules/next/dist/docs/`; App Router conventions apply.
 - Read all seven project-memory files before starting a new task, then read the relevant lifecycle artifact under `docs/lifecycle/`.
-- PostgreSQL is the only runtime; `DATABASE_URL` is required and missing/unavailable database state is surfaced as a health/configuration failure.
+- PostgreSQL remains the behavioral reference runtime; `DATABASE_URL` is required for that path. The additive vinext/D1 path uses the Worker `DB` binding and the separate D1 schema. Critical D1 writes now use explicit batches, while the compatibility lease/fallback paths are not production evidence because they cannot roll back partial writes.
 - Compose uses PostgreSQL 16, a `migrate` service, an `app` service, and an optional `nginx` proxy profile. After changing Compose environment values, run `up -d --build` so the container is recreated; `restart` does not apply new environment values.
 - Seed credentials and the closing secret are read from `.env`; they are never hardcoded in the repository.
 - `POST /api/jobs/closing` accepts a matching `x-cron-secret` or an admin session in every runtime.
@@ -119,15 +120,15 @@ The latest follow-up is committed/pushed through the attached external Git metad
 ## Outstanding work
 
 1. Complete physical iPad/WebKit, touch/distance readability, Dynamic Type/VoiceOver, real Wi-Fi interruption, offline submission, refresh-during-mutation, and modal-focus review.
-2. Measure staging/deployed lock waits, connection-pool behavior, network latency, and representative backup/history fixtures; rehearse rollback through backup/restore or an approved forward migration.
-3. Fill the remaining scenario gaps in `docs/implementation/TEST_MATRIX.md`: repeated staff actions, in-service/payment-pending cancellation boundaries, session revalidation integration, stale board-version assertions, and broader closing/retention coverage.
-4. Configure and observe external closing/retention scheduling only when the deferred operations decision is reopened.
-5. Complete TLS/domain/secret/merchant/deploy approval gates before production claims.
+2. Complete the D1 command port with explicit batch/guard/receipt semantics, choose exact money representation, and prove rollback/interruption behavior for BR-01–BR-06.
+3. Port and test Auth.js account/session access, cron authorization, realtime recovery, timezone/DST behavior, and deployed Worker capacity.
+4. Measure staging/deployed lock waits, connection-pool behavior, network latency, and representative backup/history fixtures; rehearse rollback through backup/restore or an approved forward migration.
+5. Fill the remaining scenario gaps in `docs/implementation/TEST_MATRIX.md` and complete TLS/domain/secret/merchant/deploy approval gates before production claims.
 
 ## Known issues and risks
 
 - E2E requires a runtime that permits the local server listener; the recorded protected tablet run passed 7/7, returning-guest kiosk 2/2, and resilience 3/3.
-- Docker verification for the standalone PWA was completed on 2026-10-12 with the host Docker socket; future restricted shells may still need a Docker-enabled host or the in-app browser for runtime checks.
+- Docker verification is host-permission dependent; the current migration run could not access the Docker socket, so Docker health is recorded as BLOCKED for this environment. No `.env` contents were printed and no volumes were reset.
 - The physical iPad has not yet been reinstalled and exercised after the standalone switch. On LAN HTTP, the manifest can be inspected, but service-worker behavior still requires a secure context such as HTTPS (localhost is the browser exception).
 - Dashboard and report values are database projections for the selected business date; Queue and Payments remain scoped to the current business date.
 - PIN lockout has a database-backed record plus a process-local fast path; deployment rate limiting and abuse monitoring remain operator concerns.
@@ -138,7 +139,18 @@ The latest follow-up is committed/pushed through the attached external Git metad
 
 ## Recommended next commands
 
-From a host with Docker access:
+Local Cloudflare checks:
+
+```bash
+npm run db:generate:d1
+npx wrangler d1 migrations apply wellness-salon --local --config=wrangler.local.jsonc
+npm run dev:vinext
+npx vinext check
+npm run build:vinext
+npx cf build
+```
+
+From a host with Docker access, the PostgreSQL reference checks remain:
 
 ```bash
 docker compose --env-file .env -f docker/docker-compose.yml up -d --build

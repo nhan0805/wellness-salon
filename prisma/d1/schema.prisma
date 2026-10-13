@@ -1,0 +1,515 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/@prisma/d1-client"
+  engineType = "client"
+  runtime = "cloudflare"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./local.db"
+}
+
+enum AuthRole {
+  ADMIN
+  STATION
+}
+
+enum AppointmentStatus {
+  CREATED
+  WAITING
+  ASSIGNED
+  IN_SERVICE
+  PAYMENT_PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum TurnStatus {
+  ASSIGNED
+  ACCEPTED
+  SKIPPED
+  FINISHED
+}
+
+enum TurnEventType {
+  WAITING
+  ASSIGNED
+  ACCEPTED
+  SKIPPED
+  FINISHED
+  REASSIGNED
+  CONTINUED_WITH_ME
+  SUPPORT_ADDED
+  SUPPORT_RELEASED
+  CANCELLED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  CHECKED_OUT
+  ABSENT
+}
+
+enum AttendanceClosedBy {
+  STAFF
+  ADMIN
+  AUTO
+}
+
+enum Availability {
+  AVAILABLE
+  BUSY
+}
+
+enum PaymentMethod {
+  CARD
+  CASH
+}
+
+enum ActorType {
+  ADMIN
+  STATION
+  STAFF
+  SYSTEM
+}
+
+model Skill {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  serviceSkills ServiceSkill[]
+  staff         StaffSkill[]
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  @@map("skills")
+}
+
+model ServiceCategory {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  sortOrder Int       @default(0) @map("sort_order")
+  isActive  Boolean   @default(true) @map("is_active")
+  services  Service[]
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@index([isActive, sortOrder])
+  @@map("service_categories")
+}
+
+model Service {
+  id                  String               @id @default(cuid())
+  name                String
+  description         String               @default("")
+  iconKey             String               @default("sparkles") @map("icon_key")
+  categoryId          String               @map("category_id")
+  durationMin         Int                  @map("duration_min")
+  price               Decimal
+  category            ServiceCategory     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  requiredSkills      ServiceSkill[]
+  appointments        Appointment[]
+  appointmentServices AppointmentService[]
+  isActive            Boolean              @default(true) @map("is_active")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@index([categoryId, isActive])
+  @@map("services")
+}
+
+model ServiceSkill {
+  serviceId String  @map("service_id")
+  skillId   String  @map("skill_id")
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  skill     Skill   @relation(fields: [skillId], references: [id], onDelete: Restrict)
+
+  @@id([serviceId, skillId])
+  @@index([skillId])
+  @@map("service_skills")
+}
+
+model Staff {
+  id                     String                       @id @default(cuid())
+  name                   String
+  initials               String
+  pinHash                String                       @map("pin_hash")
+  isActive               Boolean                      @default(true) @map("is_active")
+  skills                 StaffSkill[]
+  appointments           Appointment[]
+  serviceAppointments    AppointmentService[]         @relation("appointment_service_primary_staff")
+  assignedTurns          Turn[]                       @relation("assigned_turns")
+  supportingAppointments AppointmentSupportingStaff[]
+  attendance             Attendance[]
+  serviceState           StaffServiceState?
+  verifiedSessions       VerifiedStaffSession[]
+  turnExclusions         TurnExclusion[]
+  pinLockout             StaffPinLockout?
+  createdAt              DateTime                     @default(now()) @map("created_at")
+  updatedAt              DateTime                     @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@map("staff")
+}
+
+model StaffSkill {
+  staffId String @map("staff_id")
+  skillId String @map("skill_id")
+  staff   Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([staffId, skillId])
+  @@map("staff_skills")
+}
+
+model AuthUser {
+  id                String                 @id @default(cuid())
+  email             String                 @unique
+  displayName       String?                @map("display_name")
+  passwordHash      String                 @map("password_hash")
+  role              AuthRole
+  isActive          Boolean                @default(true) @map("is_active")
+  sessionVersion    Int                    @default(0) @map("session_version")
+  confirmedPayments Payment[]              @relation("confirmed_payments")
+  stationSessions   VerifiedStaffSession[] @relation("station_sessions")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  @@index([role, isActive])
+  @@map("auth_users")
+}
+
+model Customer {
+  id              String        @id @default(cuid())
+  phone           String        @unique
+  phoneNormalized String        @unique @map("phone_normalized")
+  name            String
+  appointments    Appointment[]
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@index([name])
+  @@map("customers")
+}
+
+model Appointment {
+  id                  String                       @id @default(cuid())
+  code                String
+  customerId          String                       @map("customer_id")
+  serviceId           String                       @map("service_id")
+  serviceNameSnapshot String                       @map("service_name_snapshot")
+  durationMinSnapshot Int                          @map("duration_min_snapshot")
+  status              AppointmentStatus
+  primaryStaffId      String?                      @map("primary_staff_id")
+  amount              Decimal
+  businessDate        DateTime                     @map("business_date")
+  createdAt           DateTime                     @default(now()) @map("created_at")
+  completedAt         DateTime?                    @map("completed_at")
+  cancelledAt         DateTime?                    @map("cancelled_at")
+  cancelledReason     String?                      @map("cancelled_reason")
+  cancelledByType     ActorType?                   @map("cancelled_by_type")
+  cancelledById       String?                      @map("cancelled_by_id")
+  customer            Customer                     @relation(fields: [customerId], references: [id])
+  service             Service                      @relation(fields: [serviceId], references: [id])
+  primaryStaff        Staff?                       @relation(fields: [primaryStaffId], references: [id])
+  turns               Turn[]
+  turnEvents          TurnEvent[]
+  supportingStaff     AppointmentSupportingStaff[]
+  payment             Payment?
+  services            AppointmentService[]
+  serviceChangeEvents ServiceChangeEvent[]
+
+  @@unique([businessDate, code])
+  @@index([businessDate, status])
+  @@index([customerId, createdAt])
+  @@map("appointments")
+}
+
+model AppointmentService {
+  id                  String            @id @default(cuid())
+  appointmentId       String            @map("appointment_id")
+  serviceId           String            @map("service_id")
+  sequence            Int
+  serviceNameSnapshot String            @map("service_name_snapshot")
+  durationMinSnapshot Int               @map("duration_min_snapshot")
+  amount              Decimal
+  status              AppointmentStatus
+  primaryStaffId      String?           @map("primary_staff_id")
+  completedAt         DateTime?         @map("completed_at")
+  cancelledAt         DateTime?         @map("cancelled_at")
+  cancelledReason     String?           @map("cancelled_reason")
+  cancelledByType     ActorType?        @map("cancelled_by_type")
+  cancelledById       String?            @map("cancelled_by_id")
+  appointment         Appointment       @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  service             Service            @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  primaryStaff        Staff?             @relation("appointment_service_primary_staff", fields: [primaryStaffId], references: [id])
+  turns               Turn[]
+  turnEvents          TurnEvent[]
+  paymentItems        PaymentItem[]
+  turnExclusions      TurnExclusion[]
+  changeEvents        ServiceChangeEvent[]
+
+  @@unique([appointmentId, sequence])
+  @@index([appointmentId, status, sequence])
+  @@index([primaryStaffId, status])
+  @@map("appointment_services")
+}
+
+model Turn {
+  id                    String              @id @default(cuid())
+  appointmentId         String              @map("appointment_id")
+  appointmentServiceId  String?             @map("appointment_service_id")
+  assignedStaffId       String?             @map("assigned_staff_id")
+  status                TurnStatus
+  reason                String?
+  skipReasonId          String?             @map("skip_reason_id")
+  skipReasonNameSnapshot String?            @map("skip_reason_name_snapshot")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  endedAt               DateTime?           @map("ended_at")
+  appointment           Appointment         @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  appointmentService    AppointmentService? @relation(fields: [appointmentServiceId], references: [id], onDelete: Cascade)
+  assignedStaff         Staff?              @relation("assigned_turns", fields: [assignedStaffId], references: [id])
+  skipReason            SkipReason?         @relation(fields: [skipReasonId], references: [id], onDelete: SetNull)
+  events                TurnEvent[]
+
+  @@index([appointmentId, createdAt])
+  @@index([appointmentServiceId, createdAt])
+  @@index([assignedStaffId, status])
+  @@map("turns")
+}
+
+model TurnEvent {
+  id                        String             @id @default(cuid())
+  appointmentId             String             @map("appointment_id")
+  appointmentServiceId     String?            @map("appointment_service_id")
+  turnId                    String?            @map("turn_id")
+  eventType                 TurnEventType      @map("event_type")
+  assignedStaffId           String?            @map("assigned_staff_id")
+  assignedStaffNameSnapshot String?            @map("assigned_staff_name_snapshot")
+  actorType                 ActorType          @map("actor_type")
+  actorId                   String?            @map("actor_id")
+  actorNameSnapshot         String?            @map("actor_name_snapshot")
+  reason                    String?
+  createdAt                 DateTime           @default(now()) @map("created_at")
+  appointment               Appointment        @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  appointmentService        AppointmentService? @relation(fields: [appointmentServiceId], references: [id], onDelete: Cascade)
+  turn                      Turn?              @relation(fields: [turnId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId, createdAt])
+  @@index([appointmentServiceId, createdAt])
+  @@index([turnId, createdAt])
+  @@map("turn_events")
+}
+
+model AppointmentSupportingStaff {
+  appointmentId String      @map("appointment_id")
+  staffId       String      @map("staff_id")
+  addedAt       DateTime    @default(now()) @map("added_at")
+  releasedAt    DateTime?   @map("released_at")
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  staff         Staff       @relation(fields: [staffId], references: [id])
+
+  @@id([appointmentId, staffId])
+  @@index([staffId, releasedAt])
+  @@index([appointmentId, releasedAt])
+  @@map("appointment_supporting_staff")
+}
+
+model SkipReason {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  turns     Turn[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive, sortOrder])
+  @@map("skip_reasons")
+}
+
+model TurnExclusion {
+  id                  String             @id @default(cuid())
+  appointmentServiceId String            @map("appointment_service_id")
+  staffId              String             @map("staff_id")
+  reason               String
+  createdAt            DateTime           @default(now()) @map("created_at")
+  overriddenAt         DateTime?          @map("overridden_at")
+  overrideReason       String?            @map("override_reason")
+  overriddenById       String?            @map("overridden_by_id")
+  appointmentService   AppointmentService @relation(fields: [appointmentServiceId], references: [id], onDelete: Cascade)
+  staff                Staff              @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([appointmentServiceId, staffId])
+  @@index([appointmentServiceId, overriddenAt])
+  @@index([staffId, createdAt])
+  @@map("turn_exclusions")
+}
+
+model ServiceChangeEvent {
+  id                   String             @id @default(cuid())
+  appointmentId        String             @map("appointment_id")
+  appointmentServiceId String             @map("appointment_service_id")
+  oldServiceId         String             @map("old_service_id")
+  oldServiceName       String             @map("old_service_name")
+  oldDurationMin       Int                @map("old_duration_min")
+  oldAmount            Decimal            @map("old_amount")
+  newServiceId         String             @map("new_service_id")
+  newServiceName       String             @map("new_service_name")
+  newDurationMin       Int                @map("new_duration_min")
+  newAmount            Decimal            @map("new_amount")
+  reason               String
+  actorId              String             @map("actor_id")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  appointment          Appointment        @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  appointmentService   AppointmentService @relation(fields: [appointmentServiceId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId, createdAt])
+  @@index([appointmentServiceId, createdAt])
+  @@map("service_change_events")
+}
+
+model Attendance {
+  id           String              @id @default(cuid())
+  staffId      String              @map("staff_id")
+  businessDate DateTime            @map("business_date")
+  checkInAt    DateTime?           @map("check_in_at")
+  checkOutAt   DateTime?           @map("check_out_at")
+  status       AttendanceStatus
+  closedBy     AttendanceClosedBy? @map("closed_by")
+  staff        Staff               @relation(fields: [staffId], references: [id])
+
+  @@unique([staffId, businessDate])
+  @@index([businessDate, status])
+  @@map("attendance")
+}
+
+model StaffServiceState {
+  staffId               String       @id @map("staff_id")
+  lastServiceFinishedAt DateTime?    @map("last_service_finished_at")
+  availability          Availability @default(AVAILABLE)
+  lastAssignedAt        DateTime?    @map("last_assigned_at")
+  staff                 Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@map("staff_service_state")
+}
+
+model Payment {
+  id                  String        @id
+  appointmentId       String        @unique @map("appointment_id")
+  amount              Decimal
+  tip                 Decimal       @default(0)
+  method              PaymentMethod
+  serviceNameSnapshot String        @map("service_name_snapshot")
+  staffNameSnapshot   String?       @map("staff_name_snapshot")
+  confirmedByAdminId  String?       @map("confirmed_by_admin_id")
+  confirmedAt         DateTime?     @map("confirmed_at")
+  appointment         Appointment   @relation(fields: [appointmentId], references: [id])
+  confirmedByAdmin    AuthUser?     @relation("confirmed_payments", fields: [confirmedByAdminId], references: [id])
+  items               PaymentItem[]
+
+  @@index([confirmedAt, method])
+  @@map("payments")
+}
+
+model PaymentItem {
+  id                   String             @id @default(cuid())
+  paymentId            String             @map("payment_id")
+  appointmentServiceId String             @map("appointment_service_id")
+  serviceNameSnapshot  String             @map("service_name_snapshot")
+  staffNameSnapshot    String?            @map("staff_name_snapshot")
+  amount               Decimal
+  payment              Payment            @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  appointmentService   AppointmentService @relation(fields: [appointmentServiceId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, appointmentServiceId])
+  @@index([appointmentServiceId])
+  @@map("payment_items")
+}
+
+model VerifiedStaffSession {
+  id            String   @id @default(cuid())
+  staffId       String   @map("staff_id")
+  stationUserId String   @map("station_user_id")
+  startedAt     DateTime @default(now()) @map("started_at")
+  expiresAt     DateTime @map("expires_at")
+  revokedAt     DateTime? @map("revoked_at")
+  revokedReason String?  @map("revoked_reason")
+  staff         Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  stationUser   AuthUser @relation("station_sessions", fields: [stationUserId], references: [id])
+
+  @@index([stationUserId, expiresAt])
+  @@index([staffId, expiresAt])
+  @@map("verified_staff_sessions")
+}
+
+model AuditEvent {
+  id        String    @id @default(cuid())
+  ts        DateTime  @default(now())
+  actorType ActorType @map("actor_type")
+  actorId   String?   @map("actor_id")
+  action    String
+  entity    String
+  entityId  String?   @map("entity_id")
+  metadata  Json?
+
+  @@index([entity, entityId, ts])
+  @@index([actorType, actorId, ts])
+  @@map("audit_events")
+}
+
+model CommandReceipt {
+  id          String   @id @default(cuid())
+  scope       String
+  key         String
+  response    Json
+  requestHash String?  @map("request_hash")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([scope, key])
+  @@index([createdAt])
+  @@map("command_receipts")
+}
+
+model ShopConfig {
+  id                    Int      @id @default(1)
+  timezone              String   @default("UTC")
+  openingTime           String   @default("09:00") @map("opening_time")
+  closingTime           String   @default("21:00") @map("closing_time")
+  verifiedSessionTtlMin Int      @default(3) @map("verified_session_ttl_min")
+  currency              String   @default("USD")
+  roundRobinEnabled     Boolean  @default(true) @map("round_robin_enabled")
+  stateVersion          Int      @default(0) @map("state_version")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("shop_config")
+}
+
+model StaffPinLockout {
+  staffId      String    @id @map("staff_id")
+  failureCount Int       @default(0) @map("failure_count")
+  lockedUntil  DateTime? @map("locked_until")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  staff        Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@map("staff_pin_lockouts")
+}
+
+model AuthLoginLockout {
+  email        String    @id
+  failureCount Int       @default(0) @map("failure_count")
+  lockedUntil  DateTime? @map("locked_until")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@map("auth_login_lockouts")
+}
+
+model AppLock {
+  lockKey   String @id @map("lock_key")
+  owner     String
+  expiresAt Int    @map("expires_at")
+
+  @@map("__app_locks")
+}

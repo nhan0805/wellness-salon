@@ -4,13 +4,13 @@ import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
 import { autoCloseDbAttendance, ShiftClosingBlockedError } from '@/src/server/services/prisma-operations';
 import { observeApiRequest } from '@/src/server/observability';
 import { logEvent } from '@/src/server/logger';
+import { getRuntimeValue } from '@/src/server/runtime-config';
 
-export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   return observeApiRequest(request, 'POST /api/jobs/closing', async () => {
     if (!hasTrustedOrigin(request)) return jsonError('Invalid request origin', 403);
-    const cronSecret = process.env.CRON_SECRET;
+    const cronSecret = await getRuntimeValue('CRON_SECRET');
     const hasCronAccess = Boolean(cronSecret && request.headers.get('x-cron-secret') === cronSecret);
     const session = hasCronAccess ? null : await auth();
     if (!hasCronAccess && session?.user?.role !== 'ADMIN') return jsonError('Admin or scheduler authorization required', 403);

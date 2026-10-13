@@ -3,10 +3,14 @@ import { auth } from '@/src/server/auth';
 import { calculateReconciliation } from '@/src/domain/reconciliation';
 import { currentDbBusinessDate, getDbMonthlyReport, getDbReport, parseBusinessDate, parseBusinessMonth } from '@/src/server/services/prisma-operations';
 import { jsonError } from '@/src/server/request-security';
+import { observeApiRequest } from '@/src/server/observability';
 
-export const runtime = 'nodejs';
 
 export async function GET(request: Request) {
+  return observeApiRequest(request, 'GET /api/admin/reports', () => handleGet(request));
+}
+
+async function handleGet(request: Request) {
   if ((await auth())?.user?.role !== 'ADMIN') return jsonError('Admin authorization required', 403);
   const searchParams = new URL(request.url).searchParams;
   if (searchParams.get('period') === 'month') {

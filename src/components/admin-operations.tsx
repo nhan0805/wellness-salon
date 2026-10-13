@@ -3,12 +3,12 @@
 import { useEffect, useState } from 'react';
 import { Check, CircleDollarSign, Clock3, Globe2, Info, Pencil, Plus, RotateCcw, Save, ShieldCheck, Trash2, UsersRound } from 'lucide-react';
 import { SectionHeader, StatusBadge } from '@/src/components/ui';
-import { CURRENCY_OPTIONS, TIMEZONE_OPTIONS, timezoneGroup } from '@/src/domain/locale-options';
+import { CURRENCY_OPTIONS, DEFAULT_TIMEZONE, TIMEZONE_OPTIONS, timezoneGroup } from '@/src/domain/locale-options';
 
 type SkipReason = { id: string; name: string; sortOrder: number; isActive: boolean };
 type ShopConfig = { timezone: string; openingTime: string; closingTime: string; currency: string; verifiedSessionTtlMin: number; roundRobinEnabled: boolean };
 
-const DEFAULT_SHOP_CONFIG: ShopConfig = { timezone: 'Asia/Ho_Chi_Minh', openingTime: '09:00', closingTime: '21:00', currency: 'USD', verifiedSessionTtlMin: 3, roundRobinEnabled: true };
+const DEFAULT_SHOP_CONFIG: ShopConfig = { timezone: DEFAULT_TIMEZONE, openingTime: '09:00', closingTime: '21:00', currency: 'USD', verifiedSessionTtlMin: 3, roundRobinEnabled: true };
 
 function shopConfigsMatch(left: ShopConfig, right: ShopConfig) {
   return left.timezone === right.timezone && left.openingTime === right.openingTime && left.closingTime === right.closingTime && left.currency === right.currency && left.verifiedSessionTtlMin === right.verifiedSessionTtlMin && left.roundRobinEnabled === right.roundRobinEnabled;

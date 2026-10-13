@@ -7,5 +7,5 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Không làm gì cả, cứ để request đi qua bình thường (không cache)
+  // Let requests pass through normally without caching.
 });

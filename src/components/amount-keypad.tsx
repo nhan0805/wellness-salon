@@ -26,6 +26,7 @@ type AmountKeypadProps = {
   maxValue?: number;
   disabled?: boolean;
   expandOnFocus?: boolean;
+  error?: string;
 };
 
 function normalizeAmount(value: string) {
@@ -72,6 +73,7 @@ export function AmountKeypad({
   maxValue,
   disabled = false,
   expandOnFocus = false,
+  error,
 }: AmountKeypadProps) {
   const [isExpanded, setIsExpanded] = useState(!expandOnFocus);
   const updateValue = (nextValue: string) => {
@@ -135,6 +137,7 @@ export function AmountKeypad({
       className="amount-keypad"
       role="group"
       aria-label={`${label} keypad`}
+      aria-describedby={error && id ? id + '-error' : undefined}
       aria-disabled={disabled}
       data-expanded={showKeypad}
       onFocus={handleFocus}
@@ -149,6 +152,11 @@ export function AmountKeypad({
         </div>
         <span className="amount-keypad-currency">{currency}</span>
       </div>
+      {error && id ? (
+        <p className="amount-keypad-error" id={id + '-error'} role="alert">
+          {error}
+        </p>
+      ) : null}
 
       <button
         id={id}

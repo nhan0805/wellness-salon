@@ -43,6 +43,8 @@ import { AdminAppointmentAction } from '@/src/components/admin-appointment-actio
 import { AmountKeypad } from '@/src/components/amount-keypad';
 import { useDialogFocus } from '@/src/components/use-dialog-focus';
 import { makeAccountViewer, type AccountViewer } from '@/src/domain/viewer';
+import { DEFAULT_TIMEZONE } from '@/src/domain/locale-options';
+import { ADMIN_REFRESH_INTERVAL_MS } from '@/src/domain/realtime';
 
 type Section =
   | 'overview'
@@ -234,14 +236,25 @@ export default function AdminPage() {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [tip, setTip] = useState('');
   const [cashReceived, setCashReceived] = useState('');
+  const [paymentFieldError, setPaymentFieldError] = useState<{
+    field: 'amount' | 'tip' | 'cash';
+    message: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [queueRepairing, setQueueRepairing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [dataRevision, setDataRevision] = useState(0);
+  const [staleSince, setStaleSince] = useState<Date | null>(null);
+  const refreshControllerRef = useRef<AbortController | null>(null);
+  const refreshRevisionRef = useRef(0);
+  const reportPeriodRef = useRef(reportPeriod);
+  const reportDateRef = useRef(reportDate);
+  const reportMonthRef = useRef(reportMonth);
+  const mobileNavRef = useDialogFocus(mobileNavOpen, () => setMobileNavOpen(false));
   const [shop, setShop] = useState({
-    timezone: 'Asia/Ho_Chi_Minh',
+    timezone: DEFAULT_TIMEZONE,
     openingTime: '09:00',
     closingTime: '21:00',
     currency: 'USD',
@@ -276,6 +289,10 @@ export default function AdminPage() {
     month = reportMonth,
     background = false,
   ) {
+    const revision = ++refreshRevisionRef.current;
+    refreshControllerRef.current?.abort();
+    const controller = new AbortController();
+    refreshControllerRef.current = controller;
     if (!background) setLoading(true);
     setLoadError('');
     try {
@@ -291,59 +308,98 @@ export default function AdminPage() {
           : date
             ? `?date=${encodeURIComponent(date)}&page=1&pageSize=3`
             : '?page=1&pageSize=3';
+      const shouldLoadLive =
+        section === 'overview' || section === 'queue' || section === 'payments';
+      const shouldLoadReports = section === 'overview' || section === 'appointments';
+      const shouldLoadConfig = section === 'overview';
       const [liveAppointmentsResponse, reportAppointmentsResponse, reportResponse, configResponse] =
         await Promise.all([
-          fetch('/api/admin/appointments', { cache: 'no-store' }),
-          fetch(`/api/admin/appointments${appointmentsQuery}`, { cache: 'no-store' }),
-          fetch(`/api/admin/reports${reportQuery}`, { cache: 'no-store' }),
-          fetch('/api/admin/config', { cache: 'no-store' }),
+          shouldLoadLive
+            ? fetch('/api/admin/appointments', { cache: 'no-store', signal: controller.signal })
+            : Promise.resolve(null),
+          shouldLoadReports
+            ? fetch('/api/admin/appointments' + appointmentsQuery, {
+                cache: 'no-store',
+                signal: controller.signal,
+              })
+            : Promise.resolve(null),
+          shouldLoadReports
+            ? fetch('/api/admin/reports' + reportQuery, {
+                cache: 'no-store',
+                signal: controller.signal,
+              })
+            : Promise.resolve(null),
+          shouldLoadConfig
+            ? fetch('/api/admin/config', { cache: 'no-store', signal: controller.signal })
+            : Promise.resolve(null),
         ]);
       if (
-        !liveAppointmentsResponse.ok ||
-        !reportAppointmentsResponse.ok ||
-        !reportResponse.ok ||
-        !configResponse.ok
+        (shouldLoadLive && !liveAppointmentsResponse?.ok) ||
+        (shouldLoadReports && (!reportAppointmentsResponse?.ok || !reportResponse?.ok)) ||
+        (shouldLoadConfig && !configResponse?.ok)
       )
         throw new Error('Unable to load dashboard data');
       const [liveAppointmentsPayload, reportAppointmentsPayload, reportPayload, configPayload] =
         await Promise.all([
-          liveAppointmentsResponse.json(),
-          reportAppointmentsResponse.json(),
-          reportResponse.json(),
-          configResponse.json(),
+          liveAppointmentsResponse ? liveAppointmentsResponse.json() : Promise.resolve(null),
+          reportAppointmentsResponse ? reportAppointmentsResponse.json() : Promise.resolve(null),
+          reportResponse ? reportResponse.json() : Promise.resolve(null),
+          configResponse ? configResponse.json() : Promise.resolve(null),
         ]);
-      setAppointments(liveAppointmentsPayload.appointments ?? []);
-      setReportAppointments(reportAppointmentsPayload.appointments ?? []);
-      setReport(reportPayload);
-      if (configPayload.shop) setShop(configPayload.shop);
+      if (revision !== refreshRevisionRef.current) return;
+      if (liveAppointmentsPayload) setAppointments(liveAppointmentsPayload.appointments ?? []);
+      if (reportAppointmentsPayload)
+        setReportAppointments(reportAppointmentsPayload.appointments ?? []);
+      if (reportPayload) setReport(reportPayload);
+      if (configPayload?.shop) setShop(configPayload.shop);
       setLastUpdatedAt(new Date());
+      setStaleSince(null);
       setDataRevision((revision) => revision + 1);
-      setReportPeriod(reportPayload.period ?? period);
-      if (reportPayload.period === 'month') setReportMonth(reportPayload.businessMonth ?? month);
-      else setReportDate(reportPayload.businessDate ?? date);
+      if (reportPayload) {
+        setReportPeriod(reportPayload.period ?? period);
+        if (reportPayload.period === 'month') setReportMonth(reportPayload.businessMonth ?? month);
+        else setReportDate(reportPayload.businessDate ?? date);
+      }
     } catch (error) {
+      if (revision !== refreshRevisionRef.current) return;
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       setLoadError(error instanceof Error ? error.message : 'Unable to load dashboard data');
+      setStaleSince((current) => current ?? new Date());
     } finally {
-      if (!background) setLoading(false);
+      if (revision === refreshRevisionRef.current && !background) setLoading(false);
     }
   }
 
-  // Load the current business date on mount; period changes are submitted by the filter.
   useEffect(() => {
-    // The initial dashboard request intentionally starts after mount.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    reportPeriodRef.current = reportPeriod;
+    reportDateRef.current = reportDate;
+    reportMonthRef.current = reportMonth;
+  }, [reportPeriod, reportDate, reportMonth]);
+
+  // Refresh only sections that display the parent Admin snapshot. Management modules own their
+  // own data lifecycle, so they do not create an extra four-request polling fan-out.
   useEffect(() => {
+    const refreshableSections: Section[] = ['overview', 'queue', 'appointments', 'payments'];
+    if (!refreshableSections.includes(section)) return;
+    // The initial dashboard request intentionally starts after mount and section changes request
+    // the newly visible snapshot immediately.
+    void refresh(reportPeriodRef.current, reportDateRef.current, reportMonthRef.current);
     const interval = window.setInterval(() => {
-      void refresh(reportPeriod, reportDate, reportMonth, true);
-    }, 10_000);
-    return () => window.clearInterval(interval);
+      if (document.visibilityState === 'visible') void refresh(reportPeriodRef.current, reportDateRef.current, reportMonthRef.current, true);
+    }, ADMIN_REFRESH_INTERVAL_MS);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refresh(reportPeriodRef.current, reportDateRef.current, reportMonthRef.current, true);
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      refreshControllerRef.current?.abort();
+    };
     // refresh is intentionally kept out of the dependency list because it is
     // recreated on render; the selected report scope is the meaningful input.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportPeriod, reportDate, reportMonth]);
+  }, [section]);
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [section]);
@@ -409,6 +465,7 @@ export default function AdminPage() {
     setPaymentAmount(String(appointment.amount));
     setTip('');
     setCashReceived('');
+    setPaymentFieldError(null);
   }
   function openAppointmentAction(
     appointment: Appointment,
@@ -435,6 +492,7 @@ export default function AdminPage() {
     setPaymentAmount('');
     setTip('');
     setCashReceived('');
+    setPaymentFieldError(null);
   }, []);
   const paymentDialogRef = useDialogFocus(Boolean(paymentModal), closePayment);
   async function confirmPayment() {
@@ -443,11 +501,15 @@ export default function AdminPage() {
     const parsedTip = tip.trim() ? Number(tip) : 0;
     const parsedCashReceived = cashReceived.trim() ? Number(cashReceived) : undefined;
     if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
-      setToast('Enter a valid final amount.');
+      const message = 'Enter a valid final amount.';
+      setPaymentFieldError({ field: 'amount', message });
+      document.getElementById('payment-final-amount')?.focus();
       return;
     }
     if (!Number.isFinite(parsedTip) || parsedTip < 0) {
-      setToast('Enter a valid non-negative tip.');
+      const message = 'Enter a valid non-negative tip.';
+      setPaymentFieldError({ field: 'tip', message });
+      document.getElementById('payment-tip')?.focus();
       return;
     }
     if (
@@ -455,14 +517,19 @@ export default function AdminPage() {
       parsedCashReceived !== undefined &&
       (!Number.isFinite(parsedCashReceived) || parsedCashReceived < 0)
     ) {
-      setToast('Enter a valid cash received amount.');
+      const message = 'Enter a valid cash received amount.';
+      setPaymentFieldError({ field: 'cash', message });
+      document.getElementById('payment-cash-received')?.focus();
       return;
     }
     const total = Number((parsedAmount + parsedTip).toFixed(2));
     if (method === 'CASH' && parsedCashReceived !== undefined && parsedCashReceived < total) {
-      setToast(`Cash received must be at least ${formatMoney(total)}.`);
+      const message = `Cash received must be at least ${formatMoney(total)}.`;
+      setPaymentFieldError({ field: 'cash', message });
+      document.getElementById('payment-cash-received')?.focus();
       return;
     }
+    setPaymentFieldError(null);
     setBusy(true);
     try {
       const response = await fetch('/api/admin/payments/confirm', {
@@ -1062,7 +1129,13 @@ export default function AdminPage() {
     <main
       className={`admin-layout page-root ${section === 'config' ? 'admin-settings-context' : ''} ${section === 'payments' ? 'admin-payment-context' : ''}`}
     >
-      <aside className={`admin-sidebar ${mobileNavOpen ? 'is-mobile-open' : ''}`}>
+      <aside
+        ref={mobileNavRef}
+        className={`admin-sidebar ${mobileNavOpen ? 'is-mobile-open' : ''}`}
+        role={mobileNavOpen ? 'dialog' : undefined}
+        aria-modal={mobileNavOpen ? true : undefined}
+        aria-label={mobileNavOpen ? 'Operations menu' : undefined}
+      >
         <Link className="brand" href="/">
           <span className="brand-mark">
             <Sparkles size={19} aria-hidden="true" />
@@ -1098,7 +1171,7 @@ export default function AdminPage() {
           onClick={() => setMobileNavOpen(false)}
         />
       ) : null}
-      <section className="admin-main">
+      <section className="admin-main" inert={mobileNavOpen ? true : undefined}>
         <header className="admin-topbar">
           <div className="admin-topbar-title">
             <span className="admin-desktop-menu-icon" aria-hidden="true">
@@ -1121,7 +1194,11 @@ export default function AdminPage() {
             <span className="admin-live-status" role="status" aria-live="polite">
               <span className="admin-live-dot" aria-hidden="true" />
               {lastUpdatedAt
-                ? `Updated ${lastUpdatedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                ? `Updated ${lastUpdatedAt.toLocaleTimeString([], {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    timeZone: shop.timezone,
+                  })} · ${shop.timezone}`
                 : 'Connecting…'}
             </span>
             <button
@@ -1143,6 +1220,25 @@ export default function AdminPage() {
             <AccountMenu viewer={accountViewer} callbackUrl="/admin/sign-in" />
           </div>
         </header>
+        {staleSince ? (
+          <div className="admin-data-health-banner" role="alert">
+            <AlertCircle size={17} aria-hidden="true" />
+            <span>
+              Live data may be out of date
+              {lastUpdatedAt
+                ? ` · Last successful refresh ${lastUpdatedAt.toLocaleTimeString([], {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    timeZone: shop.timezone,
+                  })}`
+                : ''}
+              .
+            </span>
+            <button type="button" className="button button-quiet button-sm" onClick={() => void refresh()}>
+              Retry
+            </button>
+          </div>
+        ) : null}
         <div className="admin-content">{renderSection()}</div>
       </section>
       {paymentModal ? (
@@ -1205,19 +1301,26 @@ export default function AdminPage() {
             <AmountKeypad
               id="payment-final-amount"
               value={paymentAmount}
-              onChange={setPaymentAmount}
+              onChange={(value) => {
+                setPaymentAmount(value);
+                if (paymentFieldError?.field === 'amount') setPaymentFieldError(null);
+              }}
               label={`Final amount (${shop.currency})`}
               hint={`Service fee is ${formatMoney(paymentModal.amount)}.`}
               currency={shop.currency}
               maxValue={100000}
               expandOnFocus
               disabled={busy}
+              error={paymentFieldError?.field === 'amount' ? paymentFieldError.message : undefined}
             />
             {method === 'CARD' ? (
               <AmountKeypad
                 id="payment-tip"
                 value={tip}
-                onChange={setTip}
+                onChange={(value) => {
+                  setTip(value);
+                  if (paymentFieldError?.field === 'tip') setPaymentFieldError(null);
+                }}
                 label="Tip from card terminal"
                 hint="Enter the tip confirmed on the card terminal."
                 currency={shop.currency}
@@ -1225,12 +1328,16 @@ export default function AdminPage() {
                 maxValue={100000}
                 expandOnFocus
                 disabled={busy}
+                error={paymentFieldError?.field === 'tip' ? paymentFieldError.message : undefined}
               />
             ) : (
               <AmountKeypad
                 id="payment-tip"
                 value={tip}
-                onChange={setTip}
+                onChange={(value) => {
+                  setTip(value);
+                  if (paymentFieldError?.field === 'tip') setPaymentFieldError(null);
+                }}
                 label={`Tip (${shop.currency})`}
                 hint="Optional. Recorded separately from the service amount."
                 currency={shop.currency}
@@ -1238,12 +1345,17 @@ export default function AdminPage() {
                 maxValue={100000}
                 expandOnFocus
                 disabled={busy}
+                error={paymentFieldError?.field === 'tip' ? paymentFieldError.message : undefined}
               />
             )}
             {method === 'CASH' ? (
               <AmountKeypad
+                id="payment-cash-received"
                 value={cashReceived}
-                onChange={setCashReceived}
+                onChange={(value) => {
+                  setCashReceived(value);
+                  if (paymentFieldError?.field === 'cash') setPaymentFieldError(null);
+                }}
                 label="Cash received from customer"
                 hint="Enter the cash handed over, or use Exact amount."
                 currency={shop.currency}
@@ -1251,6 +1363,7 @@ export default function AdminPage() {
                 maxValue={100000}
                 expandOnFocus
                 disabled={busy}
+                error={paymentFieldError?.field === 'cash' ? paymentFieldError.message : undefined}
               />
             ) : null}
             <PaymentPreview

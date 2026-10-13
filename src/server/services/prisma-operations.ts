@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   ActorType,
   AppointmentStatus,
@@ -27,7 +26,17 @@ import type {
 } from '@/src/domain/types';
 import { normalizeServiceIconKey } from '@/src/domain/service-icons';
 import { normalizePhoneNumber } from '@/src/domain/phone';
-import { prisma } from '@/src/server/db';
+import { moneyFromMinorUnits, toMinorUnits } from '@/src/domain/money';
+import { DEFAULT_TIMEZONE } from '@/src/domain/locale-options';
+import {
+  configuredTimeToMinutes,
+  isWithinOperatingHours,
+  minutesInTimezone,
+} from '@/src/domain/operating-hours';
+import { getD1Database, isD1Runtime, prisma, withD1Lease, type D1DatabaseLike } from '@/src/server/db';
+import { sha256Hex } from '@/src/server/web-crypto';
+import { randomId } from '@/src/server/web-crypto';
+import { getBuildTimeValue } from '@/src/server/runtime-config';
 import { lockShopBusinessDate } from '@/src/server/services/turn-engine';
 import {
   hashSecret,
@@ -36,7 +45,7 @@ import {
   verifySecret,
 } from '@/src/server/security';
 
-const SHOP_TIMEZONE = process.env.SHOP_TIMEZONE ?? 'Asia/Ho_Chi_Minh';
+const SHOP_TIMEZONE = getBuildTimeValue('SHOP_TIMEZONE', DEFAULT_TIMEZONE) ?? DEFAULT_TIMEZONE;
 const BUSINESS_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function currentBusinessDate(now = new Date(), timeZone = SHOP_TIMEZONE) {
@@ -51,11 +60,8 @@ export function currentBusinessDate(now = new Date(), timeZone = SHOP_TIMEZONE) 
 }
 
 export async function currentDbBusinessDate(now = new Date()) {
-  const config = await prisma.shopConfig.findUnique({
-    where: { id: 1 },
-    select: { timezone: true },
-  });
-  return currentBusinessDate(now, config?.timezone ?? SHOP_TIMEZONE);
+  const config = await getDbShopConfig();
+  return currentBusinessDate(now, config.timezone);
 }
 
 export function formatBusinessDate(date: Date) {
@@ -70,24 +76,17 @@ export function currentBusinessMonth(now = new Date()) {
   return formatBusinessMonth(currentBusinessDate(now));
 }
 
-function minutesInTimezone(now: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(now);
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0);
-  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
-  return hour * 60 + minute;
-}
+export class KioskCheckInClosedError extends Error {
+  readonly code = 'KIOSK_CHECK_IN_CLOSED';
 
-function configuredTimeToMinutes(value: string) {
-  const match = /^(\d{2}):(\d{2})$/.exec(value);
-  if (!match) return null;
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 ? hour * 60 + minute : null;
+  constructor(
+    readonly openingTime: string,
+    readonly closingTime: string,
+    readonly timezone: string,
+  ) {
+    super(`Check-in is available from ${openingTime} to ${closingTime}.`);
+    this.name = 'KioskCheckInClosedError';
+  }
 }
 
 export type ClosingBlockerReason = 'PAYMENT_REQUIRED' | 'APPOINTMENT_NOT_RESOLVED';
@@ -581,8 +580,8 @@ function ticket(appointment: AppointmentSnapshot, staff: StaffCandidate[]) {
   };
 }
 
-function requestHash(input: unknown) {
-  return createHash('sha256').update(JSON.stringify(input)).digest('hex');
+async function requestHash(input: unknown) {
+  return sha256Hex(JSON.stringify(input));
 }
 
 function paymentAuditNumber(metadata: Prisma.JsonValue | null | undefined, key: string) {
@@ -610,7 +609,7 @@ function paymentAuditCurrentMetadata(
 }
 
 function roundMoney(value: number) {
-  return Number(value.toFixed(2));
+  return moneyFromMinorUnits(toMinorUnits(value));
 }
 
 function paymentCashDetails(input: {
@@ -619,7 +618,7 @@ function paymentCashDetails(input: {
   tip: number;
   cashReceived?: number;
 }) {
-  const total = roundMoney(input.amount + input.tip);
+  const total = moneyFromMinorUnits(toMinorUnits(input.amount) + toMinorUnits(input.tip));
   if (input.method !== 'CASH') return { cashReceived: null, changeGiven: 0, total };
   const cashReceived = roundMoney(input.cashReceived ?? total);
   if (cashReceived < total)
@@ -713,6 +712,10 @@ export async function getDbServices(): Promise<ServiceCandidate[]> {
   }));
 }
 
+function activeCatalogServiceWhere(serviceIds: string[]) {
+  return { id: { in: serviceIds }, isActive: true, category: { isActive: true } } as const;
+}
+
 export type ShopOperationalConfig = {
   timezone: string;
   openingTime: string;
@@ -724,6 +727,23 @@ export type ShopOperationalConfig = {
 };
 
 export async function getDbShopConfig(): Promise<ShopOperationalConfig> {
+  if (await isD1Runtime()) {
+    const database = await getD1Database();
+    const row = await database
+      ?.prepare('SELECT timezone, opening_time, closing_time, verified_session_ttl_min, currency, round_robin_enabled, state_version FROM shop_config WHERE id = ?')
+      .bind(1)
+      .first<{ timezone: string; opening_time: string; closing_time: string; verified_session_ttl_min: number; currency: string; round_robin_enabled: number; state_version: number }>();
+    return {
+      timezone: row?.timezone ?? SHOP_TIMEZONE,
+      openingTime: row?.opening_time ?? '09:00',
+      closingTime: row?.closing_time ?? '21:00',
+      currency: row?.currency ?? 'USD',
+      verifiedSessionTtlMin: Number(row?.verified_session_ttl_min ?? 3),
+      roundRobinEnabled: Boolean(row?.round_robin_enabled ?? 1),
+      stateVersion: Number(row?.state_version ?? 0),
+    };
+  }
+
   const row = await prisma.shopConfig.findUnique({ where: { id: 1 } });
   return {
     timezone: row?.timezone ?? SHOP_TIMEZONE,
@@ -747,21 +767,25 @@ export async function lookupDbCustomerByPhone(phone: string) {
 export async function getDbBoardState({ publicView = false }: { publicView?: boolean } = {}) {
   const config = await getDbShopConfig();
   const businessDate = currentBusinessDate(new Date(), config.timezone);
-  const [rows, staffRows, skipReasons] = await Promise.all([
+  const [currentRows, upNextRows, staffRows, skipReasons] = await Promise.all([
     prisma.appointment.findMany({
       where: {
         businessDate,
         status: {
-          in: [
-            AppointmentStatus.ASSIGNED,
-            AppointmentStatus.WAITING,
-            AppointmentStatus.IN_SERVICE,
-            AppointmentStatus.PAYMENT_PENDING,
-          ],
+          in: [AppointmentStatus.IN_SERVICE, AppointmentStatus.PAYMENT_PENDING],
         },
       },
       include: boardAppointmentInclude,
       orderBy: { createdAt: 'asc' },
+    }),
+    prisma.appointment.findMany({
+      where: {
+        businessDate,
+        status: { in: [AppointmentStatus.ASSIGNED, AppointmentStatus.WAITING] },
+      },
+      include: boardAppointmentInclude,
+      orderBy: { createdAt: 'asc' },
+      take: 4,
     }),
     staffForBusinessDate(prisma, businessDate),
     prisma.skipReason.findMany({
@@ -771,7 +795,8 @@ export async function getDbBoardState({ publicView = false }: { publicView?: boo
     }),
   ]);
   const staff = staffRows.map(mapStaff);
-  const appointments = rows.map(mapAppointment).map((appointment) => {
+  const mapBoardAppointment = (row: (typeof currentRows)[number]) => {
+    const appointment = mapAppointment(row);
     if (!publicView) return appointment;
     const redactTurns = <
       T extends {
@@ -799,26 +824,10 @@ export async function getDbBoardState({ publicView = false }: { publicView?: boo
         turnExclusions: [],
       })),
     };
-  });
-  const currentTurns = appointments.filter(
-    (appointment) =>
-      appointment.status === AppointmentStatus.IN_SERVICE ||
-      appointment.status === AppointmentStatus.PAYMENT_PENDING,
-  );
+  };
+  const currentTurns = currentRows.map(mapBoardAppointment);
   const current = currentTurns[0] ?? null;
-  const upNext = appointments
-    .filter(
-      (appointment) =>
-        appointment.status === AppointmentStatus.ASSIGNED ||
-        appointment.status === AppointmentStatus.WAITING ||
-        appointment.services.some(
-          (service) =>
-            service.status === AppointmentStatus.ASSIGNED ||
-            service.status === AppointmentStatus.WAITING ||
-            service.status === AppointmentStatus.CREATED,
-        ),
-    )
-    .slice(0, 4);
+  const upNext = upNextRows.map(mapBoardAppointment);
   const now = new Date();
   return {
     current,
@@ -845,12 +854,17 @@ async function nextAppointmentCode(
   tx: typeof prisma | Prisma.TransactionClient,
   businessDate: Date,
 ) {
-  const appointments = await tx.appointment.findMany({
+  // Keep code allocation portable across PostgreSQL and SQLite/D1. The
+  // PostgreSQL reference used SUBSTRING(... FROM ...) and a regex predicate,
+  // neither of which is valid SQLite syntax. D1 commands are serialized by
+  // the application lease before this read and the following appointment
+  // insert, so the max calculation remains single-writer within a shop.
+  const rows = await tx.appointment.findMany({
     where: { businessDate },
     select: { code: true },
   });
-  const highestSequence = appointments.reduce((highest, appointment) => {
-    const match = /^A(\d+)$/.exec(appointment.code);
+  const highestSequence = rows.reduce((highest, row) => {
+    const match = /^A([0-9]+)$/.exec(row.code);
     return match ? Math.max(highest, Number(match[1])) : highest;
   }, 0);
   return `A${String(highestSequence + 1).padStart(3, '0')}`;
@@ -862,6 +876,27 @@ export async function getDbAppointments(businessDate?: Date) {
     where: { businessDate: date },
     include: appointmentInclude,
     orderBy: { createdAt: 'desc' },
+  });
+  return rows.map(mapAppointment);
+}
+
+export async function getDbLiveAppointments(businessDate?: Date) {
+  const date = businessDate ?? (await currentDbBusinessDate());
+  const rows = await prisma.appointment.findMany({
+    where: {
+      businessDate: date,
+      status: {
+        in: [
+          AppointmentStatus.CREATED,
+          AppointmentStatus.WAITING,
+          AppointmentStatus.ASSIGNED,
+          AppointmentStatus.IN_SERVICE,
+          AppointmentStatus.PAYMENT_PENDING,
+        ],
+      },
+    },
+    include: appointmentInclude,
+    orderBy: { createdAt: 'asc' },
   });
   return rows.map(mapAppointment);
 }
@@ -907,6 +942,7 @@ export type AdminAppointmentPage = {
 
 function buildAdminAppointmentWhere(
   filters: AdminAppointmentFilters,
+  options: { supportsInsensitiveMode?: boolean } = {},
 ): Prisma.AppointmentWhereInput {
   const validStatuses = Object.values(AppointmentStatus) as string[];
   const where: Prisma.AppointmentWhereInput = {
@@ -920,10 +956,13 @@ function buildAdminAppointmentWhere(
   else if (filters.payment === 'UNPAID') where.payment = { is: null };
   if (filters.search?.trim()) {
     const search = filters.search.trim();
+    const contains = options.supportsInsensitiveMode === false
+      ? { contains: search }
+      : { contains: search, mode: 'insensitive' as const };
     where.OR = [
-      { code: { contains: search, mode: 'insensitive' } },
-      { customer: { name: { contains: search, mode: 'insensitive' } } },
-      { customer: { phone: { contains: search, mode: 'insensitive' } } },
+      { code: contains },
+      { customer: { name: contains } },
+      { customer: { phone: contains } },
     ];
   }
   const serviceWhere: Prisma.AppointmentServiceWhereInput = {};
@@ -969,7 +1008,11 @@ async function addServiceCountConstraint(
 }
 
 async function buildAdminAppointmentQuery(filters: AdminAppointmentFilters) {
-  return addServiceCountConstraint(buildAdminAppointmentWhere(filters), filters.serviceCount);
+  const isD1 = await isD1Runtime();
+  return addServiceCountConstraint(
+    buildAdminAppointmentWhere(filters, { supportsInsensitiveMode: !isD1 }),
+    filters.serviceCount,
+  );
 }
 
 function appointmentOrderBy(sort: AdminAppointmentFilters['sort']) {
@@ -1278,6 +1321,732 @@ export async function getDbAppointmentFilterOptions() {
   return { staff, services };
 }
 
+function d1Statement(database: D1DatabaseLike, query: string, ...values: unknown[]) {
+  return database.prepare(query).bind(...values);
+}
+
+function d1AuditEvent(
+  database: D1DatabaseLike,
+  input: { action: string; entity: string; entityId?: string; actorId?: string; actorType?: ActorType; metadata?: unknown },
+  nowIso: string,
+) {
+  return d1Statement(
+    database,
+    `INSERT INTO audit_events (id, ts, actor_type, actor_id, action, entity, entity_id, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    randomId(),
+    nowIso,
+    input.actorType ?? ActorType.SYSTEM,
+    input.actorId ?? null,
+    input.action,
+    input.entity,
+    input.entityId ?? null,
+    input.metadata === undefined ? null : JSON.stringify(input.metadata),
+  );
+}
+
+function d1TurnEvent(
+  database: D1DatabaseLike,
+  input: {
+    appointmentId: string;
+    appointmentServiceId?: string | null;
+    turnId?: string | null;
+    eventType: TurnEventType;
+    assignedStaffId?: string | null;
+    assignedStaffName?: string | null;
+    actorType: ActorType;
+    actorId?: string | null;
+    actorName?: string | null;
+    reason?: string | null;
+  },
+  nowIso: string,
+) {
+  return d1Statement(
+    database,
+    `INSERT INTO turn_events (id, appointment_id, appointment_service_id, turn_id, event_type, assigned_staff_id, assigned_staff_name_snapshot, actor_type, actor_id, actor_name_snapshot, reason, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    randomId(),
+    input.appointmentId,
+    input.appointmentServiceId ?? null,
+    input.turnId ?? null,
+    input.eventType,
+    input.assignedStaffId ?? null,
+    input.assignedStaffName ?? null,
+    input.actorType,
+    input.actorId ?? null,
+    input.actorName ?? null,
+    input.reason?.trim() || null,
+    nowIso,
+  );
+}
+
+function d1BumpBoardVersion(database: D1DatabaseLike, nowIso: string) {
+  return d1Statement(
+    database,
+    `INSERT INTO shop_config (id, state_version, created_at, updated_at) VALUES (1, 1, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET state_version = shop_config.state_version + 1, updated_at = excluded.updated_at`,
+    nowIso,
+    nowIso,
+  );
+}
+
+function d1AppointmentAggregate(
+  appointment: { serviceId: string; serviceNameSnapshot: string; durationMinSnapshot: number },
+  services: Array<{ serviceId: string; serviceNameSnapshot: string; durationMinSnapshot: number; status: AppointmentStatus; primaryStaffId: string | null }>,
+) {
+  const activeService =
+    services.find((service) => service.status === AppointmentStatus.IN_SERVICE) ??
+    services.find((service) => service.status === AppointmentStatus.ASSIGNED) ??
+    services.find((service) => service.status === AppointmentStatus.WAITING || service.status === AppointmentStatus.CREATED) ??
+    services.find((service) => service.status === AppointmentStatus.COMPLETED);
+  const status = services.some((service) => service.status === AppointmentStatus.IN_SERVICE)
+    ? AppointmentStatus.IN_SERVICE
+    : services.some((service) => service.status === AppointmentStatus.ASSIGNED)
+      ? AppointmentStatus.ASSIGNED
+      : services.some((service) => service.status === AppointmentStatus.CREATED || service.status === AppointmentStatus.WAITING)
+        ? AppointmentStatus.WAITING
+        : services.some((service) => service.status === AppointmentStatus.COMPLETED)
+          ? AppointmentStatus.PAYMENT_PENDING
+          : AppointmentStatus.CANCELLED;
+  return {
+    status,
+    serviceId: activeService?.serviceId ?? appointment.serviceId,
+    serviceNameSnapshot: activeService?.serviceNameSnapshot ?? appointment.serviceNameSnapshot,
+    durationMinSnapshot: activeService?.durationMinSnapshot ?? appointment.durationMinSnapshot,
+    primaryStaffId: activeService?.primaryStaffId ?? null,
+  };
+}
+
+type D1MappedAppointment = Parameters<typeof mapAppointment>[0];
+type D1MappedAppointmentService = D1MappedAppointment['services'][number];
+type D1RouteService = D1MappedAppointmentService & { service: { requiredSkills: Array<{ skill: { name: string } }> } };
+type D1RouteAppointment = Omit<D1MappedAppointment, 'services'> & { services: D1RouteService[] };
+
+async function d1RouteAppointmentPlan(
+  database: D1DatabaseLike,
+  appointment: D1RouteAppointment,
+  services: D1RouteService[],
+  businessDate: Date,
+  options: {
+    excludedServiceId?: string;
+    excludedStaffId?: string;
+    releasedStaffIds?: string[];
+    routingSnapshot?: { candidates: StaffCandidate[]; roundRobinEnabled: boolean };
+  } = {},
+) {
+  const routingSnapshot = options.routingSnapshot ?? {
+    candidates: (await staffForBusinessDate(prisma, businessDate)).map(mapStaff),
+    roundRobinEnabled:
+      (await prisma.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }))
+        ?.roundRobinEnabled ?? true,
+  };
+  const candidates = routingSnapshot.candidates;
+  const releasedStaffIds = new Set(options.releasedStaffIds ?? []);
+  for (const candidate of candidates) {
+    if (releasedStaffIds.has(candidate.id) && candidate.isPresent) candidate.availability = Availability.AVAILABLE;
+  }
+  const statements = [] as ReturnType<typeof d1Statement>[];
+  for (const appointmentService of services
+    .filter((service) => service.status === AppointmentStatus.CREATED || service.status === AppointmentStatus.WAITING)
+    .sort((left, right) => left.sequence - right.sequence)) {
+    const excludedStaffIds = appointmentService.turnExclusions.map((exclusion) => exclusion.staffId);
+    if (appointmentService.id === options.excludedServiceId && options.excludedStaffId)
+      excludedStaffIds.push(options.excludedStaffId);
+    const assignment = routeNextTurn(candidates, serviceSkillNames(appointmentService.service), [...new Set(excludedStaffIds)], routingSnapshot.roundRobinEnabled);
+    const status = assignment.staff ? AppointmentStatus.ASSIGNED : AppointmentStatus.WAITING;
+    const previousStaffId = appointmentService.primaryStaffId;
+    const activeTurn = [...appointmentService.turns].reverse().find((turn) => turn.status === TurnStatus.ASSIGNED && !turn.assignedStaffId);
+    const routedTurnId = activeTurn?.id ?? randomId();
+    statements.push(d1Statement(database, `UPDATE appointment_services SET status = ?, primary_staff_id = ? WHERE id = ? AND status IN (?, ?)`, status, assignment.staff?.id ?? null, appointmentService.id, AppointmentStatus.CREATED, AppointmentStatus.WAITING));
+    if (activeTurn) {
+      statements.push(d1Statement(database, `UPDATE turns SET assigned_staff_id = ?, reason = ? WHERE id = ? AND status = ?`, assignment.staff?.id ?? null, assignment.staff ? null : 'Waiting for eligible staff', activeTurn.id, TurnStatus.ASSIGNED));
+    } else {
+      statements.push(d1Statement(database, `INSERT INTO turns (id, appointment_id, appointment_service_id, assigned_staff_id, status, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, routedTurnId, appointment.id, appointmentService.id, assignment.staff?.id ?? null, TurnStatus.ASSIGNED, assignment.staff ? null : 'Waiting for eligible staff', d1DateTimeValue(new Date())));
+    }
+    const assignmentChanged = !activeTurn || previousStaffId !== (assignment.staff?.id ?? null) || appointmentService.status !== status;
+    if (assignmentChanged)
+      statements.push(d1TurnEvent(database, { appointmentId: appointment.id, appointmentServiceId: appointmentService.id, turnId: routedTurnId, eventType: assignment.staff ? TurnEventType.ASSIGNED : TurnEventType.WAITING, assignedStaffId: assignment.staff?.id ?? null, assignedStaffName: assignment.staff?.name ?? null, actorType: ActorType.SYSTEM, actorName: 'Fair routing', reason: assignment.staff ? 'Assigned by skill and fair wait time' : 'Waiting for eligible staff' }, d1DateTimeValue(new Date())));
+    if (assignment.staff) {
+      statements.push(d1Statement(database, `INSERT INTO staff_service_state (staff_id, availability, last_assigned_at) VALUES (?, ?, ?)
+        ON CONFLICT(staff_id) DO UPDATE SET availability = excluded.availability, last_assigned_at = excluded.last_assigned_at`, assignment.staff.id, Availability.BUSY, d1DateTimeValue(new Date())));
+      const candidate = candidates.find((item) => item.id === assignment.staff?.id);
+      if (candidate) candidate.availability = Availability.BUSY;
+    }
+    appointmentService.status = status;
+    appointmentService.primaryStaffId = assignment.staff?.id ?? null;
+  }
+  return { statements, services };
+}
+
+function d1ReleaseStaffStatements(database: D1DatabaseLike, businessDate: Date, staffIds: string[]) {
+  const uniqueStaffIds = [...new Set(staffIds.filter(Boolean))];
+  if (!uniqueStaffIds.length) return [] as ReturnType<typeof d1Statement>[];
+  const placeholders = uniqueStaffIds.map(() => '?').join(', ');
+  return [d1Statement(database, `UPDATE staff_service_state SET availability = ? WHERE staff_id IN (${placeholders}) AND availability = ?
+    AND NOT EXISTS (SELECT 1 FROM appointment_services active_service JOIN appointments active_appointment ON active_appointment.id = active_service.appointment_id WHERE active_service.primary_staff_id = staff_service_state.staff_id AND active_service.status IN (?, ?) AND active_appointment.business_date = ?)
+    AND NOT EXISTS (SELECT 1 FROM appointment_supporting_staff support JOIN appointments support_appointment ON support_appointment.id = support.appointment_id WHERE support.staff_id = staff_service_state.staff_id AND support.released_at IS NULL AND support_appointment.business_date = ? AND support_appointment.status IN (?, ?, ?))`, Availability.AVAILABLE, ...uniqueStaffIds, Availability.BUSY, AppointmentStatus.ASSIGNED, AppointmentStatus.IN_SERVICE, d1DateTimeValue(businessDate), d1DateTimeValue(businessDate), AppointmentStatus.ASSIGNED, AppointmentStatus.IN_SERVICE, AppointmentStatus.PAYMENT_PENDING)];
+}
+
+async function changeDbAppointmentServiceD1(
+  input: {
+    appointmentServiceId: string;
+    serviceId: string;
+    reason: string;
+    idempotencyKey?: string;
+    adminId: string;
+  },
+  businessDate: Date,
+) {
+  return withD1Lease(async (database) => {
+    const scope = `service-change:${input.appointmentServiceId}`;
+    const normalizedRequestHash = await requestHash({
+      appointmentServiceId: input.appointmentServiceId,
+      serviceId: input.serviceId,
+      reason: input.reason.trim(),
+    });
+    if (input.idempotencyKey) {
+      const prior = await prisma.commandReceipt.findUnique({
+        where: { scope_key: { scope, key: input.idempotencyKey } },
+      });
+      if (prior) {
+        if (prior.requestHash && prior.requestHash !== normalizedRequestHash)
+          throw new Error('This service-change key was already used for different details');
+        const existingService = await prisma.appointmentService.findUnique({
+          where: { id: input.appointmentServiceId },
+          select: { appointmentId: true },
+        });
+        const existing = existingService
+          ? await prisma.appointment.findUnique({
+              where: { id: existingService.appointmentId },
+              include: appointmentInclude,
+            })
+          : null;
+        return {
+          ok: true,
+          appointment: existing ? mapAppointment(existing) : null,
+          idempotent: true,
+        };
+      }
+    }
+
+    const current = await prisma.appointmentService.findUnique({
+      where: { id: input.appointmentServiceId },
+      include: {
+        appointment: { include: appointmentInclude },
+        service: { include: { requiredSkills: { include: { skill: true } } } },
+        primaryStaff: true,
+        turns: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+    if (!current) throw new Error('Appointment service not found');
+    if (
+      (
+        [
+          AppointmentStatus.COMPLETED,
+          AppointmentStatus.CANCELLED,
+          AppointmentStatus.PAYMENT_PENDING,
+        ] as AppointmentStatus[]
+      ).includes(current.status) ||
+      current.appointment.payment ||
+      current.appointment.status === AppointmentStatus.PAYMENT_PENDING ||
+      current.appointment.status === AppointmentStatus.COMPLETED
+    )
+      throw new Error('Completed or payment-confirmed service history cannot be changed');
+
+    const nextService = await prisma.service.findFirst({
+      where: activeCatalogServiceWhere([input.serviceId]),
+      include: { requiredSkills: { include: { skill: true } } },
+    });
+    if (!nextService) throw new Error('Replacement service is unavailable');
+    if (nextService.id === current.serviceId) throw new Error('Choose a different service');
+
+    const now = new Date();
+    const nowIso = d1DateTimeValue(now);
+    const reason = input.reason.trim();
+    const requiredSkills = nextService.requiredSkills.map((item) => item.skill.name);
+    let qualified = !current.primaryStaffId;
+    if (current.primaryStaffId) {
+      const staff = await prisma.staff.findUnique({
+        where: { id: current.primaryStaffId },
+        include: {
+          skills: { include: { skill: true } },
+          attendance: { where: { businessDate } },
+        },
+      });
+      qualified = Boolean(
+        staff?.isActive &&
+          staff.attendance[0]?.status === AttendanceStatus.PRESENT &&
+          requiredSkills.every((skill) => staff.skills.some((item) => item.skill.name === skill)),
+      );
+    }
+    if (current.status === AppointmentStatus.IN_SERVICE && !qualified)
+      throw new Error(
+        'Current technician is not qualified for the replacement service; reassign before changing it',
+      );
+
+    const routedServices = current.appointment.services.map((service) => ({
+      ...service,
+      turns: [...service.turns],
+      turnExclusions: [...service.turnExclusions],
+    })) as D1RouteService[];
+    const changedService = routedServices.find((service) => service.id === current.id);
+    if (!changedService) throw new Error('Appointment service not found');
+    const needsReroute = !qualified && current.status !== AppointmentStatus.IN_SERVICE;
+    changedService.service = nextService;
+    changedService.serviceId = nextService.id;
+    changedService.serviceNameSnapshot = nextService.name;
+    changedService.durationMinSnapshot = nextService.durationMin;
+    changedService.amount = nextService.price;
+    if (needsReroute) {
+      changedService.status = AppointmentStatus.WAITING;
+      changedService.primaryStaffId = null;
+    }
+
+    const statements = [] as ReturnType<typeof d1Statement>[];
+    const guardedServiceUpdateIndex = statements.length;
+    statements.push(
+      d1Statement(
+        database,
+        `UPDATE appointment_services
+         SET service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, amount = ?, status = ?, primary_staff_id = ?
+         WHERE id = ? AND service_id = ? AND status = ?`,
+        nextService.id,
+        nextService.name,
+        nextService.durationMin,
+        moneyFromMinorUnits(toMinorUnits(nextService.price)),
+        needsReroute ? AppointmentStatus.WAITING : current.status,
+        needsReroute ? null : current.primaryStaffId,
+        current.id,
+        current.serviceId,
+        current.status,
+      ),
+    );
+
+    if (needsReroute) {
+      const activeTurn = [...current.turns]
+        .reverse()
+        .find(
+          (turn) =>
+            turn.status === TurnStatus.ASSIGNED || turn.status === TurnStatus.ACCEPTED,
+        );
+      if (activeTurn) {
+        statements.push(
+          d1Statement(
+            database,
+            `UPDATE turns SET status = ?, reason = ?, ended_at = ? WHERE id = ? AND status IN (?, ?)`,
+            TurnStatus.SKIPPED,
+            'Service changed; routing revalidated',
+            nowIso,
+            activeTurn.id,
+            TurnStatus.ASSIGNED,
+            TurnStatus.ACCEPTED,
+          ),
+        );
+        statements.push(
+          d1TurnEvent(
+            database,
+            {
+              appointmentId: current.appointmentId,
+              appointmentServiceId: current.id,
+              turnId: activeTurn.id,
+              eventType: TurnEventType.SKIPPED,
+              assignedStaffId: activeTurn.assignedStaffId,
+              assignedStaffName: current.primaryStaff?.name ?? null,
+              actorType: ActorType.ADMIN,
+              actorId: input.adminId,
+              reason: 'Service changed; routing revalidated',
+            },
+            nowIso,
+          ),
+        );
+      }
+    }
+
+    const routePlan = await d1RouteAppointmentPlan(
+      database,
+      current.appointment as unknown as D1RouteAppointment,
+      routedServices,
+      businessDate,
+    );
+    const aggregate = d1AppointmentAggregate(current.appointment, routePlan.services);
+    const totalAmount = routePlan.services
+      .filter((service) => service.status !== AppointmentStatus.CANCELLED)
+      .reduce((total, service) => total + toMinorUnits(service.amount), 0);
+    statements.push(...routePlan.statements);
+    statements.push(
+      d1Statement(
+        database,
+        `INSERT INTO service_change_events
+         (id, appointment_id, appointment_service_id, old_service_id, old_service_name, old_duration_min, old_amount, new_service_id, new_service_name, new_duration_min, new_amount, reason, actor_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        randomId(),
+        current.appointmentId,
+        current.id,
+        current.serviceId,
+        current.serviceNameSnapshot,
+        current.durationMinSnapshot,
+        moneyFromMinorUnits(toMinorUnits(current.amount)),
+        nextService.id,
+        nextService.name,
+        nextService.durationMin,
+        moneyFromMinorUnits(toMinorUnits(nextService.price)),
+        reason,
+        input.adminId,
+        nowIso,
+      ),
+    );
+    statements.push(
+      d1Statement(
+        database,
+        `UPDATE appointments
+         SET amount = ?, status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ?, completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END
+         WHERE id = ? AND business_date = ?`,
+        moneyFromMinorUnits(totalAmount),
+        aggregate.status,
+        aggregate.serviceId,
+        aggregate.serviceNameSnapshot,
+        aggregate.durationMinSnapshot,
+        aggregate.primaryStaffId,
+        aggregate.status,
+        AppointmentStatus.PAYMENT_PENDING,
+        current.appointmentId,
+        d1DateTimeValue(businessDate),
+      ),
+    );
+    statements.push(
+      d1AuditEvent(
+        database,
+        {
+          action: 'appointment_service.changed',
+          entity: 'AppointmentService',
+          entityId: current.id,
+          actorType: ActorType.ADMIN,
+          actorId: input.adminId,
+          metadata: {
+            oldServiceId: current.serviceId,
+            newServiceId: nextService.id,
+            reason,
+          },
+        },
+        nowIso,
+      ),
+    );
+    statements.push(d1BumpBoardVersion(database, nowIso));
+    if (input.idempotencyKey)
+      statements.push(
+        d1Statement(
+          database,
+          `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          randomId(),
+          scope,
+          input.idempotencyKey,
+          JSON.stringify({ ok: true, appointmentId: current.appointmentId }),
+          normalizedRequestHash,
+          nowIso,
+        ),
+      );
+
+    const results = (await database.batch(statements)) as D1BatchResult[];
+    if (d1BatchChanges(results[guardedServiceUpdateIndex]) !== 1)
+      throw new Error(
+        'Appointment service changed before the update could be recorded; retry the command',
+      );
+    const updated = await prisma.appointment.findUnique({
+      where: { id: current.appointmentId },
+      include: appointmentInclude,
+    });
+    return {
+      ok: true,
+      appointment: updated ? mapAppointment(updated) : null,
+      idempotent: false,
+    };
+  });
+}
+
+type D1BatchResult = { meta?: { changes?: number } };
+
+function d1BatchChanges(result: unknown) {
+  return Number((result as D1BatchResult | undefined)?.meta?.changes ?? 0);
+}
+
+// Prisma's D1 adapter serializes DateTime bind values as ISO timestamps with
+// an explicit UTC offset. Direct SQL writes must use the same representation
+// so Prisma equality filters can see rows created by the D1 batch paths.
+function d1DateTimeValue(date: Date) {
+  return date.toISOString().replace('Z', '+00:00');
+}
+
+async function d1NextAppointmentCode(database: D1DatabaseLike, businessDate: string) {
+  const rows = await database.prepare('SELECT code FROM appointments WHERE business_date = ?').bind(businessDate).all<{ code: string }>();
+  const highestSequence = rows.results.reduce((highest, row) => {
+    const match = /^A([0-9]+)$/.exec(row.code);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0);
+  return `A${String(highestSequence + 1).padStart(3, '0')}`;
+}
+
+async function d1CheckInTicket(
+  tx: typeof prisma | Prisma.TransactionClient,
+  appointmentId: string,
+  businessDate: Date,
+) {
+  const saved = await tx.appointment.findUniqueOrThrow({ where: { id: appointmentId }, include: appointmentInclude });
+  const staffRows = await staffForBusinessDate(tx, businessDate);
+  return ticket(mapAppointment(saved), staffRows.map(mapStaff));
+}
+
+async function routeDbAppointmentD1(
+  database: D1DatabaseLike,
+  appointmentId: string,
+  businessDate: Date,
+) {
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+    include: appointmentInclude,
+  });
+  if (!appointment) throw new Error('Appointment not found');
+  const services = appointment.services.map((service) => ({
+    ...service,
+    turns: [...service.turns],
+    turnExclusions: [...service.turnExclusions],
+  })) as D1RouteService[];
+  const routePlan = await d1RouteAppointmentPlan(
+    database,
+    appointment as unknown as D1RouteAppointment,
+    services,
+    businessDate,
+  );
+  const aggregate = d1AppointmentAggregate(appointment, routePlan.services);
+  await database.batch([
+    ...routePlan.statements,
+    d1Statement(
+      database,
+      `UPDATE appointments
+       SET status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ?, completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END
+       WHERE id = ? AND business_date = ?`,
+      aggregate.status,
+      aggregate.serviceId,
+      aggregate.serviceNameSnapshot,
+      aggregate.durationMinSnapshot,
+      aggregate.primaryStaffId,
+      aggregate.status,
+      AppointmentStatus.PAYMENT_PENDING,
+      appointment.id,
+      d1DateTimeValue(businessDate),
+    ),
+  ]);
+}
+
+async function createDbCheckInD1Attempt(input: {
+  serviceId?: string;
+  serviceIds?: string[];
+  phone: string;
+  name: string;
+  idempotencyKey?: string;
+}) {
+  return withD1Lease(async (database) => {
+    const shopConfig = await prisma.shopConfig.findUnique({ where: { id: 1 }, select: { timezone: true, openingTime: true, closingTime: true, verifiedSessionTtlMin: true, currency: true, roundRobinEnabled: true } });
+    const timezone = shopConfig?.timezone ?? SHOP_TIMEZONE;
+    const openingTime = shopConfig?.openingTime ?? '09:00';
+    const closingTime = shopConfig?.closingTime ?? '21:00';
+    const now = new Date();
+    const businessDate = currentBusinessDate(now, timezone);
+    const idempotencyScope = `kiosk:${formatBusinessDate(businessDate)}`;
+    const normalizedRequestHash = await requestHash({
+      serviceId: input.serviceId ?? null,
+      serviceIds: input.serviceIds ?? null,
+      phone: normalizePhoneNumber(input.phone),
+      name: input.name.trim(),
+    });
+    const prior = input.idempotencyKey
+      ? await prisma.commandReceipt.findUnique({ where: { scope_key: { scope: idempotencyScope, key: input.idempotencyKey } } })
+      : null;
+    if (prior) {
+      if (prior.requestHash && prior.requestHash !== normalizedRequestHash) throw new Error('This check-in key was already used for different details');
+      const receipt = prior.response as Prisma.JsonObject;
+      if (typeof receipt.appointmentId !== 'string') return prior.response as unknown as ReturnType<typeof ticket>;
+      if (receipt.state === 'ROUTING') {
+        await routeDbAppointmentD1(database, receipt.appointmentId, businessDate);
+        await database
+          .prepare('UPDATE command_receipts SET response = ? WHERE id = ?')
+          .bind(JSON.stringify({ state: 'COMPLETE', appointmentId: receipt.appointmentId }), prior.id)
+          .run();
+      }
+      return d1CheckInTicket(prisma, receipt.appointmentId, businessDate);
+    }
+    if (!isWithinOperatingHours(now, { timezone, openingTime, closingTime })) throw new KioskCheckInClosedError(openingTime, closingTime, timezone);
+    const requestedServiceIds = [...new Set(input.serviceIds?.length ? input.serviceIds : input.serviceId ? [input.serviceId] : [])];
+    if (!requestedServiceIds.length) throw new Error('Choose at least one service');
+    const services = await prisma.service.findMany({ where: activeCatalogServiceWhere(requestedServiceIds), include: { requiredSkills: { include: { skill: true } } } });
+    const serviceById = new Map(services.map((service) => [service.id, service]));
+    const orderedServices = requestedServiceIds.map((serviceId) => serviceById.get(serviceId)).filter((service): service is NonNullable<typeof service> => Boolean(service));
+    if (orderedServices.length !== requestedServiceIds.length) throw new Error('One or more selected services are unavailable');
+    const phoneNormalized = normalizePhoneNumber(input.phone);
+    const existingCustomer = await prisma.customer.findUnique({ where: { phoneNormalized }, select: { id: true } });
+    const customerId = existingCustomer?.id ?? randomId();
+    const appointmentId = randomId();
+    const nowIso = now.toISOString();
+    const businessDateIso = d1DateTimeValue(businessDate);
+    const code = await d1NextAppointmentCode(database, businessDateIso);
+    const totalAmount = moneyFromMinorUnits(orderedServices.reduce((total, service) => total + toMinorUnits(service.price), 0));
+    const receiptResponse = { state: 'ROUTING', appointmentId };
+    const statements = [
+      d1Statement(database, `INSERT INTO customers (id, phone, phone_normalized, name, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(phone_normalized) DO UPDATE SET phone = excluded.phone, name = excluded.name, updated_at = excluded.updated_at`, customerId, input.phone, phoneNormalized, input.name.trim(), nowIso, nowIso),
+      d1Statement(database, `INSERT INTO appointments (id, code, customer_id, service_id, service_name_snapshot, duration_min_snapshot, status, primary_staff_id, amount, business_date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`, appointmentId, code, customerId, orderedServices[0].id, orderedServices[0].name, orderedServices[0].durationMin, AppointmentStatus.CREATED, totalAmount, businessDateIso, nowIso),
+      ...orderedServices.map((service, index) => d1Statement(database, `INSERT INTO appointment_services (id, appointment_id, service_id, sequence, service_name_snapshot, duration_min_snapshot, amount, status, primary_staff_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`, randomId(), appointmentId, service.id, index + 1, service.name, service.durationMin, moneyFromMinorUnits(toMinorUnits(service.price)), AppointmentStatus.CREATED)),
+      d1Statement(database, `INSERT INTO audit_events (id, ts, actor_type, actor_id, action, entity, entity_id, metadata)
+        VALUES (?, ?, ?, NULL, ?, ?, ?, ?)`, randomId(), nowIso, ActorType.SYSTEM, 'appointment.checked_in', 'Appointment', appointmentId, JSON.stringify({ code, serviceIds: orderedServices.map((service) => service.id) })),
+      ...(input.idempotencyKey ? [d1Statement(database, `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)`, randomId(), idempotencyScope, input.idempotencyKey, JSON.stringify(receiptResponse), normalizedRequestHash, nowIso)] : []),
+      d1Statement(database, `INSERT INTO shop_config (id, timezone, opening_time, closing_time, verified_session_ttl_min, currency, round_robin_enabled, state_version, created_at, updated_at)
+        VALUES (1, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET state_version = shop_config.state_version + 1, updated_at = excluded.updated_at`, timezone, openingTime, closingTime, shopConfig?.verifiedSessionTtlMin ?? 3, shopConfig?.currency ?? 'USD', shopConfig?.roundRobinEnabled ?? true, nowIso, nowIso),
+    ];
+    await database.batch(statements);
+    try {
+      await routeDbAppointmentD1(database, appointmentId, businessDate);
+      if (input.idempotencyKey)
+        await database
+          .prepare('UPDATE command_receipts SET response = ? WHERE scope = ? AND key = ?')
+          .bind(JSON.stringify({ state: 'COMPLETE', appointmentId }), idempotencyScope, input.idempotencyKey)
+          .run();
+    } catch (error) {
+      // The receipt intentionally remains in ROUTING state. A safe retry with
+      // the same idempotency key repairs routing instead of creating a visit.
+      throw error;
+    }
+    return d1CheckInTicket(prisma, appointmentId, businessDate);
+  });
+}
+
+async function createDbCheckInD1(input: {
+  serviceId?: string;
+  serviceIds?: string[];
+  phone: string;
+  name: string;
+  idempotencyKey?: string;
+}) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      return await createDbCheckInD1Attempt(input);
+    } catch (error) {
+      if (!(error instanceof Error) || !/appointments\.business_date, appointments\.code/.test(error.message)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 15 * (attempt + 1)));
+    }
+  }
+  throw new Error('A turn number conflict occurred. Please try joining again.');
+}
+
+async function confirmDbPaymentD1(input: {
+  appointmentId: string;
+  method: PaymentMethod;
+  amount?: number;
+  tip?: number;
+  cashReceived?: number;
+  idempotencyKey?: string;
+  adminId?: string;
+}) {
+  return withD1Lease(async (database) => {
+    const shopConfig = await prisma.shopConfig.findUnique({
+      where: { id: 1 },
+      select: {
+        timezone: true,
+        openingTime: true,
+        closingTime: true,
+        verifiedSessionTtlMin: true,
+        currency: true,
+        roundRobinEnabled: true,
+      },
+    });
+    const businessDate = currentBusinessDate(new Date(), shopConfig?.timezone ?? SHOP_TIMEZONE);
+    const appointment = await prisma.appointment.findUnique({ where: { id: input.appointmentId }, include: appointmentInclude });
+    if (!appointment || formatBusinessDate(appointment.businessDate) !== formatBusinessDate(businessDate)) throw new Error('Appointment not found');
+    const finalAmount = roundMoney(input.amount ?? Number(appointment.amount));
+    const tip = roundMoney(input.tip ?? 0);
+    const originalAmount = roundMoney(Number(appointment.amount));
+    const cashDetails = paymentCashDetails({ method: input.method, amount: finalAmount, tip, cashReceived: input.cashReceived });
+    const idempotencyScope = `payment:${appointment.id}`;
+    const normalizedRequestHash = await requestHash({ appointmentId: input.appointmentId, method: input.method, amount: finalAmount, tip, cashReceived: cashDetails.cashReceived });
+    const prior = input.idempotencyKey ? await prisma.commandReceipt.findUnique({ where: { scope_key: { scope: idempotencyScope, key: input.idempotencyKey } } }) : null;
+    if (prior) {
+      if (prior.requestHash && prior.requestHash !== normalizedRequestHash) throw new Error('This payment key was already used for different payment details');
+      const stored = prior.response as Prisma.JsonObject;
+      const savedAppointment = await prisma.appointment.findUnique({ where: { id: appointment.id }, include: appointmentInclude });
+      return { ok: true, appointment: savedAppointment ? mapAppointment(savedAppointment) : null, message: typeof stored.message === 'string' ? stored.message : 'Payment already confirmed', idempotent: true };
+    }
+    const appointmentStaffIds = [...new Set([appointment.primaryStaffId, ...appointment.services.map((service) => service.primaryStaffId), ...appointment.supportingStaff.map((staff) => staff.staffId)].filter((staffId): staffId is string => Boolean(staffId)))];
+    if (appointment.payment) {
+      const releaseStatements = d1ReleaseStaffStatements(database, businessDate, appointmentStaffIds);
+      if (input.idempotencyKey)
+        releaseStatements.push(
+          d1Statement(
+            database,
+            `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            randomId(),
+            idempotencyScope,
+            input.idempotencyKey,
+            JSON.stringify({ ok: true, appointmentId: appointment.id, message: 'Payment already confirmed' }),
+            normalizedRequestHash,
+            d1DateTimeValue(new Date()),
+          ),
+        );
+      if (releaseStatements.length) await database.batch(releaseStatements);
+      const response = { ok: true, appointment: mapAppointment(appointment), message: 'Payment already confirmed' };
+      return response;
+    }
+    const payableServices = appointment.services.filter((service) => service.status === AppointmentStatus.COMPLETED);
+    const hasUnfinishedServices = appointment.services.some((service) => !([AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED] as AppointmentStatus[]).includes(service.status));
+    if (appointment.status !== AppointmentStatus.PAYMENT_PENDING || !payableServices.length || hasUnfinishedServices) throw new Error('Appointment is not ready for payment');
+    const admin = input.adminId ? await prisma.authUser.findUnique({ where: { id: input.adminId } }) : await prisma.authUser.findFirst({ where: { role: 'ADMIN', isActive: true } });
+    if (!admin) throw new Error('Admin account not found');
+    const paymentId = randomId();
+    const nowIso = new Date().toISOString();
+    const statements = [
+      d1Statement(database, `INSERT INTO payments (id, appointment_id, amount, tip, method, service_name_snapshot, staff_name_snapshot, confirmed_by_admin_id, confirmed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, paymentId, appointment.id, finalAmount, tip, input.method, payableServices.map((service) => service.serviceNameSnapshot).join(' + '), payableServices.map((service) => service.primaryStaff?.name).filter(Boolean).join(', ') || null, admin.id, nowIso),
+      ...payableServices.map((service) => d1Statement(database, `INSERT INTO payment_items (id, payment_id, appointment_service_id, service_name_snapshot, staff_name_snapshot, amount)
+        VALUES (?, ?, ?, ?, ?, ?)`, randomId(), paymentId, service.id, service.serviceNameSnapshot, service.primaryStaff?.name ?? null, Number(service.amount))),
+      d1Statement(database, `UPDATE appointments SET status = ?, completed_at = ? WHERE id = ? AND status = ?`, AppointmentStatus.COMPLETED, nowIso, appointment.id, AppointmentStatus.PAYMENT_PENDING),
+      ...(appointmentStaffIds.length ? [d1Statement(database, `UPDATE staff_service_state
+        SET availability = ?
+        WHERE staff_id IN (${appointmentStaffIds.map(() => '?').join(', ')})
+          AND availability = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM appointment_services active_service
+            JOIN appointments active_appointment ON active_appointment.id = active_service.appointment_id
+            WHERE active_service.primary_staff_id = staff_service_state.staff_id
+              AND active_service.status IN (?, ?)
+              AND active_appointment.business_date = ?
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM appointment_supporting_staff support
+            JOIN appointments support_appointment ON support_appointment.id = support.appointment_id
+            WHERE support.staff_id = staff_service_state.staff_id
+              AND support.released_at IS NULL
+              AND support_appointment.business_date = ?
+              AND support_appointment.status IN (?, ?, ?)
+          )`, Availability.AVAILABLE, ...appointmentStaffIds, Availability.BUSY, AppointmentStatus.ASSIGNED, AppointmentStatus.IN_SERVICE, d1DateTimeValue(businessDate), d1DateTimeValue(businessDate), AppointmentStatus.ASSIGNED, AppointmentStatus.IN_SERVICE, AppointmentStatus.PAYMENT_PENDING)] : []),
+      d1Statement(database, `INSERT INTO audit_events (id, ts, actor_type, actor_id, action, entity, entity_id, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, randomId(), nowIso, ActorType.ADMIN, admin.id, 'payment.confirmed', 'Payment', paymentId, JSON.stringify({ method: input.method, originalAmount, amount: finalAmount, tip, cashReceived: cashDetails.cashReceived, changeGiven: cashDetails.changeGiven })),
+      ...(input.idempotencyKey ? [d1Statement(database, `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)`, randomId(), idempotencyScope, input.idempotencyKey, JSON.stringify({ ok: true, appointmentId: appointment.id, message: `Payment confirmed via ${input.method}` }), normalizedRequestHash, nowIso)] : []),
+      d1Statement(database, `INSERT INTO shop_config (id, timezone, opening_time, closing_time, verified_session_ttl_min, currency, round_robin_enabled, state_version, created_at, updated_at)
+        VALUES (1, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET state_version = shop_config.state_version + 1, updated_at = excluded.updated_at`, shopConfig?.timezone ?? SHOP_TIMEZONE, shopConfig?.openingTime ?? '09:00', shopConfig?.closingTime ?? '21:00', shopConfig?.verifiedSessionTtlMin ?? 3, shopConfig?.currency ?? 'USD', shopConfig?.roundRobinEnabled ?? true, nowIso, nowIso),
+    ];
+    await database.batch(statements);
+    const updated = await prisma.appointment.findUnique({ where: { id: appointment.id }, include: appointmentInclude });
+    const response = { ok: true, appointment: updated ? mapAppointment(updated) : null, message: `Payment confirmed via ${input.method}` };
+    return response;
+  });
+}
+
 export async function createDbCheckIn(input: {
   serviceId?: string;
   serviceIds?: string[];
@@ -1285,11 +2054,20 @@ export async function createDbCheckIn(input: {
   name: string;
   idempotencyKey?: string;
 }) {
-  const businessDate = await currentDbBusinessDate();
+  if (await isD1Runtime()) return createDbCheckInD1(input);
   return prisma.$transaction(async (tx) => {
+    const shopConfig = await tx.shopConfig.findUnique({
+      where: { id: 1 },
+      select: { timezone: true, openingTime: true, closingTime: true },
+    });
+    const timezone = shopConfig?.timezone ?? SHOP_TIMEZONE;
+    const openingTime = shopConfig?.openingTime ?? '09:00';
+    const closingTime = shopConfig?.closingTime ?? '21:00';
+    const now = new Date();
+    const businessDate = currentBusinessDate(now, timezone);
     await lockShopBusinessDate(tx, businessDate.toISOString());
     const idempotencyScope = `kiosk:${formatBusinessDate(businessDate)}`;
-    const normalizedRequestHash = requestHash({
+    const normalizedRequestHash = await requestHash({
       serviceId: input.serviceId ?? null,
       serviceIds: input.serviceIds ?? null,
       phone: normalizePhoneNumber(input.phone),
@@ -1305,6 +2083,8 @@ export async function createDbCheckIn(input: {
         return prior.response as unknown as ReturnType<typeof ticket>;
       }
     }
+    if (!isWithinOperatingHours(now, { timezone, openingTime, closingTime }))
+      throw new KioskCheckInClosedError(openingTime, closingTime, timezone);
     const requestedServiceIds = [
       ...new Set(
         input.serviceIds?.length ? input.serviceIds : input.serviceId ? [input.serviceId] : [],
@@ -1312,7 +2092,7 @@ export async function createDbCheckIn(input: {
     ];
     if (!requestedServiceIds.length) throw new Error('Choose at least one service');
     const services = await tx.service.findMany({
-      where: { id: { in: requestedServiceIds }, isActive: true },
+      where: activeCatalogServiceWhere(requestedServiceIds),
       include: { requiredSkills: { include: { skill: true } } },
     });
     const serviceById = new Map(services.map((service) => [service.id, service]));
@@ -1328,10 +2108,7 @@ export async function createDbCheckIn(input: {
       create: { phone: input.phone, phoneNormalized, name: input.name },
     });
     const code = await nextAppointmentCode(tx, businessDate);
-    const totalAmount = orderedServices.reduce(
-      (total, service) => total + Number(service.price),
-      0,
-    );
+    const totalAmount = moneyFromMinorUnits(orderedServices.reduce((total, service) => total + toMinorUnits(service.price), 0));
     const appointment = await tx.appointment.create({
       data: {
         code,
@@ -1401,6 +2178,7 @@ export async function confirmDbPayment(input: {
   idempotencyKey?: string;
   adminId?: string;
 }) {
+  if (await isD1Runtime()) return confirmDbPaymentD1(input);
   const businessDate = await currentDbBusinessDate();
   return prisma.$transaction(async (tx) => {
     await lockShopBusinessDate(tx, businessDate.toISOString());
@@ -1419,7 +2197,7 @@ export async function confirmDbPayment(input: {
       cashReceived: input.cashReceived,
     });
     const idempotencyScope = `payment:${appointment.id}`;
-    const normalizedRequestHash = requestHash({
+    const normalizedRequestHash = await requestHash({
       appointmentId: input.appointmentId,
       method: input.method,
       amount: finalAmount,
@@ -1664,6 +2442,329 @@ export async function getDbPaymentHistory(appointmentId: string) {
   };
 }
 
+async function adjustDbPaymentD1(input: {
+  appointmentId: string;
+  method: PaymentMethod;
+  amount: number;
+  tip: number;
+  cashReceived?: number;
+  reason: string;
+  idempotencyKey?: string;
+  adminId: string;
+}) {
+  return withD1Lease(async (database) => {
+    const payment = await prisma.payment.findUnique({
+      where: { appointmentId: input.appointmentId },
+      include: { appointment: { select: { businessDate: true } } },
+    });
+    if (!payment) throw new Error('Payment not found');
+    const amount = roundMoney(input.amount);
+    const tip = roundMoney(input.tip);
+    const cashDetails = paymentCashDetails({
+      method: input.method,
+      amount,
+      tip,
+      cashReceived: input.cashReceived,
+    });
+    const scope = `payment-adjustment:${input.appointmentId}`;
+    const normalizedRequestHash = await requestHash({
+      appointmentId: input.appointmentId,
+      method: input.method,
+      amount,
+      tip,
+      cashReceived: cashDetails.cashReceived,
+      reason: input.reason.trim(),
+    });
+    if (input.idempotencyKey) {
+      const prior = await prisma.commandReceipt.findUnique({
+        where: { scope_key: { scope, key: input.idempotencyKey } },
+      });
+      if (prior) {
+        if (prior.requestHash && prior.requestHash !== normalizedRequestHash)
+          throw new Error('This adjustment key was already used for different payment details');
+        return { ok: true, message: 'Payment adjustment already recorded', idempotent: true };
+      }
+    }
+    const admin = await prisma.authUser.findUnique({ where: { id: input.adminId } });
+    if (!admin || admin.role !== 'ADMIN' || !admin.isActive)
+      throw new Error('Admin account not found');
+    const latestEvent = await prisma.auditEvent.findFirst({
+      where: {
+        entity: 'Payment',
+        entityId: payment.id,
+        action: { in: ['payment.confirmed', 'payment.adjusted', 'payment.corrected'] },
+      },
+      orderBy: [{ ts: 'desc' }, { id: 'desc' }],
+      select: { metadata: true },
+    });
+    const previousMetadata = paymentAuditCurrentMetadata(latestEvent?.metadata);
+    const previousCashReceived = paymentAuditOptionalNumber(previousMetadata, 'cashReceived');
+    const previousChangeGiven = roundMoney(paymentAuditNumber(previousMetadata, 'changeGiven'));
+    const previous = {
+      amount: Number(payment.amount),
+      method: payment.method,
+      tip: Number(payment.tip),
+      cashReceived: previousCashReceived,
+      changeGiven: previousChangeGiven,
+    };
+    const current = {
+      amount,
+      method: input.method,
+      tip,
+      cashReceived: cashDetails.cashReceived,
+      changeGiven: cashDetails.changeGiven,
+    };
+    if (
+      previous.amount === current.amount &&
+      previous.method === current.method &&
+      previous.tip === current.tip &&
+      previous.cashReceived === current.cashReceived &&
+      previous.changeGiven === current.changeGiven
+    )
+      throw new Error('No payment details changed');
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const statements = [
+      d1Statement(
+        database,
+        `UPDATE payments
+         SET amount = ?, method = ?, tip = ?
+         WHERE id = ? AND amount = ? AND method = ? AND tip = ?`,
+        amount,
+        input.method,
+        tip,
+        payment.id,
+        previous.amount,
+        previous.method,
+        previous.tip,
+      ),
+      d1Statement(
+        database,
+        `INSERT INTO audit_events (id, ts, actor_type, actor_id, action, entity, entity_id, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        randomId(),
+        nowIso,
+        ActorType.ADMIN,
+        admin.id,
+        'payment.adjusted',
+        'Payment',
+        payment.id,
+        JSON.stringify({ reason: input.reason.trim(), previous, current }),
+      ),
+      ...(input.idempotencyKey
+        ? [
+            d1Statement(
+              database,
+              `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              randomId(),
+              scope,
+              input.idempotencyKey,
+              JSON.stringify({ ok: true, message: 'Payment adjusted', idempotent: false }),
+              normalizedRequestHash,
+              nowIso,
+            ),
+          ]
+        : []),
+    ];
+    const results = (await database.batch(statements)) as D1BatchResult[];
+    if (d1BatchChanges(results[0]) !== 1)
+      throw new Error('Payment changed before the adjustment could be recorded; retry the command');
+    return { ok: true, message: 'Payment adjusted', idempotent: false };
+  });
+}
+
+async function correctDbPaymentD1(input: {
+  appointmentId: string;
+  method: PaymentMethod;
+  tip: number;
+  reason: string;
+  idempotencyKey?: string;
+  adminId: string;
+}) {
+  return withD1Lease(async (database) => {
+    const payment = await prisma.payment.findUnique({
+      where: { appointmentId: input.appointmentId },
+      include: { appointment: { select: { businessDate: true } } },
+    });
+    if (!payment) throw new Error('Payment not found');
+    const scope = `payment-correction:${input.appointmentId}`;
+    const normalizedRequestHash = await requestHash({
+      appointmentId: input.appointmentId,
+      method: input.method,
+      tip: input.tip,
+      reason: input.reason,
+    });
+    if (input.idempotencyKey) {
+      const prior = await prisma.commandReceipt.findUnique({
+        where: { scope_key: { scope, key: input.idempotencyKey } },
+      });
+      if (prior) {
+        if (prior.requestHash && prior.requestHash !== normalizedRequestHash)
+          throw new Error('This correction key was already used for different payment details');
+        return { ok: true, message: 'Payment record already corrected', idempotent: true };
+      }
+    }
+    const admin = await prisma.authUser.findUnique({ where: { id: input.adminId } });
+    if (!admin || admin.role !== 'ADMIN' || !admin.isActive)
+      throw new Error('Admin account not found');
+    if (payment.method === input.method && Number(payment.tip) === input.tip)
+      throw new Error('No payment details changed');
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const updated = {
+      method: input.method,
+      tip: input.tip,
+    };
+    const statements = [
+      d1Statement(
+        database,
+        `UPDATE payments SET method = ?, tip = ?
+         WHERE id = ? AND method = ? AND tip = ?`,
+        input.method,
+        input.tip,
+        payment.id,
+        payment.method,
+        Number(payment.tip),
+      ),
+      d1Statement(
+        database,
+        `INSERT INTO audit_events (id, ts, actor_type, actor_id, action, entity, entity_id, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        randomId(),
+        nowIso,
+        ActorType.ADMIN,
+        admin.id,
+        'payment.corrected',
+        'Payment',
+        payment.id,
+        JSON.stringify({
+          reason: input.reason,
+          previous: { method: payment.method, tip: Number(payment.tip) },
+          current: updated,
+        }),
+      ),
+      ...(input.idempotencyKey
+        ? [
+            d1Statement(
+              database,
+              `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              randomId(),
+              scope,
+              input.idempotencyKey,
+              JSON.stringify({ ok: true, message: 'Payment record corrected', idempotent: false }),
+              normalizedRequestHash,
+              nowIso,
+            ),
+          ]
+        : []),
+    ];
+    const results = (await database.batch(statements)) as D1BatchResult[];
+    if (d1BatchChanges(results[0]) !== 1)
+      throw new Error('Payment changed before the correction could be recorded; retry the command');
+    return { ok: true, message: 'Payment record corrected', idempotent: false };
+  });
+}
+
+async function refundDbPaymentD1(input: {
+  appointmentId: string;
+  amount: number;
+  refundMethod: PaymentMethod;
+  reason: string;
+  idempotencyKey?: string;
+  adminId: string;
+}) {
+  return withD1Lease(async (database) => {
+    const payment = await prisma.payment.findUnique({
+      where: { appointmentId: input.appointmentId },
+      include: { appointment: { select: { businessDate: true } } },
+    });
+    if (!payment) throw new Error('Payment not found');
+    const scope = `payment-refund:${input.appointmentId}`;
+    const normalizedRequestHash = await requestHash({
+      appointmentId: input.appointmentId,
+      amount: input.amount,
+      refundMethod: input.refundMethod,
+      reason: input.reason,
+    });
+    if (input.idempotencyKey) {
+      const prior = await prisma.commandReceipt.findUnique({
+        where: { scope_key: { scope, key: input.idempotencyKey } },
+      });
+      if (prior) {
+        if (prior.requestHash && prior.requestHash !== normalizedRequestHash)
+          throw new Error('This refund key was already used for different payment details');
+        return { ok: true, message: 'Refund already recorded', idempotent: true };
+      }
+    }
+    const refundEvents = await prisma.auditEvent.findMany({
+      where: { entity: 'Payment', entityId: payment.id, action: 'payment.refunded' },
+      select: { metadata: true },
+    });
+    const refundedAmount = refundEvents.reduce(
+      (total, event) => total + paymentAuditNumber(event.metadata, 'amount'),
+      0,
+    );
+    const refundableAmount = roundMoney(
+      Math.max(0, Number(payment.amount) + Number(payment.tip) - refundedAmount),
+    );
+    if (input.amount > refundableAmount)
+      throw new Error(
+        `Refund cannot exceed the remaining refundable amount of ${refundableAmount.toFixed(2)}`,
+      );
+    const admin = await prisma.authUser.findUnique({ where: { id: input.adminId } });
+    if (!admin || admin.role !== 'ADMIN' || !admin.isActive)
+      throw new Error('Admin account not found');
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const response = {
+      ok: true,
+      message: `Refund of ${input.amount.toFixed(2)} recorded`,
+      idempotent: false,
+    };
+    const statements = [
+      d1Statement(
+        database,
+        `INSERT INTO audit_events (id, ts, actor_type, actor_id, action, entity, entity_id, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        randomId(),
+        nowIso,
+        ActorType.ADMIN,
+        admin.id,
+        'payment.refunded',
+        'Payment',
+        payment.id,
+        JSON.stringify({
+          amount: input.amount,
+          reason: input.reason,
+          method: payment.method,
+          refundMethod: input.refundMethod,
+          previousRefundedAmount: roundMoney(refundedAmount),
+          remainingRefundableAmount: roundMoney(refundableAmount - input.amount),
+        }),
+      ),
+      ...(input.idempotencyKey
+        ? [
+            d1Statement(
+              database,
+              `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              randomId(),
+              scope,
+              input.idempotencyKey,
+              JSON.stringify(response),
+              normalizedRequestHash,
+              nowIso,
+            ),
+          ]
+        : []),
+    ];
+    await database.batch(statements);
+    return response;
+  });
+}
+
 export async function adjustDbPayment(input: {
   appointmentId: string;
   method: PaymentMethod;
@@ -1674,6 +2775,7 @@ export async function adjustDbPayment(input: {
   idempotencyKey?: string;
   adminId: string;
 }) {
+  if (await isD1Runtime()) return adjustDbPaymentD1(input);
   return prisma.$transaction(async (tx) => {
     const payment = await tx.payment.findUnique({
       where: { appointmentId: input.appointmentId },
@@ -1690,7 +2792,7 @@ export async function adjustDbPayment(input: {
       cashReceived: input.cashReceived,
     });
     const scope = `payment-adjustment:${input.appointmentId}`;
-    const normalizedRequestHash = requestHash({
+    const normalizedRequestHash = await requestHash({
       appointmentId: input.appointmentId,
       method: input.method,
       amount,
@@ -1776,6 +2878,7 @@ export async function correctDbPayment(input: {
   idempotencyKey?: string;
   adminId: string;
 }) {
+  if (await isD1Runtime()) return correctDbPaymentD1(input);
   return prisma.$transaction(async (tx) => {
     const payment = await tx.payment.findUnique({
       where: { appointmentId: input.appointmentId },
@@ -1784,7 +2887,7 @@ export async function correctDbPayment(input: {
     if (!payment) throw new Error('Payment not found');
     await lockShopBusinessDate(tx, payment.appointment.businessDate.toISOString());
     const scope = `payment-correction:${input.appointmentId}`;
-    const normalizedRequestHash = requestHash({
+    const normalizedRequestHash = await requestHash({
       appointmentId: input.appointmentId,
       method: input.method,
       tip: input.tip,
@@ -1840,6 +2943,7 @@ export async function refundDbPayment(input: {
   idempotencyKey?: string;
   adminId: string;
 }) {
+  if (await isD1Runtime()) return refundDbPaymentD1(input);
   return prisma.$transaction(async (tx) => {
     const payment = await tx.payment.findUnique({
       where: { appointmentId: input.appointmentId },
@@ -1848,7 +2952,7 @@ export async function refundDbPayment(input: {
     if (!payment) throw new Error('Payment not found');
     await lockShopBusinessDate(tx, payment.appointment.businessDate.toISOString());
     const scope = `payment-refund:${input.appointmentId}`;
-    const normalizedRequestHash = requestHash({
+    const normalizedRequestHash = await requestHash({
       appointmentId: input.appointmentId,
       amount: input.amount,
       refundMethod: input.refundMethod,
@@ -1922,12 +3026,81 @@ type CancellationInput = {
   adminId: string;
 };
 
+async function cancelDbAppointmentD1(input: CancellationInput, businessDate: Date) {
+  return withD1Lease(async (database) => {
+    const scope = `cancel:${input.appointmentId}`;
+    const normalizedRequestHash = await requestHash({ appointmentId: input.appointmentId, appointmentServiceId: input.appointmentServiceId ?? null, scope: input.scope, reason: input.reason.trim(), confirmed: input.confirmed === true });
+    if (input.idempotencyKey) {
+      const prior = await prisma.commandReceipt.findUnique({ where: { scope_key: { scope, key: input.idempotencyKey } } });
+      if (prior) {
+        if (prior.requestHash && prior.requestHash !== normalizedRequestHash)
+          throw new Error('This cancellation key was already used for different details');
+        const existing = await prisma.appointment.findUnique({ where: { id: input.appointmentId }, include: appointmentInclude });
+        return { ok: true, appointment: existing ? mapAppointment(existing) : null, idempotent: true };
+      }
+    }
+    const appointment = await prisma.appointment.findFirst({ where: { id: input.appointmentId, businessDate }, include: appointmentInclude });
+    if (!appointment) throw new Error('Appointment not found');
+    if (appointment.payment || appointment.status === AppointmentStatus.PAYMENT_PENDING || appointment.status === AppointmentStatus.COMPLETED)
+      throw new Error('Paid or payment-pending appointments cannot be cancelled');
+    if (input.scope === 'SERVICE' && !input.appointmentServiceId) throw new Error('Choose a service to cancel');
+    if (input.scope === 'VISIT' && input.appointmentServiceId) throw new Error('Choose either a service or the whole visit');
+    const targetIds = input.scope === 'VISIT' ? appointment.services.map((service) => service.id) : [input.appointmentServiceId as string];
+    const targets = appointment.services.filter((service) => targetIds.includes(service.id));
+    if (!targets.length) throw new Error('Appointment service not found');
+    if (targets.some((service) => service.status === AppointmentStatus.COMPLETED || service.status === AppointmentStatus.PAYMENT_PENDING || service.status === AppointmentStatus.CANCELLED))
+      throw new Error('Completed, paid, or already cancelled service cannot be cancelled');
+    if (targets.some((service) => service.status === AppointmentStatus.IN_SERVICE) && input.confirmed !== true)
+      throw new Error('In-service cancellation requires explicit confirmation');
+    const reason = input.reason.trim();
+    const participatingStaffIds = [...new Set([...targets.map((service) => service.primaryStaffId), ...appointment.supportingStaff.map((member) => member.staffId)].filter((staffId): staffId is string => Boolean(staffId)))];
+    const cancelsEntireVisit = input.scope === 'VISIT' || appointment.services.every((service) => targetIds.includes(service.id));
+    const otherActivePrimary = await prisma.appointmentService.findMany({ where: { id: { notIn: targetIds }, primaryStaffId: { in: participatingStaffIds }, status: { in: staffBusyAppointmentStatuses }, appointment: { businessDate } }, select: { primaryStaffId: true } });
+    const otherActiveSupport = await prisma.appointmentSupportingStaff.findMany({ where: { appointmentId: { not: appointment.id }, staffId: { in: participatingStaffIds }, releasedAt: null, appointment: { businessDate, status: { in: checkoutBlockingAppointmentStatuses } } }, select: { staffId: true } });
+    const stillBusyStaffIds = new Set([...otherActivePrimary.map((row) => row.primaryStaffId), ...otherActiveSupport.map((row) => row.staffId)].filter((staffId): staffId is string => Boolean(staffId)));
+    const releasableStaffIds = participatingStaffIds.filter((staffId) => !stillBusyStaffIds.has(staffId));
+    const cancelledAt = new Date();
+    const cancelledAtIso = d1DateTimeValue(cancelledAt);
+    const nextServices = appointment.services.map((service) => targetIds.includes(service.id) ? { ...service, status: AppointmentStatus.CANCELLED, primaryStaffId: null } : service);
+    const routePlan = await d1RouteAppointmentPlan(database, appointment, nextServices, businessDate, { releasedStaffIds: releasableStaffIds });
+    const aggregate = d1AppointmentAggregate(appointment, routePlan.services);
+    const totalAmount = appointment.services.filter((service) => !targetIds.includes(service.id) && service.status !== AppointmentStatus.CANCELLED).reduce((total, service) => total + toMinorUnits(service.amount), 0);
+    const statements = [] as ReturnType<typeof d1Statement>[];
+    for (const service of targets) {
+      const activeTurns = service.turns.filter((turn) => turn.status === TurnStatus.ASSIGNED || turn.status === TurnStatus.ACCEPTED);
+      for (const turn of activeTurns) {
+        statements.push(d1Statement(database, `UPDATE turns SET status = ?, reason = ?, ended_at = ? WHERE id = ? AND status = ?`, TurnStatus.SKIPPED, reason, cancelledAtIso, turn.id, turn.status));
+        statements.push(d1TurnEvent(database, { appointmentId: appointment.id, appointmentServiceId: service.id, turnId: turn.id, eventType: TurnEventType.CANCELLED, assignedStaffId: turn.assignedStaffId, assignedStaffName: service.primaryStaff?.name ?? null, actorType: ActorType.ADMIN, actorId: input.adminId, reason }, cancelledAtIso));
+      }
+      statements.push(d1Statement(database, `UPDATE appointment_services SET status = ?, primary_staff_id = NULL, cancelled_at = ?, cancelled_reason = ?, cancelled_by_type = ?, cancelled_by_id = ? WHERE id = ? AND status = ?`, AppointmentStatus.CANCELLED, cancelledAtIso, reason, ActorType.ADMIN, input.adminId, service.id, service.status));
+    }
+    const supportingRelease = cancelsEntireVisit
+      ? [d1Statement(database, `UPDATE appointment_supporting_staff SET released_at = ? WHERE appointment_id = ? AND released_at IS NULL`, cancelledAtIso, appointment.id)]
+      : [];
+    statements.push(...supportingRelease);
+    statements.push(...d1ReleaseStaffStatements(database, businessDate, releasableStaffIds));
+    statements.push(...routePlan.statements);
+    const appointmentStatementIndex = statements.length;
+    statements.push(d1Statement(database, `UPDATE appointments SET amount = ?, status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ?, ${cancelsEntireVisit ? 'cancelled_at = ?, cancelled_reason = ?, cancelled_by_type = ?, cancelled_by_id = ?,' : ''} completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END WHERE id = ? AND business_date = ?`, totalAmount ? moneyFromMinorUnits(totalAmount) : 0, aggregate.status, aggregate.serviceId, aggregate.serviceNameSnapshot, aggregate.durationMinSnapshot, aggregate.primaryStaffId, ...(cancelsEntireVisit ? [cancelledAtIso, reason, ActorType.ADMIN, input.adminId] : []), aggregate.status, AppointmentStatus.PAYMENT_PENDING, appointment.id, d1DateTimeValue(businessDate)));
+    statements.push(d1AuditEvent(database, { action: input.scope === 'VISIT' ? 'appointment.cancelled' : 'appointment_service.cancelled', entity: input.scope === 'VISIT' ? 'Appointment' : 'AppointmentService', entityId: input.scope === 'VISIT' ? appointment.id : targets[0].id, actorId: input.adminId, actorType: ActorType.ADMIN, metadata: { reason, scope: input.scope, appointmentServiceIds: targets.map((service) => service.id) } }, cancelledAtIso));
+    statements.push(d1BumpBoardVersion(database, cancelledAtIso));
+    if (input.idempotencyKey)
+      statements.push(d1Statement(database, `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)`, randomId(), scope, input.idempotencyKey, JSON.stringify({ ok: true, appointmentId: appointment.id, scope: input.scope }), normalizedRequestHash, cancelledAtIso));
+    const results = (await database.batch(statements)) as D1BatchResult[];
+    if (d1BatchChanges(results[appointmentStatementIndex]) !== 1)
+      throw new Error('Appointment changed before cancellation could be recorded; retry the command');
+    const updated = await prisma.appointment.findUnique({ where: { id: appointment.id }, include: appointmentInclude });
+    return { ok: true, appointment: updated ? mapAppointment(updated) : null, idempotent: false };
+  });
+}
+
 export async function cancelDbAppointment(input: CancellationInput) {
   const businessDate = await currentDbBusinessDate();
+  if (await isD1Runtime()) return cancelDbAppointmentD1(input, businessDate);
   return prisma.$transaction(async (tx) => {
     await lockShopBusinessDate(tx, businessDate.toISOString());
     const scope = `cancel:${input.appointmentId}`;
-    const normalizedRequestHash = requestHash({
+    const normalizedRequestHash = await requestHash({
       appointmentId: input.appointmentId,
       appointmentServiceId: input.appointmentServiceId ?? null,
       scope: input.scope,
@@ -2040,11 +3213,12 @@ export async function cancelDbAppointment(input: CancellationInput) {
           !targets.some((target) => target.id === service.id) &&
           service.status !== AppointmentStatus.CANCELLED,
       )
-      .reduce((total, service) => total + Number(service.amount), 0);
+      .reduce((total, service) => total + toMinorUnits(service.amount), 0);
+    const totalAmountValue = moneyFromMinorUnits(totalAmount);
     await tx.appointment.update({
       where: { id: appointment.id },
       data: {
-        amount: totalAmount,
+        amount: totalAmountValue,
         ...(input.scope === 'VISIT'
           ? {
               cancelledAt,
@@ -2103,7 +3277,7 @@ export async function cancelDbAppointment(input: CancellationInput) {
   });
 }
 
-export async function reassignDbAppointmentService(input: {
+async function reassignDbAppointmentServiceD1(input: {
   appointmentServiceId: string;
   staffId: string;
   reason: string;
@@ -2111,10 +3285,90 @@ export async function reassignDbAppointmentService(input: {
   adminId: string;
 }) {
   const businessDate = await currentDbBusinessDate();
+  return withD1Lease(async (database) => {
+    const scope = `reassign:${input.appointmentServiceId}`;
+    const normalizedRequestHash = await requestHash({ appointmentServiceId: input.appointmentServiceId, staffId: input.staffId, reason: input.reason.trim() });
+    if (input.idempotencyKey) {
+      const prior = await prisma.commandReceipt.findUnique({ where: { scope_key: { scope, key: input.idempotencyKey } } });
+      if (prior) {
+        if (prior.requestHash && prior.requestHash !== normalizedRequestHash)
+          throw new Error('This reassignment key was already used for different details');
+        const stored = prior.response as Prisma.JsonObject;
+        const appointmentId = typeof stored.appointmentId === 'string' ? stored.appointmentId : null;
+        const existing = appointmentId ? await prisma.appointment.findUnique({ where: { id: appointmentId }, include: appointmentInclude }) : null;
+        return { ok: true, appointment: existing ? mapAppointment(existing) : null, idempotent: true };
+      }
+    }
+    const service = await prisma.appointmentService.findUnique({
+      where: { id: input.appointmentServiceId },
+      include: {
+        appointment: { include: appointmentInclude },
+        service: { include: { requiredSkills: { include: { skill: true } } } },
+        primaryStaff: true,
+        turns: { orderBy: { createdAt: 'asc' } },
+        turnExclusions: { where: { overriddenAt: null }, select: { staffId: true } },
+      },
+    });
+    if (!service) throw new Error('Appointment service not found');
+    if (!( [AppointmentStatus.WAITING, AppointmentStatus.ASSIGNED] as AppointmentStatus[]).includes(service.status))
+      throw new Error('Only waiting or assigned services can be manually reassigned');
+    if (service.turnExclusions.some((exclusion) => exclusion.staffId === input.staffId))
+      throw new Error('This technician was explicitly excluded from the service; override the exclusion first');
+    const staffRows = await staffForBusinessDate(prisma, businessDate);
+    const candidate = staffRows.map(mapStaff).find((staff) => staff.id === input.staffId);
+    if (!candidate || !candidate.isActive || !candidate.isPresent || candidate.availability !== Availability.AVAILABLE)
+      throw new Error('Technician must be active, clocked in, and available');
+    const requiredSkills = service.service.requiredSkills.map((item) => item.skill.name);
+    if (!requiredSkills.every((skill) => candidate.skills.includes(skill)))
+      throw new Error('Technician does not have the required skills');
+    const activeTurn = [...service.turns].reverse().find((turn) => turn.status === TurnStatus.ASSIGNED || turn.status === TurnStatus.ACCEPTED);
+    const now = new Date();
+    const nowIso = d1DateTimeValue(now);
+    const reassignedTurnId = randomId();
+    const nextServices = service.appointment.services.map((item) => item.id === service.id ? { ...item, status: AppointmentStatus.ASSIGNED, primaryStaffId: input.staffId } : item);
+    const aggregate = d1AppointmentAggregate(service.appointment, nextServices);
+    const statements = [] as ReturnType<typeof d1Statement>[];
+    if (activeTurn) {
+      statements.push(d1Statement(database, `UPDATE turns SET status = ?, reason = ?, ended_at = ? WHERE id = ? AND status = ?`, TurnStatus.SKIPPED, `Manually reassigned: ${input.reason.trim()}`, nowIso, activeTurn.id, activeTurn.status));
+      statements.push(d1TurnEvent(database, { appointmentId: service.appointmentId, appointmentServiceId: service.id, turnId: activeTurn.id, eventType: TurnEventType.SKIPPED, assignedStaffId: activeTurn.assignedStaffId, assignedStaffName: service.primaryStaff?.name ?? null, actorType: ActorType.ADMIN, actorId: input.adminId, reason: input.reason }, nowIso));
+    }
+    const serviceStatementIndex = statements.length;
+    statements.push(d1Statement(database, `UPDATE appointment_services SET status = ?, primary_staff_id = ? WHERE id = ? AND status IN (?, ?)`, AppointmentStatus.ASSIGNED, input.staffId, service.id, AppointmentStatus.WAITING, AppointmentStatus.ASSIGNED));
+    statements.push(d1Statement(database, `INSERT INTO turns (id, appointment_id, appointment_service_id, assigned_staff_id, status, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, reassignedTurnId, service.appointmentId, service.id, input.staffId, TurnStatus.ASSIGNED, 'Manager reassignment', nowIso));
+    statements.push(d1TurnEvent(database, { appointmentId: service.appointmentId, appointmentServiceId: service.id, turnId: reassignedTurnId, eventType: TurnEventType.REASSIGNED, assignedStaffId: input.staffId, assignedStaffName: candidate.name, actorType: ActorType.ADMIN, actorId: input.adminId, reason: input.reason }, nowIso));
+    statements.push(d1Statement(database, `INSERT INTO staff_service_state (staff_id, availability, last_assigned_at) VALUES (?, ?, ?)
+      ON CONFLICT(staff_id) DO UPDATE SET availability = excluded.availability, last_assigned_at = excluded.last_assigned_at`, input.staffId, Availability.BUSY, nowIso));
+    if (service.primaryStaffId && service.primaryStaffId !== input.staffId) {
+      statements.push(d1Statement(database, `UPDATE staff_service_state SET availability = ? WHERE staff_id = ? AND availability = ?
+        AND NOT EXISTS (SELECT 1 FROM appointment_services active_service JOIN appointments active_appointment ON active_appointment.id = active_service.appointment_id WHERE active_service.primary_staff_id = ? AND active_service.status IN (?, ?) AND active_appointment.business_date = ?)
+        AND NOT EXISTS (SELECT 1 FROM appointment_supporting_staff support JOIN appointments support_appointment ON support_appointment.id = support.appointment_id WHERE support.staff_id = ? AND support.released_at IS NULL AND support_appointment.business_date = ? AND support_appointment.status IN (?, ?, ?))`, Availability.AVAILABLE, service.primaryStaffId, Availability.BUSY, service.primaryStaffId, AppointmentStatus.ASSIGNED, AppointmentStatus.IN_SERVICE, d1DateTimeValue(businessDate), service.primaryStaffId, d1DateTimeValue(businessDate), AppointmentStatus.ASSIGNED, AppointmentStatus.IN_SERVICE, AppointmentStatus.PAYMENT_PENDING));
+    }
+    statements.push(d1Statement(database, `UPDATE appointments SET status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ? WHERE id = ?`, aggregate.status, aggregate.serviceId, aggregate.serviceNameSnapshot, aggregate.durationMinSnapshot, aggregate.primaryStaffId, service.appointmentId));
+    statements.push(d1AuditEvent(database, { action: 'appointment_service.reassigned', entity: 'AppointmentService', entityId: service.id, actorId: input.adminId, actorType: ActorType.ADMIN, metadata: { staffId: input.staffId, reason: input.reason.trim() } }, nowIso));
+    statements.push(d1BumpBoardVersion(database, nowIso));
+    if (input.idempotencyKey)
+      statements.push(d1Statement(database, `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)`, randomId(), scope, input.idempotencyKey, JSON.stringify({ ok: true, appointmentId: service.appointmentId }), normalizedRequestHash, nowIso));
+    const results = (await database.batch(statements)) as D1BatchResult[];
+    if (d1BatchChanges(results[serviceStatementIndex]) !== 1)
+      throw new Error('Appointment service changed before reassignment could be recorded; retry the command');
+    const updated = await prisma.appointment.findUnique({ where: { id: service.appointmentId }, include: appointmentInclude });
+    return { ok: true, appointment: updated ? mapAppointment(updated) : null, idempotent: false };
+  });
+}
+
+export async function reassignDbAppointmentService(input: {
+  appointmentServiceId: string;
+  staffId: string;
+  reason: string;
+  idempotencyKey?: string;
+  adminId: string;
+}) {
+  if (await isD1Runtime()) return reassignDbAppointmentServiceD1(input);
+  const businessDate = await currentDbBusinessDate();
   return prisma.$transaction(async (tx) => {
     await lockShopBusinessDate(tx, businessDate.toISOString());
     const scope = `reassign:${input.appointmentServiceId}`;
-    const normalizedRequestHash = requestHash({
+    const normalizedRequestHash = await requestHash({
       appointmentServiceId: input.appointmentServiceId,
       staffId: input.staffId,
       reason: input.reason.trim(),
@@ -2269,6 +3523,58 @@ export async function reassignDbAppointmentService(input: {
   });
 }
 
+async function overrideDbTurnExclusionD1(input: {
+  appointmentServiceId: string;
+  staffId: string;
+  reason: string;
+  idempotencyKey?: string;
+  adminId: string;
+}) {
+  return withD1Lease(async (database) => {
+    const scope = `override-exclusion:${input.appointmentServiceId}:${input.staffId}`;
+    const normalizedRequestHash = await requestHash({
+      appointmentServiceId: input.appointmentServiceId,
+      staffId: input.staffId,
+      reason: input.reason.trim(),
+    });
+    if (input.idempotencyKey) {
+      const prior = await prisma.commandReceipt.findUnique({ where: { scope_key: { scope, key: input.idempotencyKey } } });
+      if (prior) {
+        if (prior.requestHash && prior.requestHash !== normalizedRequestHash)
+          throw new Error('This override key was already used for different details');
+        const stored = prior.response as Prisma.JsonObject;
+        return {
+          ok: true,
+          exclusionId: typeof stored.exclusionId === 'string' ? stored.exclusionId : null,
+          overriddenAt: typeof stored.overriddenAt === 'string' ? new Date(stored.overriddenAt) : null,
+          idempotent: true,
+        };
+      }
+    }
+    const exclusion = await prisma.turnExclusion.findUnique({
+      where: { appointmentServiceId_staffId: { appointmentServiceId: input.appointmentServiceId, staffId: input.staffId } },
+    });
+    if (!exclusion) throw new Error('Turn exclusion not found');
+    const overriddenAt = new Date();
+    const overriddenAtIso = d1DateTimeValue(overriddenAt);
+    const statements = [
+      d1Statement(database, `UPDATE turn_exclusions SET overridden_at = ?, override_reason = ?, overridden_by_id = ? WHERE id = ?`, overriddenAtIso, input.reason.trim(), input.adminId, exclusion.id),
+      d1AuditEvent(database, { action: 'turn_exclusion.overridden', entity: 'TurnExclusion', entityId: exclusion.id, actorId: input.adminId, actorType: ActorType.ADMIN, metadata: { appointmentServiceId: input.appointmentServiceId, staffId: input.staffId, reason: input.reason.trim(), overriddenAt: overriddenAt.toISOString() } }, overriddenAtIso),
+      d1Statement(database, `INSERT INTO shop_config (id, state_version, created_at, updated_at) VALUES (1, 1, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET state_version = shop_config.state_version + 1, updated_at = excluded.updated_at`, overriddenAtIso, overriddenAtIso),
+      ...(input.idempotencyKey
+        ? [
+            d1Statement(database, `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)`, randomId(), scope, input.idempotencyKey, JSON.stringify({ ok: true, exclusionId: exclusion.id, overriddenAt: overriddenAt.toISOString() }), normalizedRequestHash, overriddenAtIso),
+          ]
+        : []),
+    ];
+    const results = (await database.batch(statements)) as D1BatchResult[];
+    if (d1BatchChanges(results[0]) !== 1)
+      throw new Error('Turn exclusion changed before the override could be recorded; retry the command');
+    return { ok: true, exclusionId: exclusion.id, overriddenAt, idempotent: false };
+  });
+}
+
 export async function overrideDbTurnExclusion(input: {
   appointmentServiceId: string;
   staffId: string;
@@ -2276,11 +3582,12 @@ export async function overrideDbTurnExclusion(input: {
   idempotencyKey?: string;
   adminId: string;
 }) {
+  if (await isD1Runtime()) return overrideDbTurnExclusionD1(input);
   const businessDate = await currentDbBusinessDate();
   return prisma.$transaction(async (tx) => {
     await lockShopBusinessDate(tx, businessDate.toISOString());
     const scope = `override-exclusion:${input.appointmentServiceId}:${input.staffId}`;
-    const normalizedRequestHash = requestHash({
+    const normalizedRequestHash = await requestHash({
       appointmentServiceId: input.appointmentServiceId,
       staffId: input.staffId,
       reason: input.reason.trim(),
@@ -2361,10 +3668,11 @@ export async function changeDbAppointmentService(input: {
   adminId: string;
 }) {
   const businessDate = await currentDbBusinessDate();
+  if (await isD1Runtime()) return changeDbAppointmentServiceD1(input, businessDate);
   return prisma.$transaction(async (tx) => {
     await lockShopBusinessDate(tx, businessDate.toISOString());
     const scope = `service-change:${input.appointmentServiceId}`;
-    const normalizedRequestHash = requestHash({
+    const normalizedRequestHash = await requestHash({
       appointmentServiceId: input.appointmentServiceId,
       serviceId: input.serviceId,
       reason: input.reason.trim(),
@@ -2417,7 +3725,7 @@ export async function changeDbAppointmentService(input: {
     )
       throw new Error('Completed or payment-confirmed service history cannot be changed');
     const nextService = await tx.service.findFirst({
-      where: { id: input.serviceId, isActive: true },
+      where: activeCatalogServiceWhere([input.serviceId]),
       include: { requiredSkills: { include: { skill: true } } },
     });
     if (!nextService) throw new Error('Replacement service is unavailable');
@@ -2520,9 +3828,9 @@ export async function changeDbAppointmentService(input: {
     await tx.appointment.update({
       where: { id: current.appointmentId },
       data: {
-        amount: allServices
+        amount: moneyFromMinorUnits(allServices
           .filter((service) => service.status !== AppointmentStatus.CANCELLED)
-          .reduce((total, service) => total + Number(service.amount), 0),
+          .reduce((total, service) => total + toMinorUnits(service.amount), 0)),
       },
     });
     await syncAppointmentAggregate(tx, current.appointmentId);
@@ -2649,6 +3957,7 @@ async function routeAppointmentServices(
   businessDate: Date,
   excludedServiceId?: string,
   excludedStaffId?: string,
+  routingSnapshot?: { candidates: StaffCandidate[]; roundRobinEnabled: boolean },
 ) {
   const appointment = await tx.appointment.findUnique({
     where: { id: appointmentId },
@@ -2665,12 +3974,16 @@ async function routeAppointmentServices(
     },
   });
   if (!appointment) throw new Error('Appointment not found');
-  const routingConfig = await tx.shopConfig.findUnique({
-    where: { id: 1 },
-    select: { roundRobinEnabled: true },
-  });
-  const staffRows = await staffForBusinessDate(tx, businessDate);
-  const candidates = staffRows.map(mapStaff);
+  const routingSnapshotResolved =
+    routingSnapshot ?? {
+      candidates: (await staffForBusinessDate(tx, businessDate)).map(mapStaff),
+      roundRobinEnabled:
+        (await tx.shopConfig.findUnique({
+          where: { id: 1 },
+          select: { roundRobinEnabled: true },
+        }))?.roundRobinEnabled ?? true,
+    };
+  const candidates = routingSnapshotResolved.candidates;
   for (const appointmentService of appointment.services) {
     const excludedStaffIds = appointmentService.turnExclusions.map(
       (exclusion) => exclusion.staffId,
@@ -2681,7 +3994,7 @@ async function routeAppointmentServices(
       candidates,
       serviceSkillNames(appointmentService.service),
       [...new Set(excludedStaffIds)],
-      routingConfig?.roundRobinEnabled ?? true,
+      routingSnapshotResolved.roundRobinEnabled,
     );
     const status = assignment.staff ? AppointmentStatus.ASSIGNED : AppointmentStatus.WAITING;
     const previousStaffId = appointmentService.primaryStaffId;
@@ -2749,8 +4062,98 @@ async function routeAppointmentServices(
   return syncAppointmentAggregate(tx, appointment.id);
 }
 
+async function reconcileDbAssignmentsD1(date: Date, adminId?: string) {
+  return withD1Lease(async (database) => {
+    const appointments = await prisma.appointment.findMany({
+      where: {
+        businessDate: date,
+        status: { not: AppointmentStatus.COMPLETED },
+        services: {
+          some: { status: { in: [AppointmentStatus.CREATED, AppointmentStatus.WAITING] } },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    const [routingConfig, routingStaff] = await Promise.all([
+      prisma.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
+      staffForBusinessDate(prisma, date),
+    ]);
+    const routingSnapshot = {
+      candidates: routingStaff.map(mapStaff),
+      roundRobinEnabled: routingConfig?.roundRobinEnabled ?? true,
+    };
+    const statements = [] as ReturnType<typeof d1Statement>[];
+    const guardedAppointmentIndexes: number[] = [];
+    for (const appointmentSummary of appointments) {
+      const appointment = await prisma.appointment.findUnique({
+        where: { id: appointmentSummary.id },
+        include: appointmentInclude,
+      });
+      if (!appointment) continue;
+      const services = appointment.services.map((service) => ({
+        ...service,
+        turns: [...service.turns],
+        turnExclusions: [...service.turnExclusions],
+      })) as D1RouteService[];
+      const routePlan = await d1RouteAppointmentPlan(
+        database,
+        appointment as unknown as D1RouteAppointment,
+        services,
+        date,
+        { routingSnapshot },
+      );
+      const aggregate = d1AppointmentAggregate(appointment, routePlan.services);
+      statements.push(...routePlan.statements);
+      guardedAppointmentIndexes.push(statements.length);
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE appointments
+           SET status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ?, completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END
+           WHERE id = ? AND business_date = ?`,
+          aggregate.status,
+          aggregate.serviceId,
+          aggregate.serviceNameSnapshot,
+          aggregate.durationMinSnapshot,
+          aggregate.primaryStaffId,
+          aggregate.status,
+          AppointmentStatus.PAYMENT_PENDING,
+          appointment.id,
+          d1DateTimeValue(date),
+        ),
+      );
+    }
+    const nowIso = d1DateTimeValue(new Date());
+    statements.push(
+      d1AuditEvent(
+        database,
+        {
+          actorType: ActorType.ADMIN,
+          actorId: adminId,
+          action: 'queue.assignments_reconciled',
+          entity: 'Queue',
+          metadata: {
+            businessDate: formatBusinessDate(date),
+            routedAppointments: appointments.length,
+          },
+        },
+        nowIso,
+      ),
+    );
+    if (appointments.length) statements.push(d1BumpBoardVersion(database, nowIso));
+    const results = (await database.batch(statements)) as D1BatchResult[];
+    for (const statementIndex of guardedAppointmentIndexes) {
+      if (d1BatchChanges(results[statementIndex]) !== 1)
+        throw new Error('An appointment changed before reconciliation could be recorded; retry the command');
+    }
+    return { routedAppointments: appointments.length };
+  });
+}
+
 export async function reconcileDbAssignments(businessDate?: Date, adminId?: string) {
   const date = businessDate ?? (await currentDbBusinessDate());
+  if (await isD1Runtime()) return reconcileDbAssignmentsD1(date, adminId);
   return prisma.$transaction(async (tx) => {
     await lockShopBusinessDate(tx, date.toISOString());
     const appointments = await tx.appointment.findMany({
@@ -2764,8 +4167,16 @@ export async function reconcileDbAssignments(businessDate?: Date, adminId?: stri
       orderBy: { createdAt: 'asc' },
       select: { id: true },
     });
+    const [routingConfig, routingStaff] = await Promise.all([
+      tx.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
+      staffForBusinessDate(tx, date),
+    ]);
+    const routingSnapshot = {
+      candidates: routingStaff.map(mapStaff),
+      roundRobinEnabled: routingConfig?.roundRobinEnabled ?? true,
+    };
     for (const appointment of appointments)
-      await routeAppointmentServices(tx, appointment.id, date);
+      await routeAppointmentServices(tx, appointment.id, date, undefined, undefined, routingSnapshot);
     await tx.auditEvent.create({
       data: {
         actorType: 'ADMIN',
@@ -2979,6 +4390,101 @@ export async function getDbMonthlyReport(monthStart?: Date): Promise<MonthlyRepo
   })) as MonthlyReport;
 }
 
+async function autoCloseDbAttendanceD1(businessDate: Date) {
+  return withD1Lease(async (database) => {
+    const appointments = await prisma.appointment.findMany({
+      where: { businessDate },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        code: true,
+        status: true,
+        amount: true,
+        customer: { select: { name: true } },
+        payment: { select: { id: true, confirmedAt: true } },
+        services: { select: { status: true } },
+      },
+    });
+    const blockers = appointments
+      .map((appointment) =>
+        getAppointmentClosingBlocker({
+          appointmentId: appointment.id,
+          code: appointment.code,
+          customerName: appointment.customer.name,
+          status: appointment.status,
+          amount: Number(appointment.amount),
+          hasPayment: Boolean(appointment.payment?.confirmedAt),
+          unfinishedServiceCount: appointment.services.filter(
+            (service) =>
+              !(
+                [AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED] as AppointmentStatus[]
+              ).includes(service.status),
+          ).length,
+        }),
+      )
+      .filter((blocker): blocker is ClosingBlocker => Boolean(blocker));
+    if (blockers.length)
+      throw new ShiftClosingBlockedError(businessDate.toISOString().slice(0, 10), blockers);
+
+    const [activeServiceAssignments, activeSupportingAppointments] = await Promise.all([
+      prisma.appointmentService.findMany({
+        where: { appointment: { businessDate }, status: { in: staffBusyAppointmentStatuses } },
+        select: { primaryStaffId: true },
+      }),
+      prisma.appointmentSupportingStaff.findMany({
+        where: {
+          releasedAt: null,
+          appointment: { businessDate, status: { in: checkoutBlockingAppointmentStatuses } },
+        },
+        select: { staffId: true },
+      }),
+    ]);
+    const checkoutBlockedStaffIds = new Set<string>();
+    for (const service of activeServiceAssignments)
+      if (service.primaryStaffId) checkoutBlockedStaffIds.add(service.primaryStaffId);
+    for (const supportingStaff of activeSupportingAppointments)
+      checkoutBlockedStaffIds.add(supportingStaff.staffId);
+    const presentAttendance = await prisma.attendance.findMany({
+      where: { businessDate, status: AttendanceStatus.PRESENT },
+      select: { id: true, staffId: true },
+    });
+    const deferredAttendance = presentAttendance.filter((attendance) => checkoutBlockedStaffIds.has(attendance.staffId));
+    const openAttendance = presentAttendance.filter((attendance) => !checkoutBlockedStaffIds.has(attendance.staffId));
+    const closedAt = new Date();
+    if (openAttendance.length || deferredAttendance.length) {
+      const openIds = openAttendance.map((attendance) => attendance.id);
+      const openStaffIds = openAttendance.map((attendance) => attendance.staffId);
+      const idPlaceholders = openIds.map(() => '?').join(', ');
+      const staffPlaceholders = openStaffIds.map(() => '?').join(', ');
+      const statements = [
+        ...(openIds.length
+          ? [
+              d1Statement(database, `UPDATE attendance SET status = ?, check_out_at = ?, closed_by = ? WHERE id IN (${idPlaceholders}) AND status = ?`, AttendanceStatus.CHECKED_OUT, d1DateTimeValue(closedAt), AttendanceClosedBy.AUTO, ...openIds, AttendanceStatus.PRESENT),
+            ]
+          : []),
+        ...(openStaffIds.length
+          ? [
+              d1Statement(database, `UPDATE staff_service_state SET availability = ? WHERE staff_id IN (${staffPlaceholders}) AND availability = ?`, Availability.AVAILABLE, ...openStaffIds, Availability.BUSY),
+            ]
+          : []),
+        d1AuditEvent(database, { action: 'attendance.auto_closed', entity: 'Attendance', actorId: undefined, metadata: { businessDate: businessDate.toISOString().slice(0, 10), staffIds: openStaffIds, deferredStaffIds: deferredAttendance.map((attendance) => attendance.staffId), checkoutBlockedStaffIds: [...checkoutBlockedStaffIds], closedAt: closedAt.toISOString() } }, d1DateTimeValue(closedAt)),
+        d1Statement(database, `INSERT INTO shop_config (id, state_version, created_at, updated_at) VALUES (1, 1, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET state_version = shop_config.state_version + 1, updated_at = excluded.updated_at`, d1DateTimeValue(closedAt), d1DateTimeValue(closedAt)),
+      ];
+      const results = (await database.batch(statements)) as D1BatchResult[];
+      const attendanceResultIndex = openIds.length ? 0 : -1;
+      if (attendanceResultIndex >= 0 && d1BatchChanges(results[attendanceResultIndex]) !== openIds.length)
+        throw new Error('Attendance changed before automatic closing could be recorded; retry the job');
+    }
+    return {
+      closedCount: openAttendance.length,
+      deferredCount: deferredAttendance.length,
+      businessDate: businessDate.toISOString().slice(0, 10),
+      skipped: false,
+    };
+  });
+}
+
 export async function autoCloseDbAttendance({ force = false }: { force?: boolean } = {}) {
   const businessDate = await currentDbBusinessDate();
   const shopConfig = await getDbShopConfig();
@@ -2996,6 +4502,7 @@ export async function autoCloseDbAttendance({ force = false }: { force?: boolean
       reason: 'Closing time has not been reached',
     };
   }
+  if (await isD1Runtime()) return autoCloseDbAttendanceD1(businessDate);
   return prisma.$transaction(async (tx) => {
     await lockShopBusinessDate(tx, businessDate.toISOString());
     const appointments = await tx.appointment.findMany({
@@ -3105,20 +4612,54 @@ export async function autoCloseDbAttendance({ force = false }: { force?: boolean
   });
 }
 
-export async function cleanupDbOperationalData(retentionDays = 90) {
+export async function cleanupDbOperationalData(
+  retentionDays = 90,
+  auditActor: { actorType: ActorType; actorId?: string } = { actorType: ActorType.SYSTEM },
+) {
   const safeRetentionDays = Math.min(3650, Math.max(30, Math.floor(retentionDays)));
   const cutoff = new Date(Date.now() - safeRetentionDays * 24 * 60 * 60 * 1000);
   const now = new Date();
-  const [expiredSessions, oldReceipts, oldLockouts] = await prisma.$transaction([
-    prisma.verifiedStaffSession.deleteMany({ where: { expiresAt: { lt: cutoff } } }),
-    prisma.commandReceipt.deleteMany({ where: { createdAt: { lt: cutoff } } }),
-    prisma.staffPinLockout.deleteMany({
-      where: {
-        updatedAt: { lt: cutoff },
-        OR: [{ lockedUntil: null }, { lockedUntil: { lt: now } }],
+  if (await isD1Runtime()) {
+    return withD1Lease(async (database) => {
+      const cutoffIso = d1DateTimeValue(cutoff);
+      const nowIso = d1DateTimeValue(now);
+      const results = (await database.batch([
+        d1Statement(database, 'DELETE FROM verified_staff_sessions WHERE expires_at < ?', cutoffIso),
+        d1Statement(database, 'DELETE FROM command_receipts WHERE created_at < ?', cutoffIso),
+        d1Statement(database, `DELETE FROM staff_pin_lockouts WHERE updated_at < ? AND (locked_until IS NULL OR locked_until < ?)`, cutoffIso, nowIso),
+        d1AuditEvent(database, { actorType: auditActor.actorType, actorId: auditActor.actorId, action: 'operational_data.retention_cleanup', entity: 'OperationalData', metadata: { retentionDays: safeRetentionDays, cutoff: cutoff.toISOString() } }, nowIso),
+      ])) as D1BatchResult[];
+      return {
+        retentionDays: safeRetentionDays,
+        cutoff: cutoff.toISOString(),
+        expiredSessions: d1BatchChanges(results[0]),
+        oldReceipts: d1BatchChanges(results[1]),
+        oldLockouts: d1BatchChanges(results[2]),
+      };
+    });
+  }
+  const [expiredSessions, oldReceipts, oldLockouts] = await prisma.$transaction(async (tx) => {
+    const result = await Promise.all([
+      tx.verifiedStaffSession.deleteMany({ where: { expiresAt: { lt: cutoff } } }),
+      tx.commandReceipt.deleteMany({ where: { createdAt: { lt: cutoff } } }),
+      tx.staffPinLockout.deleteMany({
+        where: {
+          updatedAt: { lt: cutoff },
+          OR: [{ lockedUntil: null }, { lockedUntil: { lt: now } }],
+        },
+      }),
+    ]);
+    await tx.auditEvent.create({
+      data: {
+        actorType: auditActor.actorType,
+        actorId: auditActor.actorId,
+        action: 'operational_data.retention_cleanup',
+        entity: 'OperationalData',
+        metadata: { retentionDays: safeRetentionDays, cutoff: cutoff.toISOString() },
       },
-    }),
-  ]);
+    });
+    return result;
+  });
   return {
     retentionDays: safeRetentionDays,
     cutoff: cutoff.toISOString(),
@@ -3146,6 +4687,862 @@ type StaffActionInput = {
   idempotencyKey?: string;
 };
 
+async function staffActionD1({
+  input,
+  stationUserId,
+  verifiedSessionId,
+  trustedAdmin,
+  pin,
+  normalizedRequestHash,
+  businessDate,
+  scope,
+  staff,
+}: {
+  input: StaffActionInput;
+  stationUserId: string;
+  verifiedSessionId?: string;
+  trustedAdmin: boolean;
+  pin?: string;
+  normalizedRequestHash: string;
+  businessDate: Date;
+  scope: string;
+  staff: { id: string; name: string };
+}) {
+  return withD1Lease(async (database) => {
+    if (input.idempotencyKey) {
+      const prior = await prisma.commandReceipt.findUnique({
+        where: { scope_key: { scope, key: input.idempotencyKey } },
+      });
+      if (prior) {
+        if (prior.requestHash && prior.requestHash !== normalizedRequestHash)
+          throw new Error('This action key was already used for different action details');
+        const stored = prior.response as Prisma.JsonObject;
+        const appointmentId =
+          typeof stored.appointmentId === 'string' ? stored.appointmentId : null;
+        const savedAppointment = appointmentId
+          ? await prisma.appointment.findUnique({
+              where: { id: appointmentId },
+              include: appointmentInclude,
+            })
+          : null;
+        return {
+          ok: true,
+          action: input.action,
+          staffId: input.staffId,
+          appointment: savedAppointment ? mapAppointment(savedAppointment) : null,
+          idempotent: true,
+          verifiedStaffSessionId: null,
+          verifiedStaffSessionExpiresAt: null,
+        };
+      }
+    }
+
+    const config = await prisma.shopConfig.findUnique({ where: { id: 1 } });
+    const now = new Date();
+    const nowIso = d1DateTimeValue(now);
+    const sessionId = pin ? randomId() : null;
+    const sessionExpiresAt = pin
+      ? verifiedStaffSessionExpiry(now, config?.verifiedSessionTtlMin ?? 3)
+      : null;
+    const statements = [] as ReturnType<typeof d1Statement>[];
+    if (sessionId && sessionExpiresAt)
+      statements.push(
+        d1Statement(
+          database,
+          `INSERT INTO verified_staff_sessions (id, staff_id, station_user_id, started_at, expires_at)
+           VALUES (?, ?, ?, ?, ?)`,
+          sessionId,
+          input.staffId,
+          stationUserId,
+          nowIso,
+          d1DateTimeValue(sessionExpiresAt),
+        ),
+      );
+
+    const appendReceipt = (appointmentId?: string) => {
+      if (!input.idempotencyKey) return;
+      statements.push(
+        d1Statement(
+          database,
+          `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          randomId(),
+          scope,
+          input.idempotencyKey,
+          JSON.stringify({
+            ok: true,
+            staffId: input.staffId,
+            action: input.action,
+            ...(appointmentId ? { appointmentId } : {}),
+          }),
+          normalizedRequestHash,
+          nowIso,
+        ),
+      );
+    };
+    const sessionResponse = {
+      verifiedStaffSessionId: sessionId,
+      verifiedStaffSessionExpiresAt: sessionExpiresAt,
+    };
+    const appendAggregate = (
+      appointmentId: string,
+      aggregate: ReturnType<typeof d1AppointmentAggregate>,
+    ) => {
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE appointments
+           SET status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ?, completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END
+           WHERE id = ? AND business_date = ?`,
+          aggregate.status,
+          aggregate.serviceId,
+          aggregate.serviceNameSnapshot,
+          aggregate.durationMinSnapshot,
+          aggregate.primaryStaffId,
+          aggregate.status,
+          AppointmentStatus.PAYMENT_PENDING,
+          appointmentId,
+          d1DateTimeValue(businessDate),
+        ),
+      );
+    };
+
+    if (input.action === 'CHECK_IN' || input.action === 'CHECK_OUT') {
+      if (input.action === 'CHECK_OUT') {
+        const blockingService = await prisma.appointmentService.findFirst({
+          where: {
+            appointment: { businessDate },
+            status: { in: manualCheckoutBlockingAppointmentStatuses },
+            primaryStaffId: input.staffId,
+          },
+          select: { appointment: { select: { code: true } } },
+        });
+        const blockingAppointment =
+          blockingService ??
+          (await prisma.appointmentSupportingStaff.findFirst({
+            where: {
+              staffId: input.staffId,
+              releasedAt: null,
+              appointment: {
+                businessDate,
+                status: { in: manualCheckoutBlockingAppointmentStatuses },
+              },
+            },
+            select: { appointment: { select: { code: true } } },
+          }));
+        if (blockingAppointment)
+          throw new Error('Staff cannot check out while assigned to an active turn');
+      }
+      const existing = await prisma.attendance.findUnique({
+        where: { staffId_businessDate: { staffId: input.staffId, businessDate } },
+      });
+      if (input.action === 'CHECK_IN') {
+        statements.push(
+          d1Statement(
+            database,
+            `INSERT INTO attendance (id, staff_id, business_date, check_in_at, check_out_at, status, closed_by)
+             VALUES (?, ?, ?, ?, NULL, ?, NULL)
+             ON CONFLICT(staff_id, business_date) DO UPDATE SET status = excluded.status, check_in_at = COALESCE(attendance.check_in_at, excluded.check_in_at), check_out_at = NULL, closed_by = NULL`,
+            existing?.id ?? randomId(),
+            input.staffId,
+            d1DateTimeValue(businessDate),
+            existing?.checkInAt ? d1DateTimeValue(existing.checkInAt) : nowIso,
+            AttendanceStatus.PRESENT,
+          ),
+        );
+        statements.push(
+          d1Statement(
+            database,
+            `INSERT INTO staff_service_state (staff_id, availability)
+             VALUES (?, ?)
+             ON CONFLICT(staff_id) DO UPDATE SET availability = excluded.availability`,
+            input.staffId,
+            Availability.AVAILABLE,
+          ),
+        );
+      } else if (existing) {
+        statements.push(
+          d1Statement(
+            database,
+            `UPDATE attendance SET status = ?, check_out_at = ?, closed_by = ? WHERE id = ? AND status = ?`,
+            AttendanceStatus.CHECKED_OUT,
+            nowIso,
+            AttendanceClosedBy.STAFF,
+            existing.id,
+            AttendanceStatus.PRESENT,
+          ),
+        );
+        statements.push(
+          d1Statement(
+            database,
+            `UPDATE staff_service_state SET availability = ? WHERE staff_id = ?`,
+            Availability.AVAILABLE,
+            input.staffId,
+          ),
+        );
+      }
+
+      if (input.action === 'CHECK_IN') {
+        const [routingConfig, routingStaff] = await Promise.all([
+          prisma.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
+          staffForBusinessDate(prisma, businessDate),
+        ]);
+        const candidates = routingStaff.map(mapStaff);
+        const checkedInCandidate = candidates.find((candidate) => candidate.id === input.staffId);
+        if (checkedInCandidate) {
+          checkedInCandidate.isPresent = true;
+          checkedInCandidate.availability = Availability.AVAILABLE;
+        }
+        const routingSnapshot = {
+          candidates,
+          roundRobinEnabled: routingConfig?.roundRobinEnabled ?? true,
+        };
+        const waitingAppointments = await prisma.appointment.findMany({
+          where: {
+            businessDate,
+            status: {
+              in: [
+                AppointmentStatus.CREATED,
+                AppointmentStatus.WAITING,
+                AppointmentStatus.ASSIGNED,
+              ],
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true },
+        });
+        for (const waitingAppointment of waitingAppointments) {
+          const appointment = await prisma.appointment.findUnique({
+            where: { id: waitingAppointment.id },
+            include: appointmentInclude,
+          });
+          if (!appointment) continue;
+          const before = {
+            primaryStaffId: appointment.primaryStaffId,
+            status: appointment.status,
+          };
+          const services = appointment.services.map((service) => ({
+            ...service,
+            turns: [...service.turns],
+            turnExclusions: [...service.turnExclusions],
+          })) as D1RouteService[];
+          const routePlan = await d1RouteAppointmentPlan(
+            database,
+            appointment as unknown as D1RouteAppointment,
+            services,
+            businessDate,
+            { routingSnapshot },
+          );
+          const aggregate = d1AppointmentAggregate(appointment, routePlan.services);
+          statements.push(...routePlan.statements);
+          appendAggregate(appointment.id, aggregate);
+          if (
+            aggregate.primaryStaffId &&
+            (aggregate.primaryStaffId !== before.primaryStaffId ||
+              before.status === AppointmentStatus.WAITING)
+          )
+            statements.push(
+              d1AuditEvent(
+                database,
+                {
+                  action: 'appointment.reassigned_after_check_in',
+                  entity: 'Appointment',
+                  entityId: appointment.id,
+                  metadata: { staffId: aggregate.primaryStaffId },
+                },
+                nowIso,
+              ),
+            );
+        }
+      }
+      statements.push(
+        d1AuditEvent(
+          database,
+          {
+            actorType: trustedAdmin ? ActorType.ADMIN : ActorType.STAFF,
+            actorId: trustedAdmin ? stationUserId : input.staffId,
+            action: 'attendance.' + input.action.toLowerCase(),
+            entity: 'Attendance',
+            entityId: input.staffId,
+            metadata: { businessDate: formatBusinessDate(businessDate) },
+          },
+          nowIso,
+        ),
+      );
+      appendReceipt();
+      statements.push(d1BumpBoardVersion(database, nowIso));
+      await database.batch(statements);
+      return {
+        ok: true,
+        staffId: input.staffId,
+        action: input.action,
+        ...sessionResponse,
+      };
+    }
+
+    if (!input.appointmentId) throw new Error('Appointment is required');
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: input.appointmentId },
+      include: appointmentInclude,
+    });
+    if (!appointment) throw new Error('Appointment not found');
+    if (['ACCEPT', 'FINISH', 'ADD_SUPPORT', 'CONTINUE_WITH_ME'].includes(input.action)) {
+      const attendance = await prisma.attendance.findUnique({
+        where: { staffId_businessDate: { staffId: input.staffId, businessDate } },
+        select: { status: true },
+      });
+      if (attendance?.status !== AttendanceStatus.PRESENT)
+        throw new Error('Staff must be active and clocked in for this action');
+    }
+
+    const copyServices = () =>
+      appointment.services.map((service) => ({
+        ...service,
+        turns: [...service.turns],
+        turnExclusions: [...service.turnExclusions],
+      })) as D1RouteService[];
+
+    if (input.action === 'CONTINUE_WITH_ME') {
+      if (!input.appointmentServiceId) throw new Error('Choose the next service to continue');
+      const currentService = appointment.services.find(
+        (service) =>
+          service.status === AppointmentStatus.IN_SERVICE &&
+          service.primaryStaffId === input.staffId,
+      );
+      if (!currentService)
+        throw new Error(
+          'Only the specialist currently serving this guest can continue the next service',
+        );
+      const pendingStatuses: AppointmentStatus[] = [
+        AppointmentStatus.CREATED,
+        AppointmentStatus.WAITING,
+        AppointmentStatus.ASSIGNED,
+      ];
+      const nextService = [...appointment.services]
+        .filter(
+          (service) =>
+            service.sequence > currentService.sequence && pendingStatuses.includes(service.status),
+        )
+        .sort((left, right) => left.sequence - right.sequence)[0];
+      if (!nextService || nextService.id !== input.appointmentServiceId)
+        throw new Error('Only the next pending service can be continued');
+      if (nextService.primaryStaffId === input.staffId)
+        throw new Error('This service is already assigned to you');
+      if (nextService.turnExclusions.some((exclusion) => exclusion.staffId === input.staffId))
+        throw new Error(
+          'You were explicitly skipped for this service; a manager must override that exclusion first',
+        );
+      const continuingStaff = await prisma.staff.findUnique({
+        where: { id: input.staffId },
+        select: {
+          id: true,
+          name: true,
+          skills: { select: { skill: { select: { name: true } } } },
+        },
+      });
+      if (!continuingStaff) throw new Error('Staff verification failed');
+      const requiredSkills = nextService.service.requiredSkills.map((item) => item.skill.name);
+      const staffSkills = continuingStaff.skills.map((item) => item.skill.name);
+      if (!requiredSkills.every((skill) => staffSkills.includes(skill)))
+        throw new Error('You do not have the required skills for the next service');
+      const activeNextTurn = [...nextService.turns]
+        .reverse()
+        .find((turn) => turn.status === TurnStatus.ASSIGNED || turn.status === TurnStatus.ACCEPTED);
+      if (
+        activeNextTurn?.status === TurnStatus.ACCEPTED ||
+        nextService.status === AppointmentStatus.IN_SERVICE
+      )
+        throw new Error(
+          'The next service has already been accepted; use manager reassignment instead',
+        );
+      const previousStaffId = nextService.primaryStaffId;
+      const services = copyServices();
+      const nextServiceCopy = services.find((service) => service.id === nextService.id);
+      if (!nextServiceCopy) throw new Error('Appointment service not found');
+      if (activeNextTurn) {
+        statements.push(
+          d1Statement(
+            database,
+            `UPDATE turns SET status = ?, reason = ?, ended_at = ? WHERE id = ? AND status = ?`,
+            TurnStatus.SKIPPED,
+            input.reason?.trim() || 'Customer requested to continue with the current specialist',
+            nowIso,
+            activeNextTurn.id,
+            activeNextTurn.status,
+          ),
+        );
+        statements.push(
+          d1TurnEvent(
+            database,
+            {
+              appointmentId: appointment.id,
+              appointmentServiceId: nextService.id,
+              turnId: activeNextTurn.id,
+              eventType: TurnEventType.SKIPPED,
+              assignedStaffId: activeNextTurn.assignedStaffId,
+              assignedStaffName: nextService.primaryStaff?.name ?? null,
+              actorType: ActorType.STAFF,
+              actorId: input.staffId,
+              actorName: continuingStaff.name,
+              reason:
+                input.reason || 'Customer requested to continue with the current specialist',
+            },
+            nowIso,
+          ),
+        );
+      }
+      const serviceUpdateIndex = statements.length;
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE appointment_services SET status = ?, primary_staff_id = ? WHERE id = ? AND status IN (?, ?, ?)`,
+          AppointmentStatus.ASSIGNED,
+          input.staffId,
+          nextService.id,
+          AppointmentStatus.CREATED,
+          AppointmentStatus.WAITING,
+          AppointmentStatus.ASSIGNED,
+        ),
+      );
+      const continuedTurnId = randomId();
+      statements.push(
+        d1Statement(
+          database,
+          `INSERT INTO turns (id, appointment_id, appointment_service_id, assigned_staff_id, status, reason, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          continuedTurnId,
+          appointment.id,
+          nextService.id,
+          input.staffId,
+          TurnStatus.ASSIGNED,
+          'Customer requested the same specialist',
+          nowIso,
+        ),
+      );
+      statements.push(
+        d1TurnEvent(
+          database,
+          {
+            appointmentId: appointment.id,
+            appointmentServiceId: nextService.id,
+            turnId: continuedTurnId,
+            eventType: TurnEventType.CONTINUED_WITH_ME,
+            assignedStaffId: input.staffId,
+            assignedStaffName: continuingStaff.name,
+            actorType: ActorType.STAFF,
+            actorId: input.staffId,
+            actorName: continuingStaff.name,
+            reason: input.reason || 'Customer requested the same specialist',
+          },
+          nowIso,
+        ),
+      );
+      statements.push(
+        d1Statement(
+          database,
+          `INSERT INTO staff_service_state (staff_id, availability, last_assigned_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(staff_id) DO UPDATE SET availability = excluded.availability, last_assigned_at = excluded.last_assigned_at`,
+          input.staffId,
+          Availability.BUSY,
+          nowIso,
+        ),
+      );
+      if (previousStaffId && previousStaffId !== input.staffId)
+        statements.push(...d1ReleaseStaffStatements(database, businessDate, [previousStaffId]));
+      nextServiceCopy.status = AppointmentStatus.ASSIGNED;
+      nextServiceCopy.primaryStaffId = input.staffId;
+      appendAggregate(appointment.id, d1AppointmentAggregate(appointment, services));
+      statements.push(
+        d1AuditEvent(
+          database,
+          {
+            actorType: ActorType.STAFF,
+            actorId: input.staffId,
+            action: 'appointment_service.continued_with_staff',
+            entity: 'AppointmentService',
+            entityId: nextService.id,
+            metadata: {
+              appointmentId: appointment.id,
+              previousStaffId,
+              staffId: input.staffId,
+              reason: input.reason?.trim() || 'Customer requested the same specialist',
+            },
+          },
+          nowIso,
+        ),
+      );
+      statements.push(d1BumpBoardVersion(database, nowIso));
+      appendReceipt(appointment.id);
+      const results = (await database.batch(statements)) as D1BatchResult[];
+      if (d1BatchChanges(results[serviceUpdateIndex]) !== 1)
+        throw new Error('The next service changed before it could be continued; retry the command');
+      const updated = await prisma.appointment.findUnique({
+        where: { id: appointment.id },
+        include: appointmentInclude,
+      });
+      return {
+        ok: true,
+        action: input.action,
+        staffId: input.staffId,
+        appointment: updated ? mapAppointment(updated) : null,
+        ...sessionResponse,
+      };
+    }
+
+    const currentService = input.appointmentServiceId
+      ? appointment.services.find((service) => service.id === input.appointmentServiceId)
+      : (appointment.services.find((service) => service.status === AppointmentStatus.IN_SERVICE) ??
+        appointment.services.find((service) => service.status === AppointmentStatus.ASSIGNED) ??
+        appointment.services.find(
+          (service) =>
+            service.status === AppointmentStatus.WAITING ||
+            service.status === AppointmentStatus.CREATED,
+        ));
+    if (!currentService) throw new Error('Appointment service not found');
+    const activeTurn = [...currentService.turns]
+      .reverse()
+      .find((turn) => turn.status === TurnStatus.ASSIGNED || turn.status === TurnStatus.ACCEPTED);
+    if (!activeTurn) throw new Error('No active turn');
+    if (
+      ['ACCEPT', 'SKIP', 'FINISH'].includes(input.action) &&
+      activeTurn.assignedStaffId !== input.staffId
+    )
+      throw new Error('This turn is assigned to another staff member');
+    if (input.action === 'ACCEPT' && activeTurn.status !== TurnStatus.ASSIGNED)
+      throw new Error('This turn has already been accepted');
+    if (input.action === 'FINISH' && activeTurn.status !== TurnStatus.ACCEPTED)
+      throw new Error('Accept the turn before completing service');
+    if (
+      input.action === 'SKIP' &&
+      !([TurnStatus.ASSIGNED, TurnStatus.ACCEPTED] as TurnStatus[]).includes(activeTurn.status)
+    )
+      throw new Error('This turn cannot be skipped');
+
+    if (input.action === 'ADD_SUPPORT') {
+      if (appointment.status !== AppointmentStatus.IN_SERVICE)
+        throw new Error('Supporting staff can only be added during service');
+      const supportRows = await staffForBusinessDate(prisma, businessDate);
+      const supportingStaff = supportRows
+        .map(mapStaff)
+        .find((candidate) => candidate.id === input.staffId);
+      if (!supportingStaff?.isPresent || supportingStaff.availability !== Availability.AVAILABLE)
+        throw new Error('Supporting staff must be present and available');
+      statements.push(
+        d1Statement(
+          database,
+          `INSERT INTO appointment_supporting_staff (appointment_id, staff_id, added_at, released_at)
+           VALUES (?, ?, ?, NULL)
+           ON CONFLICT(appointment_id, staff_id) DO UPDATE SET added_at = excluded.added_at, released_at = NULL`,
+          appointment.id,
+          input.staffId,
+          nowIso,
+        ),
+      );
+      statements.push(
+        d1Statement(
+          database,
+          `INSERT INTO staff_service_state (staff_id, availability, last_assigned_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(staff_id) DO UPDATE SET availability = excluded.availability, last_assigned_at = excluded.last_assigned_at`,
+          input.staffId,
+          Availability.BUSY,
+          nowIso,
+        ),
+      );
+      statements.push(
+        d1TurnEvent(
+          database,
+          {
+            appointmentId: appointment.id,
+            appointmentServiceId: currentService.id,
+            turnId: activeTurn.id,
+            eventType: TurnEventType.SUPPORT_ADDED,
+            assignedStaffId: input.staffId,
+            assignedStaffName: supportingStaff.name,
+            actorType: ActorType.STAFF,
+            actorId: input.staffId,
+            actorName: supportingStaff.name,
+            reason: input.reason || 'Support added to the current service',
+          },
+          nowIso,
+        ),
+      );
+    }
+
+    const services = copyServices();
+    const currentServiceCopy = services.find((service) => service.id === currentService.id);
+    if (!currentServiceCopy) throw new Error('Appointment service not found');
+    const guardedIndexes: number[] = [];
+    if (input.action === 'ACCEPT') {
+      guardedIndexes.push(statements.length);
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE turns SET status = ? WHERE id = ? AND status = ?`,
+          TurnStatus.ACCEPTED,
+          activeTurn.id,
+          TurnStatus.ASSIGNED,
+        ),
+      );
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE appointment_services SET status = ? WHERE id = ? AND status = ?`,
+          AppointmentStatus.IN_SERVICE,
+          currentService.id,
+          AppointmentStatus.ASSIGNED,
+        ),
+      );
+      statements.push(
+        d1TurnEvent(
+          database,
+          {
+            appointmentId: appointment.id,
+            appointmentServiceId: currentService.id,
+            turnId: activeTurn.id,
+            eventType: TurnEventType.ACCEPTED,
+            assignedStaffId: input.staffId,
+            assignedStaffName: currentService.primaryStaff?.name ?? staff.name,
+            actorType: ActorType.STAFF,
+            actorId: input.staffId,
+            actorName: staff.name,
+          },
+          nowIso,
+        ),
+      );
+      currentServiceCopy.status = AppointmentStatus.IN_SERVICE;
+      appendAggregate(appointment.id, d1AppointmentAggregate(appointment, services));
+    }
+
+    if (input.action === 'FINISH') {
+      guardedIndexes.push(statements.length);
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE turns SET status = ?, ended_at = ? WHERE id = ? AND status = ?`,
+          TurnStatus.FINISHED,
+          nowIso,
+          activeTurn.id,
+          TurnStatus.ACCEPTED,
+        ),
+      );
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE appointment_services SET status = ?, completed_at = ? WHERE id = ? AND status = ?`,
+          AppointmentStatus.COMPLETED,
+          nowIso,
+          currentService.id,
+          AppointmentStatus.IN_SERVICE,
+        ),
+      );
+      statements.push(
+        d1TurnEvent(
+          database,
+          {
+            appointmentId: appointment.id,
+            appointmentServiceId: currentService.id,
+            turnId: activeTurn.id,
+            eventType: TurnEventType.FINISHED,
+            assignedStaffId: input.staffId,
+            assignedStaffName: currentService.primaryStaff?.name ?? staff.name,
+            actorType: ActorType.STAFF,
+            actorId: input.staffId,
+            actorName: staff.name,
+          },
+          nowIso,
+        ),
+      );
+      currentServiceCopy.status = AppointmentStatus.COMPLETED;
+      currentServiceCopy.completedAt = now;
+      const participatingStaffIds = [
+        ...new Set([input.staffId, ...appointment.supportingStaff.map((member) => member.staffId)]),
+      ];
+      for (const participatingStaffId of participatingStaffIds)
+        statements.push(
+          d1Statement(
+            database,
+            `INSERT INTO staff_service_state (staff_id, last_service_finished_at, availability)
+             VALUES (?, ?, ?)
+             ON CONFLICT(staff_id) DO UPDATE SET last_service_finished_at = excluded.last_service_finished_at`,
+            participatingStaffId,
+            nowIso,
+            Availability.AVAILABLE,
+          ),
+        );
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE appointment_supporting_staff SET released_at = ? WHERE appointment_id = ? AND released_at IS NULL`,
+          nowIso,
+          appointment.id,
+        ),
+      );
+      for (const support of appointment.supportingStaff.filter((member) => !member.releasedAt))
+        statements.push(
+          d1TurnEvent(
+            database,
+            {
+              appointmentId: appointment.id,
+              appointmentServiceId: currentService.id,
+              turnId: activeTurn.id,
+              eventType: TurnEventType.SUPPORT_RELEASED,
+              assignedStaffId: support.staffId,
+              actorType: ActorType.STAFF,
+              actorId: input.staffId,
+              actorName: staff.name,
+              reason: 'Support released after the service finished',
+            },
+            nowIso,
+          ),
+        );
+      statements.push(...d1ReleaseStaffStatements(database, businessDate, participatingStaffIds));
+      const [routingConfig, routingStaff] = await Promise.all([
+        prisma.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
+        staffForBusinessDate(prisma, businessDate),
+      ]);
+      const routePlan = await d1RouteAppointmentPlan(
+        database,
+        appointment as unknown as D1RouteAppointment,
+        services,
+        businessDate,
+        {
+          releasedStaffIds: participatingStaffIds,
+          routingSnapshot: {
+            candidates: routingStaff.map(mapStaff),
+            roundRobinEnabled: routingConfig?.roundRobinEnabled ?? true,
+          },
+        },
+      );
+      statements.push(...routePlan.statements);
+      appendAggregate(appointment.id, d1AppointmentAggregate(appointment, routePlan.services));
+    }
+
+    if (input.action === 'SKIP') {
+      const skipReason = input.skipReasonId
+        ? await prisma.skipReason.findFirst({
+            where: { id: input.skipReasonId, isActive: true },
+            select: { id: true, name: true },
+          })
+        : null;
+      if (!skipReason) throw new Error('Choose an active skip reason');
+      const skipNote = input.reason?.trim() || skipReason.name;
+      guardedIndexes.push(statements.length);
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE turns SET status = ?, reason = ?, skip_reason_id = ?, skip_reason_name_snapshot = ?, ended_at = ? WHERE id = ? AND status IN (?, ?)`,
+          TurnStatus.SKIPPED,
+          skipNote,
+          skipReason.id,
+          skipReason.name,
+          nowIso,
+          activeTurn.id,
+          TurnStatus.ASSIGNED,
+          TurnStatus.ACCEPTED,
+        ),
+      );
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE appointment_services SET status = ?, primary_staff_id = NULL WHERE id = ? AND status IN (?, ?, ?)`,
+          AppointmentStatus.WAITING,
+          currentService.id,
+          AppointmentStatus.ASSIGNED,
+          AppointmentStatus.IN_SERVICE,
+          AppointmentStatus.WAITING,
+        ),
+      );
+      statements.push(
+        d1TurnEvent(
+          database,
+          {
+            appointmentId: appointment.id,
+            appointmentServiceId: currentService.id,
+            turnId: activeTurn.id,
+            eventType: TurnEventType.SKIPPED,
+            assignedStaffId: activeTurn.assignedStaffId,
+            assignedStaffName: currentService.primaryStaff?.name ?? staff.name,
+            actorType: ActorType.STAFF,
+            actorId: input.staffId,
+            actorName: staff.name,
+            reason: skipNote,
+          },
+          nowIso,
+        ),
+      );
+      statements.push(
+        d1Statement(
+          database,
+          `INSERT INTO turn_exclusions (id, appointment_service_id, staff_id, reason, created_at, overridden_at, override_reason, overridden_by_id)
+           VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)
+           ON CONFLICT(appointment_service_id, staff_id) DO UPDATE SET reason = excluded.reason, overridden_at = NULL, override_reason = NULL, overridden_by_id = NULL`,
+          randomId(),
+          currentService.id,
+          input.staffId,
+          skipReason.name,
+          nowIso,
+        ),
+      );
+      currentServiceCopy.status = AppointmentStatus.WAITING;
+      currentServiceCopy.primaryStaffId = null;
+      const [routingConfig, routingStaff] = await Promise.all([
+        prisma.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
+        staffForBusinessDate(prisma, businessDate),
+      ]);
+      const routePlan = await d1RouteAppointmentPlan(
+        database,
+        appointment as unknown as D1RouteAppointment,
+        services,
+        businessDate,
+        {
+          excludedServiceId: currentService.id,
+          excludedStaffId: input.staffId,
+          releasedStaffIds: [input.staffId],
+          routingSnapshot: {
+            candidates: routingStaff.map(mapStaff),
+            roundRobinEnabled: routingConfig?.roundRobinEnabled ?? true,
+          },
+        },
+      );
+      statements.push(...routePlan.statements);
+      appendAggregate(appointment.id, d1AppointmentAggregate(appointment, routePlan.services));
+    }
+
+    statements.push(
+      d1AuditEvent(
+        database,
+        {
+          actorType: ActorType.STAFF,
+          actorId: input.staffId,
+          action: 'turn.' + input.action.toLowerCase(),
+          entity: 'Appointment',
+          entityId: appointment.id,
+          metadata: { reason: input.reason ?? null, skipReasonId: input.skipReasonId ?? null },
+        },
+        nowIso,
+      ),
+    );
+    statements.push(d1BumpBoardVersion(database, nowIso));
+    appendReceipt(appointment.id);
+    const results = (await database.batch(statements)) as D1BatchResult[];
+    for (const statementIndex of guardedIndexes) {
+      if (d1BatchChanges(results[statementIndex]) !== 1)
+        throw new Error('The turn changed before the action could be recorded; retry the command');
+    }
+    const updated = await prisma.appointment.findUnique({
+      where: { id: appointment.id },
+      include: appointmentInclude,
+    });
+    return {
+      ok: true,
+      appointment: updated ? mapAppointment(updated) : null,
+      ...sessionResponse,
+    };
+  });
+}
+
 export async function staffActionDb(
   input: StaffActionInput,
   stationUserId: string,
@@ -3153,7 +5550,7 @@ export async function staffActionDb(
   trustedAdmin = false,
 ) {
   const pin = input.pin?.trim() || undefined;
-  const normalizedRequestHash = requestHash({
+  const normalizedRequestHash = await requestHash({
     action: input.action,
     appointmentId: input.appointmentId ?? null,
     appointmentServiceId: input.appointmentServiceId ?? null,
@@ -3191,6 +5588,18 @@ export async function staffActionDb(
   }
   const businessDate = await currentDbBusinessDate();
   const scope = 'staff:' + stationUserId + ':' + input.staffId;
+  if (await isD1Runtime())
+    return staffActionD1({
+      input,
+      stationUserId,
+      verifiedSessionId,
+      trustedAdmin,
+      pin,
+      normalizedRequestHash,
+      businessDate,
+      scope,
+      staff,
+    });
   return prisma.$transaction(async (tx) => {
     await lockShopBusinessDate(tx, businessDate.toISOString());
     if (input.idempotencyKey) {
@@ -3297,6 +5706,14 @@ export async function staffActionDb(
           data: { availability: Availability.AVAILABLE },
         });
       if (input.action === 'CHECK_IN') {
+        const [routingConfig, routingStaff] = await Promise.all([
+          tx.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
+          staffForBusinessDate(tx, businessDate),
+        ]);
+        const routingSnapshot = {
+          candidates: routingStaff.map(mapStaff),
+          roundRobinEnabled: routingConfig?.roundRobinEnabled ?? true,
+        };
         const waitingAppointments = await tx.appointment.findMany({
           where: {
             businessDate,
@@ -3316,7 +5733,14 @@ export async function staffActionDb(
             where: { id: waitingAppointment.id },
             select: { primaryStaffId: true, status: true },
           });
-          const updated = await routeAppointmentServices(tx, waitingAppointment.id, businessDate);
+          const updated = await routeAppointmentServices(
+            tx,
+            waitingAppointment.id,
+            businessDate,
+            undefined,
+            undefined,
+            routingSnapshot,
+          );
           if (
             updated.primaryStaffId &&
             (updated.primaryStaffId !== before?.primaryStaffId ||

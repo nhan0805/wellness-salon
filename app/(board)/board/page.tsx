@@ -10,6 +10,8 @@ import { SignOutButton } from '@/src/components/sign-out-button';
 import SafariLoginLink from '@/src/components/safari-login-link';
 import { useDialogFocus } from '@/src/components/use-dialog-focus';
 import type { AccountViewer } from '@/src/domain/viewer';
+import { DEFAULT_TIMEZONE } from '@/src/domain/locale-options';
+import { BOARD_POLL_INTERVAL_MS, BOARD_STALE_AFTER_MS } from '@/src/domain/realtime';
 
 type Staff = { id: string; name: string; initials: string; isPresent: boolean; availability: 'AVAILABLE' | 'BUSY'; skills: string[] };
 type AppointmentService = {
@@ -21,6 +23,7 @@ type AppointmentService = {
   primaryStaffId: string | null;
   primaryStaff: { id: string; name: string; initials: string } | null;
   turns: Array<{ status: string; reason: string | null; skipReasonNameSnapshot?: string | null }>;
+  turnExclusions: Array<{ staffId: string; staffName: string; reason: string }>;
 };
 type Appointment = { id: string; code: string; customerName: string; serviceName: string; durationMin: number; amount: number; status: string; primaryStaffId: string | null; createdAt: string; supportingStaffIds: string[]; turns: Array<{ status: string; reason: string | null; skipReasonNameSnapshot?: string | null }>; services: AppointmentService[] };
 type BoardState = { current: Appointment | null; currentTurns: Appointment[]; upNext: Appointment[]; staff: Staff[]; skipReasons: Array<{ id: string; name: string }>; shop: { timezone: string; openingTime: string; closingTime: string; currency: string }; version: number; at: string; viewerRole: 'ADMIN' | 'STATION' | null; viewer: AccountViewer | null };
@@ -30,7 +33,7 @@ type AttendanceAction = Extract<Action, 'CHECK_IN' | 'CHECK_OUT'>;
 type SyncStatus = 'LIVE' | 'POLLING' | 'RECONNECTING' | 'STALE';
 type StaffVerification = { staffId: string; staffName: string; expiresAt: number };
 
-const emptyBoard: BoardState = { current: null, currentTurns: [], upNext: [], staff: [], skipReasons: [], shop: { timezone: 'Asia/Ho_Chi_Minh', openingTime: '09:00', closingTime: '21:00', currency: 'USD' }, version: 0, at: '', viewerRole: null, viewer: null };
+const emptyBoard: BoardState = { current: null, currentTurns: [], upNext: [], staff: [], skipReasons: [], shop: { timezone: DEFAULT_TIMEZONE, openingTime: '09:00', closingTime: '21:00', currency: 'USD' }, version: 0, at: '', viewerRole: null, viewer: null };
 
 function formatVerificationRemaining(expiresAt: number, now = Date.now()) {
   const totalSeconds = Math.max(0, Math.ceil((expiresAt - now) / 1000));
@@ -195,7 +198,21 @@ export default function BoardPage() {
       source?.close();
       source = new EventSource('/api/sse/board');
       source.onopen = () => { reconnectAttempt = 0; setSyncStatus('LIVE'); };
-      source.onmessage = () => { void loadBoard(); };
+      source.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as { type?: string; payload?: BoardState };
+          if (payload.type !== 'board.snapshot' || !payload.payload) return;
+          const nextBoard = payload.payload;
+          if (nextBoard.version < latestVersionRef.current) return;
+          latestVersionRef.current = nextBoard.version;
+          setBoard(nextBoard);
+          setBoardLoaded(true);
+          setBoardError('');
+          lastSuccessAtRef.current = Date.now();
+        } catch {
+          void loadBoard();
+        }
+      };
       source.onerror = () => {
         source?.close();
         source = null;
@@ -206,10 +223,10 @@ export default function BoardPage() {
     };
     const initialLoad = window.setTimeout(() => { void loadBoard(); }, 0);
     connect();
-    const poll = window.setInterval(() => { void loadBoard(); }, 5_000);
+    const poll = window.setInterval(() => { void loadBoard(); }, BOARD_POLL_INTERVAL_MS);
     const staleCheck = window.setInterval(() => {
-      if (lastSuccessAtRef.current && Date.now() - lastSuccessAtRef.current > 15_000) setSyncStatus('STALE');
-    }, 5_000);
+      if (lastSuccessAtRef.current && Date.now() - lastSuccessAtRef.current > BOARD_STALE_AFTER_MS) setSyncStatus('STALE');
+    }, BOARD_POLL_INTERVAL_MS);
     return () => {
       disposed = true;
       source?.close();
@@ -228,7 +245,7 @@ export default function BoardPage() {
   }, 0);
 
   function servicesForAppointment(appointment: Appointment) {
-    return appointment.services.length ? appointment.services : [{ id: `${appointment.id}-service`, sequence: 1, serviceName: appointment.serviceName, durationMin: appointment.durationMin, status: appointment.status, primaryStaffId: appointment.primaryStaffId, primaryStaff: null, turns: appointment.turns }];
+    return appointment.services.length ? appointment.services : [{ id: `${appointment.id}-service`, sequence: 1, serviceName: appointment.serviceName, durationMin: appointment.durationMin, status: appointment.status, primaryStaffId: appointment.primaryStaffId, primaryStaff: null, turns: appointment.turns, turnExclusions: [] }];
   }
 
   function staffForService(service: AppointmentService): { id: string; name: string; initials: string } | null {
@@ -296,6 +313,22 @@ export default function BoardPage() {
     setNotice('');
   }
 
+  function handleBoardTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, tab: BoardTab) {
+    if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const tabs: BoardTab[] = ['turns', 'staff'];
+    const currentIndex = tabs.indexOf(tab);
+    const nextIndex =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? tabs.length - 1
+          : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    const nextTab = tabs[nextIndex];
+    setActiveTab(nextTab);
+    window.requestAnimationFrame(() => document.getElementById(nextTab + '-tab')?.focus());
+  }
+
   return (
     <main className={`board-shell page-root board-sync-${syncStatus.toLowerCase()}`}>
       <header className="app-topbar">
@@ -318,14 +351,14 @@ export default function BoardPage() {
           </div>
           <div className="topbar-actions board-heading-actions">
             <span className={`board-last-updated board-sync-indicator board-sync-indicator-${syncStatus.toLowerCase()}`} role="status" aria-live="polite"><span className="board-sync-dot" aria-hidden="true" />{board.at ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: board.shop.timezone }).format(new Date(board.at))}` : 'Waiting for update'} · {syncStatus === 'LIVE' ? 'Live' : syncStatus === 'POLLING' ? 'Checking' : syncStatus === 'RECONNECTING' ? 'Reconnecting' : 'Stale'}</span>
-            {activeVerifiedStaff ? <span className="board-staff-verification" role="status" aria-live="polite"><ShieldCheck size={15} aria-hidden="true" /> {activeVerifiedStaff.staffName} verified · {formatVerificationRemaining(activeVerifiedStaff.expiresAt, verificationNow)}</span> : null}
+            {activeVerifiedStaff ? <span className="board-staff-verification" role="status" aria-live="polite"><ShieldCheck size={15} aria-hidden="true" /> {activeVerifiedStaff.staffName} verified <span aria-hidden="true">· {formatVerificationRemaining(activeVerifiedStaff.expiresAt, verificationNow)}</span></span> : null}
             <button className="button button-outline button-sm" onClick={loadBoard}><RefreshCcw size={15} aria-hidden="true" /> Refresh</button>
           </div>
         </div>
 
         <div className="board-tabs" role="tablist" aria-label="Today’s queue views">
-          <button type="button" role="tab" id="turns-tab" aria-controls="turns-panel" aria-selected={activeTab === 'turns'} className={'board-tab ' + (activeTab === 'turns' ? 'active' : '')} onClick={() => setActiveTab('turns')}><span className="board-tab-icon"><ClipboardList size={19} aria-hidden="true" /></span><span className="board-tab-copy"><strong>Queue</strong><small>{currentServiceCount} in service · {board.upNext.length} up next</small></span></button>
-          <button type="button" role="tab" id="staff-tab" aria-controls="staff-panel" aria-selected={activeTab === 'staff'} className={'board-tab ' + (activeTab === 'staff' ? 'active' : '')} onClick={() => setActiveTab('staff')}><span className="board-tab-icon"><Users size={19} aria-hidden="true" /></span><span className="board-tab-copy"><strong>Staff attendance</strong><small>{board.staff.filter((member) => member.isPresent).length} of {board.staff.length} checked in</small></span></button>
+          <button type="button" role="tab" id="turns-tab" aria-controls="turns-panel" aria-selected={activeTab === 'turns'} tabIndex={activeTab === 'turns' ? 0 : -1} className={'board-tab ' + (activeTab === 'turns' ? 'active' : '')} onClick={() => setActiveTab('turns')} onKeyDown={(event) => handleBoardTabKeyDown(event, 'turns')}><span className="board-tab-icon"><ClipboardList size={19} aria-hidden="true" /></span><span className="board-tab-copy"><strong>Queue</strong><small>{currentServiceCount} in service · {board.upNext.length} up next</small></span></button>
+          <button type="button" role="tab" id="staff-tab" aria-controls="staff-panel" aria-selected={activeTab === 'staff'} tabIndex={activeTab === 'staff' ? 0 : -1} className={'board-tab ' + (activeTab === 'staff' ? 'active' : '')} onClick={() => setActiveTab('staff')} onKeyDown={(event) => handleBoardTabKeyDown(event, 'staff')}><span className="board-tab-icon"><Users size={19} aria-hidden="true" /></span><span className="board-tab-copy"><strong>Staff attendance</strong><small>{board.staff.filter((member) => member.isPresent).length} of {board.staff.length} checked in</small></span></button>
         </div>
 
         {boardError ? <div className="management-error" role="alert">{boardError}<button className="button button-quiet button-sm" onClick={() => void loadBoard()}>Retry</button></div> : null}
@@ -374,6 +407,7 @@ export default function BoardPage() {
                   const assignedServices = services.filter((service) => service.status === 'ASSIGNED');
                   const highlightedService = assignedServices[0] ?? services.find((service) => service.status !== 'COMPLETED');
                   const assignedStaff = highlightedService ? staffForService(highlightedService) : null;
+                  const needsManagerReview = Boolean(highlightedService && highlightedService.status === 'WAITING' && highlightedService.turnExclusions.length);
                   const expanded = Boolean(expandedQueueItems[appointment.id]);
                   const visibleServices = expanded || services.length <= 3 ? services : services.slice(0, 3);
                   const assignedStaffMembers = assignedServices.reduce<Array<{ id: string; name: string; initials: string }>>((members, service) => {
@@ -417,7 +451,7 @@ export default function BoardPage() {
                     {assignedStaff || supportStaffMembers.length ? <div className="queue-assignee" aria-label={`Assigned staff ${displayedStaffMembers.map((member) => member.name).join(', ')}`}>
                       <span className="queue-assignee-label">{assigneeLabel}</span>
                       {displayedStaffMembers.length > 1 ? <div className="queue-assignee-list">{displayedStaffMembers.map((member) => <span className="queue-assignee-member" key={member.id}><InitialsAvatar initials={member.initials} tone="blue" /><span>{member.name}</span></span>)}</div> : assignedStaff ? <span className="queue-assignee-name"><InitialsAvatar initials={assignedStaff.initials} tone="blue" /><span className="queue-assignee-name-text">{assignedStaff.name}</span></span> : null}
-                    </div> : <span className="status-badge status-neutral queue-status">Waiting</span>}
+                    </div> : <span className={`status-badge ${needsManagerReview ? 'status-warning' : 'status-neutral'} queue-status`} title={needsManagerReview ? 'All currently eligible staff are excluded for this exact service. A manager can review the exclusion.' : undefined}>{needsManagerReview ? 'Manager review' : 'Waiting'}</span>}
                     {board.viewerRole && assignedServices.length ? <div className="queue-actions" aria-label="Service actions">{assignedServices.map((service) => { const serviceStaff = staffForService(service); return <div className="queue-service-action" key={service.id} role="group" aria-label={`Actions for ${service.serviceName}`}><span className="queue-service-action-label"><small>Next service</small><strong>{service.serviceName}</strong></span><button className="button button-primary button-sm queue-action" aria-label={`Accept ${service.serviceName}`} onClick={() => openAction('ACCEPT', appointment.id, serviceStaff?.id, service.id)}><Check size={15} aria-hidden="true" /> Accept</button><button className="button button-outline button-sm queue-action queue-skip-action" aria-label={`Skip ${service.serviceName}`} onClick={() => openAction('SKIP', appointment.id, serviceStaff?.id, service.id)}><MessageSquareWarning size={15} aria-hidden="true" /> Skip</button></div>; })}</div> : null}
                   </div>;
                 })}

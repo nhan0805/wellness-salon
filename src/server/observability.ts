@@ -1,12 +1,11 @@
-import { randomUUID } from 'node:crypto';
-import { performance } from 'node:perf_hooks';
 import { logEvent } from '@/src/server/logger';
+import { randomId } from '@/src/server/web-crypto';
 
 const requestIdPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 
 export function requestIdFrom(request: Request) {
   const candidate = request.headers.get('x-request-id')?.trim();
-  return candidate && requestIdPattern.test(candidate) ? candidate : randomUUID();
+  return candidate && requestIdPattern.test(candidate) ? candidate : randomId();
 }
 
 export async function observeApiRequest(request: Request, route: string, handler: () => Promise<Response>) {

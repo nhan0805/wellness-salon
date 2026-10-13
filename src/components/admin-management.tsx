@@ -17,7 +17,7 @@ type ServiceCategory = { id: string; name: string; slug: string; sortOrder: numb
 type Service = { id: string; name: string; description: string; iconKey: ServiceIconKey; categoryId: string; category: Pick<ServiceCategory, 'id' | 'name' | 'slug' | 'sortOrder'>; durationMin: number; price: number; requiredSkills: Skill[]; isActive: boolean; appointmentCount: number; createdAt: string; updatedAt: string };
 type CustomerHistoryStatus = 'CREATED' | 'WAITING' | 'ASSIGNED' | 'IN_SERVICE' | 'PAYMENT_PENDING' | 'COMPLETED' | 'CANCELLED';
 type CustomerHistoryItem = { id: string; code: string; businessDate: string; createdAt: string; completedAt: string | null; serviceName: string; durationMin: number; staffName: string | null; status: CustomerHistoryStatus; amount: number; services: Array<{ id: string; sequence: number; serviceName: string; durationMin: number; amount: number; status: CustomerHistoryStatus; staffName: string | null }>; payment: { amount: number; tip: number; total: number; method: 'CARD' | 'CASH'; confirmedAt: string } | null };
-type CustomerHistoryPayload = { customer: { id: string; name: string; phone: string }; summary: { visitCount: number; completedCount: number; paidTotal: number; tipTotal: number; totalCollected: number }; history: CustomerHistoryItem[] };
+type CustomerHistoryPayload = { customer: { id: string; name: string; phone: string }; summary: { visitCount: number; completedCount: number; paidTotal: number; tipTotal: number; totalCollected: number }; history: CustomerHistoryItem[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } };
 
 type CustomerForm = { name: string; phone: string };
 type StaffForm = { name: string; pin: string; skillIds: string[]; isActive: boolean };
@@ -58,16 +58,25 @@ export function AdminManagement({ kind, currency, onToast }: { kind: ManagementK
   const [serviceTab, setServiceTab] = useState<'services' | 'categories'>('services');
   const [serviceCategoryFilter, setServiceCategoryFilter] = useState('all');
   const [customerSearch, setCustomerSearch] = useState('');
+  const [customerPage, setCustomerPage] = useState(1);
+  const [customerTotal, setCustomerTotal] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(endpointByKind[kind], { cache: 'no-store' });
+      const customerQuery =
+        kind === 'customers'
+          ? `?search=${encodeURIComponent(customerSearch.trim())}&page=${customerPage}&pageSize=50`
+          : '';
+      const response = await fetch(endpointByKind[kind] + customerQuery, { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? 'Unable to load this section');
       if (kind === 'attendance') setAttendance(payload.attendance ?? []);
-      if (kind === 'customers') setCustomers(payload.customers ?? []);
+      if (kind === 'customers') {
+        setCustomers(payload.customers ?? []);
+        setCustomerTotal(payload.pagination?.total ?? payload.customers?.length ?? 0);
+      }
       if (kind === 'staff') { setStaff(payload.staff ?? []); setSkills(payload.skills ?? []); }
       if (kind === 'services') { setServices(payload.services ?? []); setSkills(payload.skills ?? []); setServiceCategories(payload.categories ?? []); }
     } catch (loadError) {
@@ -75,7 +84,7 @@ export function AdminManagement({ kind, currency, onToast }: { kind: ManagementK
     } finally {
       setLoading(false);
     }
-  }, [kind]);
+  }, [customerPage, customerSearch, kind]);
 
   // This effect intentionally synchronizes the selected admin module with its API adapter.
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -98,7 +107,19 @@ export function AdminManagement({ kind, currency, onToast }: { kind: ManagementK
       await load();
       return true;
     } catch (submitError) {
-      setFormError(submitError instanceof Error ? submitError.message : 'The operation could not be completed');
+      const message = submitError instanceof Error ? submitError.message : 'The operation could not be completed';
+      if (method === 'POST') {
+        // A network timeout can leave a mutation in an unknown state. Refresh the
+        // list before presenting the error so operators can verify whether it landed.
+        try {
+          await load();
+          setFormError(`${message} The list was refreshed; verify the record before retrying.`);
+        } catch {
+          setFormError(`${message} The result is unknown. Refresh the list before retrying.`);
+        }
+      } else {
+        setFormError(message);
+      }
       return false;
     } finally {
       setBusy(false);
@@ -168,9 +189,7 @@ export function AdminManagement({ kind, currency, onToast }: { kind: ManagementK
   const description = kind === 'attendance' ? 'Check staff in and out and close the shift. Complete payments before closing; cancel any unserved visits.' : kind === 'customers' ? 'Manage guest profiles used to recognize repeat visits.' : kind === 'staff' ? 'Manage skills, PIN access, attendance, and availability.' : 'Manage the services shown on the customer kiosk, their categories, and the skills required to provide them.';
   const visibleServices = serviceCategoryFilter === 'all' ? services : services.filter((service) => service.categoryId === serviceCategoryFilter);
   const activeServiceCategories = serviceCategories.filter((category) => category.isActive);
-  const visibleCustomers = customerSearch.trim()
-    ? customers.filter((customer) => `${customer.name} ${customer.phone}`.toLowerCase().includes(customerSearch.trim().toLowerCase()))
-    : customers;
+  const visibleCustomers = customers;
   const presentStaffCount = attendance.filter((record) => record.status === 'PRESENT').length;
   const availableStaffCount = attendance.filter((record) => record.status === 'PRESENT' && record.availability === 'AVAILABLE').length;
   const totalCustomerVisits = customers.reduce((total, customer) => total + customer.appointmentCount, 0);
@@ -183,11 +202,11 @@ export function AdminManagement({ kind, currency, onToast }: { kind: ManagementK
     <SectionHeader eyebrow={kind === 'attendance' ? 'Daily attendance' : kind === 'customers' ? 'Guest records' : kind === 'staff' ? 'Team management' : 'Service catalog'} title={title} description={description} action={kind === 'attendance' ? <button type="button" className="button button-primary button-sm close-shift-button" onClick={runClosing} disabled={busy}><RefreshCcw size={16} aria-hidden="true" /> Close shift</button> : <button className="button button-primary button-sm" onClick={() => openModal(kind === 'customers' ? { type: 'customer' } : kind === 'staff' ? { type: 'staff' } : serviceTab === 'categories' ? { type: 'category' } : { type: 'service' })} disabled={loading || busy}><Plus size={15} aria-hidden="true" /> Add {kind === 'customers' ? 'customer' : kind === 'staff' ? 'staff member' : serviceTab === 'categories' ? 'category' : 'service'}</button>} />
     {error ? <div className="management-error" role="alert"><X size={17} aria-hidden="true" />{error}<button className="button button-quiet button-sm" onClick={() => void load()}>Retry</button></div> : null}
     {!loading && kind === 'attendance' ? <div className="management-summary-grid" aria-label="Attendance summary"><div className="management-summary-item management-summary-item-success"><span>Present</span><strong>{presentStaffCount}</strong><small>checked in today</small></div><div className="management-summary-item management-summary-item-blue"><span>Available</span><strong>{availableStaffCount}</strong><small>ready for assignments</small></div><div className="management-summary-item management-summary-item-neutral"><span>Team size</span><strong>{attendance.length}</strong><small>active records</small></div></div> : null}
-    {!loading && kind === 'customers' ? <div className="management-summary-grid" aria-label="Customer summary"><div className="management-summary-item management-summary-item-blue"><span>Guests</span><strong>{customers.length}</strong><small>profiles in the directory</small></div><div className="management-summary-item management-summary-item-neutral"><span>Visits</span><strong>{totalCustomerVisits}</strong><small>appointments on record</small></div><div className="management-summary-item management-summary-item-success"><span>Search result</span><strong>{visibleCustomers.length}</strong><small>{customerSearch ? 'matching this search' : 'all guests visible'}</small></div></div> : null}
+    {!loading && kind === 'customers' ? <div className="management-summary-grid" aria-label="Customer summary"><div className="management-summary-item management-summary-item-blue"><span>Guests</span><strong>{customerTotal}</strong><small>profiles matching this view</small></div><div className="management-summary-item management-summary-item-neutral"><span>Visits</span><strong>{totalCustomerVisits}</strong><small>appointments on this page</small></div><div className="management-summary-item management-summary-item-success"><span>Page</span><strong>{customerPage}</strong><small>{visibleCustomers.length} profiles shown</small></div></div> : null}
     {!loading && kind === 'staff' ? <div className="management-summary-grid" aria-label="Staff summary"><div className="management-summary-item management-summary-item-blue"><span>Active staff</span><strong>{activeStaffCount}</strong><small>available in the directory</small></div><div className="management-summary-item management-summary-item-success"><span>Ready now</span><strong>{readyStaffCount}</strong><small>checked in and available</small></div><div className="management-summary-item management-summary-item-neutral"><span>Skills mapped</span><strong>{skills.length}</strong><small>matching definitions</small></div></div> : null}
     {!loading && kind === 'services' ? <div className="management-summary-grid" aria-label="Services summary"><div className="management-summary-item management-summary-item-blue"><span>Live services</span><strong>{activeServiceCount}</strong><small>visible on the kiosk</small></div><div className="management-summary-item management-summary-item-success"><span>Categories</span><strong>{activeCategoryCount}</strong><small>active kiosk groups</small></div><div className="management-summary-item management-summary-item-neutral"><span>Catalog total</span><strong>{services.length}</strong><small>including archived services</small></div></div> : null}
     {kind === 'services' ? <div className="service-catalog-tabs" role="tablist" aria-label="Service catalog sections"><button type="button" role="tab" aria-selected={serviceTab === 'services'} className={`service-catalog-tab ${serviceTab === 'services' ? 'active' : ''}`} onClick={() => setServiceTab('services')}><Scissors size={17} aria-hidden="true" /> Services <span>{services.length}</span></button><button type="button" role="tab" aria-selected={serviceTab === 'categories'} className={`service-catalog-tab ${serviceTab === 'categories' ? 'active' : ''}`} onClick={() => setServiceTab('categories')}><Layers3 size={17} aria-hidden="true" /> Categories <span>{serviceCategories.length}</span></button></div> : null}
-    {loading ? <div className="card management-loading" role="status"><LoaderCircle size={22} className="spin" aria-hidden="true" /> Loading {title.toLowerCase()}…</div> : <div className="card card-pad management-card">{kind === 'customers' ? <div className="customer-directory-toolbar"><div><span className="eyebrow">Guest directory</span><strong>Find a repeat visitor</strong><small>Search by name or mobile number.</small></div><label className="customer-search-field"><Search size={17} aria-hidden="true" /><span className="sr-only">Search customers</span><input type="search" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Search name or phone" /></label></div> : null}{kind === 'attendance' ? <AttendanceTable rows={attendance} busyId={busyId} onToggle={updateAttendance} /> : null}{kind === 'customers' ? <CustomersTable rows={visibleCustomers} onEdit={(record) => openModal({ type: 'customer', record })} onDelete={deleteCustomer} onHistory={setHistoryCustomer} /> : null}{kind === 'staff' ? <StaffTable rows={staff} onEdit={(record) => openModal({ type: 'staff', record })} onToggle={toggleStaff} /> : null}{kind === 'services' && serviceTab === 'services' ? <><div className="service-catalog-toolbar"><div><strong>{visibleServices.length} service{visibleServices.length === 1 ? '' : 's'}</strong><span>Organized by category for the kiosk</span></div><div className="field service-category-filter"><label htmlFor="service-category-filter">Filter by category</label><select id="service-category-filter" value={serviceCategoryFilter} onChange={(event) => setServiceCategoryFilter(event.target.value)}><option value="all">All categories</option>{serviceCategories.map((category) => <option key={category.id} value={category.id}>{category.name}{category.isActive ? '' : ' · Archived'}</option>)}</select></div></div><ServicesTable rows={visibleServices} currency={currency} onEdit={(record) => openModal({ type: 'service', record })} onArchive={archiveService} /></> : null}{kind === 'services' && serviceTab === 'categories' ? <ServiceCategoriesTable rows={serviceCategories} onEdit={(record) => openModal({ type: 'category', record })} onArchive={archiveServiceCategory} /> : null}</div>}
+    {loading ? <div className="card management-loading" role="status"><LoaderCircle size={22} className="spin" aria-hidden="true" /> Loading {title.toLowerCase()}…</div> : <div className="card card-pad management-card">{kind === 'customers' ? <div className="customer-directory-toolbar"><div><span className="eyebrow">Guest directory</span><strong>Find a repeat visitor</strong><small>Search by name or mobile number.</small></div><label className="customer-search-field"><Search size={17} aria-hidden="true" /><span className="sr-only">Search customers</span><input type="search" value={customerSearch} onChange={(event) => { setCustomerSearch(event.target.value); setCustomerPage(1); }} placeholder="Search name or phone" /></label></div> : null}{kind === 'attendance' ? <AttendanceTable rows={attendance} busyId={busyId} onToggle={updateAttendance} /> : null}{kind === 'customers' ? <CustomersTable rows={visibleCustomers} onEdit={(record) => openModal({ type: 'customer', record })} onDelete={deleteCustomer} onHistory={setHistoryCustomer} /> : null}{kind === 'customers' && customerTotal > 50 ? <div className="management-pagination" aria-label="Customer directory pages"><button type="button" className="button button-quiet button-sm" onClick={() => setCustomerPage((page) => Math.max(1, page - 1))} disabled={customerPage <= 1}>Previous</button><span>Page {customerPage} of {Math.ceil(customerTotal / 50)}</span><button type="button" className="button button-quiet button-sm" onClick={() => setCustomerPage((page) => Math.min(Math.ceil(customerTotal / 50), page + 1))} disabled={customerPage >= Math.ceil(customerTotal / 50)}>Next</button></div> : null}{kind === 'staff' ? <StaffTable rows={staff} onEdit={(record) => openModal({ type: 'staff', record })} onToggle={toggleStaff} /> : null}{kind === 'services' && serviceTab === 'services' ? <><div className="service-catalog-toolbar"><div><strong>{visibleServices.length} service{visibleServices.length === 1 ? '' : 's'}</strong><span>Organized by category for the kiosk</span></div><div className="field service-category-filter"><label htmlFor="service-category-filter">Filter by category</label><select id="service-category-filter" value={serviceCategoryFilter} onChange={(event) => setServiceCategoryFilter(event.target.value)}><option value="all">All categories</option>{serviceCategories.map((category) => <option key={category.id} value={category.id}>{category.name}{category.isActive ? '' : ' · Archived'}</option>)}</select></div></div><ServicesTable rows={visibleServices} currency={currency} onEdit={(record) => openModal({ type: 'service', record })} onArchive={archiveService} /></> : null}{kind === 'services' && serviceTab === 'categories' ? <ServiceCategoriesTable rows={serviceCategories} onEdit={(record) => openModal({ type: 'category', record })} onArchive={archiveServiceCategory} /> : null}</div>}
     {historyCustomer ? <CustomerHistoryModal customer={historyCustomer} currency={currency} onClose={() => setHistoryCustomer(null)} /> : null}
     {modal?.type === 'customer' ? <RecordModal title={modal.record ? 'Edit customer' : 'Add customer'} description="Keep the phone number accurate so kiosk check-in can recognize the guest." error={formError} onClose={() => setModal(null)}><CustomerForm record={modal.record} busy={busy} onCancel={() => setModal(null)} onSubmit={(values) => submit(endpointByKind.customers, modal.record ? 'PATCH' : 'POST', modal.record ? { ...values, id: modal.record.id } : values, modal.record ? 'Customer updated.' : 'Customer added.')} /></RecordModal> : null}
     {modal?.type === 'staff' ? <RecordModal title={modal.record ? 'Edit staff member' : 'Add staff member'} description="Initials are generated from the name. Staff need at least one skill before they can be assigned an appointment." error={formError} wide onClose={() => setModal(null)}><StaffForm record={modal.record} skills={skills} busy={busy} onCancel={() => setModal(null)} onSubmit={(values) => submit(endpointByKind.staff, modal.record ? 'PATCH' : 'POST', modal.record ? { ...values, id: modal.record.id } : values, modal.record ? 'Staff member updated.' : 'Staff member added.')} /></RecordModal> : null}
@@ -209,18 +228,21 @@ function CustomerHistoryModal({ customer, currency, onClose }: { customer: Custo
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [status, setStatus] = useState<CustomerHistoryStatus | ''>('');
+  const [historyPage, setHistoryPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const load = useCallback(async (filters: { from: string; to: string; status: CustomerHistoryStatus | '' } = { from, to, status }) => {
+  const load = useCallback(async (filters: { from: string; to: string; status: CustomerHistoryStatus | '' } = { from, to, status }, page = historyPage) => {
     setLoading(true);
     setError('');
     const query = new URLSearchParams();
     if (filters.from) query.set('from', filters.from);
     if (filters.to) query.set('to', filters.to);
     if (filters.status) query.set('status', filters.status);
+    query.set('page', String(page));
+    query.set('pageSize', '25');
     try {
-      const response = await fetch(`/api/admin/customers/${encodeURIComponent(customer.id)}/history${query.toString() ? `?${query.toString()}` : ''}`, { cache: 'no-store' });
+      const response = await fetch('/api/admin/customers/' + encodeURIComponent(customer.id) + '/history?' + query.toString(), { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? 'Unable to load customer history');
       setData(payload);
@@ -229,21 +251,27 @@ function CustomerHistoryModal({ customer, currency, onClose }: { customer: Custo
     } finally {
       setLoading(false);
     }
-  }, [customer.id, from, status, to]);
+  }, [customer.id, from, historyPage, status, to]);
 
-  // Load the complete history once when a customer history modal opens.
+  // Load the first page once when a customer history modal opens.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { const timer = window.setTimeout(() => { void load({ from: '', to: '', status: '' }); }, 0); return () => window.clearTimeout(timer); }, [customer.id]);
+  useEffect(() => { const timer = window.setTimeout(() => { setHistoryPage(1); void load({ from: '', to: '', status: '' }, 1); }, 0); return () => window.clearTimeout(timer); }, [customer.id]);
 
   function resetFilters() {
     setFrom('');
     setTo('');
     setStatus('');
-    void load({ from: '', to: '', status: '' });
+    setHistoryPage(1);
+    void load({ from: '', to: '', status: '' }, 1);
+  }
+
+  function applyFilters() {
+    setHistoryPage(1);
+    void load({ from, to, status }, 1);
   }
 
   return <RecordModal title="Customer history" description={`${customer.name} · ${customer.phone}`} error={error} wide onClose={onClose}>
-    <form className="history-filters" onSubmit={(event) => { event.preventDefault(); void load(); }}>
+    <form className="history-filters" onSubmit={(event) => { event.preventDefault(); applyFilters(); }}>
       <div className="field"><label htmlFor="history-from">From</label><input id="history-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></div>
       <div className="field"><label htmlFor="history-to">To</label><input id="history-to" type="date" value={to} onChange={(event) => setTo(event.target.value)} /></div>
       <div className="field"><label htmlFor="history-status">Status</label><select id="history-status" value={status} onChange={(event) => setStatus(event.target.value as CustomerHistoryStatus | '')}><option value="">All statuses</option>{historyStatusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
@@ -252,6 +280,7 @@ function CustomerHistoryModal({ customer, currency, onClose }: { customer: Custo
     {loading && !data ? <div className="management-loading" role="status"><LoaderCircle size={22} className="spin" aria-hidden="true" /> Loading history…</div> : data ? <>
       <div className="history-summary" aria-label="Customer history summary"><div className="history-stat"><span>Visits</span><strong>{data.summary.visitCount}</strong></div><div className="history-stat"><span>Services</span><strong>{formatManagementMoney(data.summary.paidTotal, currency)}</strong><small>{data.summary.completedCount} completed · tips excluded</small></div><div className="history-stat"><span>Tips</span><strong>{formatManagementMoney(data.summary.tipTotal, currency)}</strong></div><div className="history-stat"><span>Total collected</span><strong>{formatManagementMoney(data.summary.totalCollected, currency)}</strong><small>Services + tips</small></div></div>
       {data.history.length ? <div className="admin-table-wrap history-table-wrap"><table className="admin-table history-table"><caption className="sr-only">Transaction history for {customer.name}</caption><thead><tr><th>Date</th><th>Visit</th><th>Services</th><th>Status</th><th>Payment</th></tr></thead><tbody>{data.history.map((item) => <tr key={item.id}><td className="subtle">{formatHistoryDate(item.businessDate)}<small className="table-note">{formatDateTime(item.createdAt)}</small></td><td><strong>{item.code}</strong><small className="table-note">{item.services.length} service{item.services.length === 1 ? '' : 's'}</small></td><td><div className="history-service-list">{item.services.map((service) => <div key={service.id}><strong>{service.serviceName}</strong><small className="table-note">{service.durationMin} min · {formatManagementMoney(service.amount, currency)}{service.staffName ? ` · ${service.staffName}` : ''}</small></div>)}</div></td><td><StatusBadge label={formatStatus(item.status)} tone={historyStatusTone(item.status)} /></td><td>{item.payment ? <><strong>{formatManagementMoney(item.payment.total, currency)}</strong><small className="table-note">{item.payment.method === 'CARD' ? 'Card' : 'Cash'}{item.payment.tip ? ` · ${formatManagementMoney(item.payment.tip, currency)} tip` : ''}</small></> : <span className="subtle">Not paid</span>}</td></tr>)}</tbody></table></div> : <div className="history-empty"><History size={24} aria-hidden="true" /><strong>No transactions match these filters.</strong><span>Try a different date range or status.</span></div>}
+      {data.pagination.totalPages > 1 ? <div className="management-pagination" aria-label="Customer history pages"><button type="button" className="button button-quiet button-sm" onClick={() => { const nextPage = Math.max(1, historyPage - 1); setHistoryPage(nextPage); void load({ from, to, status }, nextPage); }} disabled={historyPage <= 1 || loading}>Previous</button><span>Page {historyPage} of {data.pagination.totalPages}</span><button type="button" className="button button-quiet button-sm" onClick={() => { const nextPage = Math.min(data.pagination.totalPages, historyPage + 1); setHistoryPage(nextPage); void load({ from, to, status }, nextPage); }} disabled={historyPage >= data.pagination.totalPages || loading}>Next</button></div> : null}
     </> : null}
   </RecordModal>;
 }

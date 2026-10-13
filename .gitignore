@@ -13,3 +13,6 @@ dist
 Dockerfile.local
 .DS_Store
 *.tsbuildinfo
+.vinext/
+.cloudflare/
+.wrangler/

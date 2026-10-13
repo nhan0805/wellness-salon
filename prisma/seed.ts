@@ -749,7 +749,8 @@ async function main() {
     create: { email: stationEmail, passwordHash: await hashSecret(stationPassword), role: AuthRole.STATION },
   });
 
-  const shopConfig = await prisma.shopConfig.upsert({ where: { id: 1 }, update: {}, create: { id: 1, timezone: 'Asia/Ho_Chi_Minh', openingTime: '09:00', closingTime: '21:00', verifiedSessionTtlMin: 3, currency: 'USD', roundRobinEnabled: true } });
+  const shopTimezone = process.env.SHOP_TIMEZONE?.trim() || 'UTC';
+  const shopConfig = await prisma.shopConfig.upsert({ where: { id: 1 }, update: {}, create: { id: 1, timezone: shopTimezone, openingTime: '09:00', closingTime: '21:00', verifiedSessionTtlMin: 3, currency: 'USD', roundRobinEnabled: true } });
   const today = currentBusinessDate(shopConfig.timezone);
   const seedStartDate = parseBusinessDate(process.env.DEMO_START_DATE?.trim() || formatBusinessDate(today), 'DEMO_START_DATE');
   const seedEndDate = parseBusinessDate(process.env.DEMO_END_DATE?.trim() || formatBusinessDate(today), 'DEMO_END_DATE');

@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import PWAProvider from '@/src/components/PWAProvider';
+import EnglishFormValidation from '@/src/components/english-form-validation';
 
 export const metadata: Metadata = {
   title: 'Wellness Salon',
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body>
         <PWAProvider />
+        <EnglishFormValidation />
         {children}
       </body>
     </html>

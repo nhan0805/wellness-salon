@@ -6,8 +6,8 @@ import { getDbBoardState, staffActionDb } from '@/src/server/services/prisma-ope
 import { observeApiRequest } from '@/src/server/observability';
 import { logEvent } from '@/src/server/logger';
 import { makeAccountViewer } from '@/src/domain/viewer';
+import { getRuntimeValue, isProductionRuntime } from '@/src/server/runtime-config';
 
-export const runtime = 'nodejs';
 
 export async function GET(request: Request) {
   return observeApiRequest(request, 'GET /api/board', async () => {
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       const verifiedSessionId = request.headers.get('cookie')?.match(/(?:^|; )(?:__Host-)?verified-staff-session=([^;]+)/)?.[1];
       const result = await staffActionDb(parsed.data, stationUserId, verifiedSessionId);
       const response = NextResponse.json(result);
-      const secure = process.env.NODE_ENV === 'production' && process.env.AUTH_COOKIE_SECURE !== 'false';
+      const secure = isProductionRuntime() && (await getRuntimeValue('AUTH_COOKIE_SECURE', 'true')) !== 'false';
       if (result.verifiedStaffSessionId && result.verifiedStaffSessionExpiresAt) {
         const maxAge = Math.max(0, Math.ceil((result.verifiedStaffSessionExpiresAt.getTime() - Date.now()) / 1000));
         response.cookies.set(secure ? '__Host-verified-staff-session' : 'verified-staff-session', result.verifiedStaffSessionId, { httpOnly: true, secure, sameSite: 'strict', path: '/', maxAge });

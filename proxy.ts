@@ -1,10 +1,11 @@
-import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { randomId } from '@/src/server/web-crypto';
+import { getBuildTimeValue } from '@/src/server/runtime-config';
 
 export function proxy(request: NextRequest) {
   const suppliedRequestId = request.headers.get('x-request-id')?.trim();
-  const requestId = suppliedRequestId && /^[A-Za-z0-9._:-]{1,128}$/.test(suppliedRequestId) ? suppliedRequestId : randomUUID();
+  const requestId = suppliedRequestId && /^[A-Za-z0-9._:-]{1,128}$/.test(suppliedRequestId) ? suppliedRequestId : randomId();
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-request-id', requestId);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
@@ -25,7 +26,7 @@ export function proxy(request: NextRequest) {
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   response.headers.set('X-Request-ID', requestId);
-  if (process.env.NODE_ENV === 'production') response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  if (getBuildTimeValue('NODE_ENV') === 'production') response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   return response;
 }
 

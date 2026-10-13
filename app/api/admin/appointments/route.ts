@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/src/server/auth';
-import { currentDbBusinessDate, formatBusinessDate, formatBusinessMonth, getDbAppointmentFilterOptions, getDbAppointmentsFiltered, getDbAppointmentsPage, parseBusinessDate, parseBusinessMonth } from '@/src/server/services/prisma-operations';
+import { currentDbBusinessDate, formatBusinessDate, formatBusinessMonth, getDbAppointmentFilterOptions, getDbAppointmentsFiltered, getDbAppointmentsPage, getDbLiveAppointments, parseBusinessDate, parseBusinessMonth } from '@/src/server/services/prisma-operations';
 import { jsonError } from '@/src/server/request-security';
+import { observeApiRequest } from '@/src/server/observability';
 
-export const runtime = 'nodejs';
 
 export async function GET(request: Request) {
+  return observeApiRequest(request, 'GET /api/admin/appointments', () => handleGet(request));
+}
+
+async function handleGet(request: Request) {
   if ((await auth())?.user?.role !== 'ADMIN') return jsonError('Admin authorization required', 403);
   const searchParams = new URL(request.url).searchParams;
   const month = searchParams.get('month');
@@ -71,7 +75,19 @@ export async function GET(request: Request) {
       filterOptions,
     });
   }
-  const appointments = await getDbAppointmentsFiltered(filters);
+  const isLiveSnapshot =
+    period === 'day' &&
+    !filters.search &&
+    !filters.status &&
+    !filters.payment &&
+    !filters.paymentMethod &&
+    !filters.staffId &&
+    !filters.serviceId &&
+    !filters.serviceStatus &&
+    !filters.serviceCount;
+  const appointments = isLiveSnapshot
+    ? await getDbLiveAppointments(start)
+    : await getDbAppointmentsFiltered(filters);
   return NextResponse.json({
     ...(period === 'month' ? { businessMonth: formatBusinessMonth(start) } : {}),
     ...(period === 'day' ? { businessDate: formatBusinessDate(start) } : {}),

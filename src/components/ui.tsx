@@ -7,7 +7,7 @@ export function StatusBadge({ label, tone = 'neutral' }: { label: string; tone?:
 }
 
 export function InitialsAvatar({ initials, tone = 'blue' }: { initials: string; tone?: 'blue' | 'orange' | 'teal' | 'slate' }) {
-  return <span className={`avatar avatar-${tone}`}>{initials}</span>;
+  return <span className={`avatar avatar-${tone}`} aria-hidden="true">{initials}</span>;
 }
 
 export function SectionHeader({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description?: string; action?: ReactNode }) {

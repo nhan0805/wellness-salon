@@ -10,6 +10,8 @@ Last updated: 2026-10-12
 - Add scheduler retry/alerting guidance and a production deployment example once the deferred operations decision and secrets/domain are approved.
 - Add production TLS certificate/domain configuration after a human approval artifact.
 - Add DB-gated and browser coverage for service-category lifecycle, payment adjustment/correction/refund history, and appointment turn history.
+- Complete the D1 command port with explicit `batch()`/guard/receipt semantics, rollback/interruption tests, and a final exact money representation.
+- Broaden tests for the custom Worker account/session boundary, Worker cron authorization, realtime recovery, timezone/DST behavior, and deployed Free-tier capacity.
 - Reintroduce or attach repository Git metadata so branch, diff, and release history can be audited.
 
 ## Planned
@@ -18,6 +20,7 @@ Last updated: 2026-10-12
 - From a Docker-enabled host, verify Compose health, `/api/health`, the closing endpoint, and the trigger script without printing `.env`.
 - Run `RUN_DB_TESTS=true` with an isolated `TEST_DATABASE_URL` and capture any new coverage result.
 - Review production secret handling and ensure scheduler traffic uses a real secret manager.
+- Keep the local D1 workflow repeatable with `npm run db:generate:d1`, `wrangler.local.jsonc`, and the fresh migration; do not create remote resources until approval.
 
 ## In progress
 
@@ -26,6 +29,7 @@ Last updated: 2026-10-12
 ## Blocked
 
 - Production TLS/domain/secret/merchant/deploy work is intentionally blocked on human approval gates.
+- D1 production cutover is blocked on transaction/rollback, money, auth, full concurrency, and deployed Worker evidence; the local lease smoke is not a release approval.
 
 ## Completed
 - [x] Completed the approved BR-01 through BR-06 hardening scope: exact-service skip exclusions/override, attendance safety, idempotent same-day visits, cancellation, audited service changes, and atomic support release.
@@ -33,7 +37,9 @@ Last updated: 2026-10-12
 - [x] Added server-side appointment history pagination/projection and disposable benchmark, service-layer load, authenticated HTTP, and pool-constrained load scripts.
 - [x] Applied and seeded all 14 migrations on an isolated native PostgreSQL cluster; sequential DB tests passed (`postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5).
 - [x] Protected tablet E2E passed 7/7; returning-guest kiosk passed 2/2; browser resilience passed 3/3; Chromium portrait/landscape review passed with the physical-device limitation recorded.
-- [x] Fresh static gates passed: lint, typecheck, 34 default tests with 9 DB-gated skips, Prisma validate, and production build.
+- [x] Fresh static gates passed: lint, typecheck, 42 tests with 9 DB-gated skips, Prisma validate, Next production build, vinext compatibility scan, Worker build, and Cloudflare deploy dry-run.
+- [x] Added the separate D1 schema/migration and local Worker smoke: health/catalog/board/pages, check-in, idempotent replay, conflicting-key rejection, SSE initial snapshot, and three concurrent unique appointment codes. Local test fixtures were removed afterward.
+- [x] Vinext/Cloudflare Build Output passes with the D1 binding and explicit query-compiler WASM asset; production deployment remains intentionally not run.
 - [x] Restored the service-category taxonomy with ordered/archivable categories, migration backfill, Admin CRUD, category filtering, grouped kiosk presentation, and searchable service-icon selection.
 - [x] Added append-only `TurnEvent` history with actor/staff snapshots and an Admin appointment turn-history view.
 - [x] Added Admin payment history plus audited, idempotent adjustment/correction/refund commands; refunds record an external terminal action and do not process card data.

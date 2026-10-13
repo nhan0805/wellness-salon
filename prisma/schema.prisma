@@ -472,7 +472,7 @@ model CommandReceipt {
 
 model ShopConfig {
   id                    Int      @id @default(1)
-  timezone              String   @default("Asia/Ho_Chi_Minh")
+  timezone              String   @default("UTC")
   openingTime           String   @default("09:00") @map("opening_time")
   closingTime           String   @default("21:00") @map("closing_time")
   verifiedSessionTtlMin Int      @default(3) @map("verified_session_ttl_min")
@@ -493,4 +493,13 @@ model StaffPinLockout {
   staff        Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
 
   @@map("staff_pin_lockouts")
+}
+
+model AuthLoginLockout {
+  email        String    @id
+  failureCount Int       @default(0) @map("failure_count")
+  lockedUntil  DateTime? @map("locked_until")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@map("auth_login_lockouts")
 }
