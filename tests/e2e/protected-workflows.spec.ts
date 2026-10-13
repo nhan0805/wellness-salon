@@ -1,10 +1,41 @@
 import { expect, test } from '@playwright/test';
 import { confirmStaffAction, enterPin, openAdminSection, signIn } from './helpers';
 
-async function createKioskVisit(page: import('@playwright/test').Page, name: string, serviceName = 'Basic Manicure') {
+async function clearUnfinishedE2EVisits(page: import('@playwright/test').Page) {
+  const response = await page.request.get('/api/admin/appointments');
+  expect(response.ok()).toBeTruthy();
+  const payload = (await response.json()) as {
+    appointments: Array<{ id: string; code: string; status: string }>;
+  };
+  const cancellableStatuses = new Set(['CREATED', 'WAITING', 'ASSIGNED']);
+  for (const appointment of payload.appointments) {
+    if (!/^A\d{3}$/.test(appointment.code) || !cancellableStatuses.has(appointment.status))
+      continue;
+    const cancelResponse = await page.request.post('/api/admin/appointments/cancel', {
+      data: {
+        appointmentId: appointment.id,
+        scope: 'VISIT',
+        reason: 'Reset unfinished E2E fixture',
+        confirmed: true,
+        idempotencyKey: `e2e-reset-${appointment.id}`,
+      },
+    });
+    expect(cancelResponse.ok()).toBeTruthy();
+  }
+}
+
+async function createKioskVisit(
+  page: import('@playwright/test').Page,
+  name: string,
+  serviceName = 'Basic Manicure',
+) {
   const phone = `+1 415 888 ${String(Date.now()).slice(-7)}`;
   await page.goto('/kiosk');
-  const serviceHeading = page.locator('h3').filter({ hasText: new RegExp(`^${serviceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') });
+  const serviceHeading = page
+    .locator('h3')
+    .filter({
+      hasText: new RegExp(`^${serviceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+    });
   await page.locator('button.service-card').filter({ has: serviceHeading }).click();
   await page.getByRole('button', { name: /Continue/i }).click({ force: true });
   await page.getByLabel('Mobile number').fill(phone);
@@ -29,6 +60,7 @@ test('protected tablet workflow completes a turn and payment', async ({ page }) 
   }
   await expect(jenny).toContainText(/Available|Serving a guest/);
 
+  await clearUnfinishedE2EVisits(page);
   const code = await createKioskVisit(page, 'Protected Workflow Guest', 'Nail Art');
   const stationPage = await page.context().newPage();
   try {
@@ -74,9 +106,13 @@ test('management tablet cancels a selected service with an audit reason', async 
   await openAdminSection(page, 'Appointments');
   const row = page.locator('tbody tr').filter({ hasText: code });
   await expect(row).toBeVisible();
-  await row.getByRole('button', { name: `Open actions for appointment ${code}`, exact: true }).click();
+  await row
+    .getByRole('button', { name: `Open actions for appointment ${code}`, exact: true })
+    .click();
   await page.getByRole('menuitem', { name: 'Cancel appointment', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Cancel appointment', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Cancel appointment', exact: true }),
+  ).toBeVisible();
   await page.getByLabel('Reason').fill('Customer changed plans before service');
   await page.getByRole('button', { name: 'Cancel appointment', exact: true }).click();
   await expect(page.getByText(`${code} cancelled.`, { exact: true })).toBeVisible();
