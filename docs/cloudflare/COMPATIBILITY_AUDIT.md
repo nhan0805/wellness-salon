@@ -5,7 +5,7 @@
 
 ## Scope
 
-This audit covers the Cloudflare Workers Free + D1 migration requested for Wellness Salon. PostgreSQL/Prisma remains the behavioral reference and no real data is imported.
+This audit covers the Cloudflare Workers Free + D1 migration requested for Wellness Salon. Worker + D1 is the active behavioral target; PostgreSQL/Prisma is retained only for compatibility/rollback and no real data is imported.
 
 ## Findings
 
@@ -13,7 +13,8 @@ This audit covers the Cloudflare Workers Free + D1 migration requested for Welln
 | --- | --- | --- |
 | Vinext initialization | Pass | vinext@1.1.0 uses the Cloudflare platform path with CDN cache and image optimization disabled. |
 | Cloudflare build configuration | Pass | npx cf build emits .cloudflare/output/v0/workers/default, the Worker name nail-shop-management, nodejs_compat, assets, D1 DB, and the scheduled-handler wrapper. |
-| Direct local vinext runtime | Pass for smoke scope | Local port 3001 served public pages, health, catalog, board, SSE initial snapshot, check-in, authentication, and payment-confirmation paths. |
+| Direct local vinext runtime | Pass for smoke scope | Local Worker artifact served public pages, health, catalog, board, SSE initial snapshot, check-in, authentication, and payment-confirmation paths. |
+| Canonical Worker/D1 E2E gate | Pass for local scope | `npm run test:e2e:d1` applied both migrations/bootstrap and passed 25/26 cases; one desktop-project skip is intentional because the responsive queue case runs on the tablet project. |
 | cf dev runtime | Blocked for current plugin combination | The local Build Output/SSR child-environment combination still cannot initialize the SSR environment. This is a tooling limitation, not proof of remote success. |
 | Worker password/session boundary | Pass for local scope | PBKDF2-HMAC-SHA-256 via Web Crypto, custom HS256 session cookies, active-user/session-version checks, and DB login lockouts are present; local HTTP login/session smoke passes. The direct `next-auth` dependency was removed from the Worker dependency graph. |
 | D1 schema and migrations | Pass locally | Separate SQLite schema applied through 0001_init.sql and 0002_auth_login_lockouts.sql; no remote migration was run. |
@@ -26,7 +27,7 @@ This audit covers the Cloudflare Workers Free + D1 migration requested for Welln
 
 ## Compatibility decision
 
-The repository is at the local-readiness stage, not production-readiness stage. The Worker artifact and critical D1 branches are deployable in shape, but deployment remains gated by failure/concurrency evidence, scheduler authorization, capacity, and authenticated remote smoke.
+The repository is at the deployed-supervised-pilot stage, not full production-readiness stage. The Worker artifact and critical D1 branches are deployed to workers.dev, but production cutover remains gated by failure/concurrency evidence, scheduler authorization, capacity, and authenticated remote smoke.
 
 ## Official references
 

@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:d1": "npm run build:vinext && node scripts/run-d1-e2e.mjs",
     "db:generate": "prisma generate",
     "db:generate:d1": "prisma generate --schema prisma/d1/schema.prisma",
     "db:generate:all": "npm run db:generate && npm run db:generate:d1",
@@ -37,7 +38,7 @@
     "prebuild:vinext": "npm run db:generate:d1",
     "build:vinext": "CLOUDFLARE_VITE_FORCE_BUILD_OUTPUT=true vite build && node scripts/prepare-vinext-cloudflare-output.mjs",
     "start:vinext": "vite preview",
-    "deploy:vinext": "npm run build:vinext && cf deploy --prebuilt"
+    "deploy:vinext": "npm run build:vinext && wrangler deploy --config wrangler.production.jsonc --no-bundle"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

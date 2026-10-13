@@ -1,5 +1,14 @@
 # Implementation changelog
 
+## 2026-10-13 — Canonical Worker/D1 handoff gate
+
+- Made Cloudflare Worker + D1 the active runtime and database-backed test target; PostgreSQL/Docker is retained for compatibility/rollback only.
+- Added `playwright.d1.config.ts` and `scripts/run-d1-e2e.mjs` to build the Worker, apply two D1 migrations, apply the 101-statement disposable bootstrap, and run the Worker/D1 Playwright gate.
+- Removed PostgreSQL-only integration suites and PostgreSQL setup from active CI. The current static suite passes 51/51 with no skips; the D1 gate passes 25/26 with one intentional desktop-project skip.
+- Added the tablet queue responsive regression and updated handoff, architecture, migration, release, test-matrix, and Cloudflare readiness documents.
+- Deployed Worker version `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` to `https://wellness.n8l.workers.dev` with the configured `*/15 * * * *` trigger; read-only health/catalog/page smoke passed.
+- Preserved the existing remote D1 schema/data and Wrangler secrets; no D1 reset, custom domain, or production-data import was performed. Full remote auth/mutation/scheduler/capacity verification remains open.
+
 ## 2026-10-12 Cloudflare Free migration audit
 
 - Added the official vinext/Cloudflare build path, Cloudflare Worker configuration, and a named D1 binding scaffold without creating a remote resource.

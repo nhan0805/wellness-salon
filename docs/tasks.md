@@ -1,6 +1,6 @@
 # Tasks
 
-Last updated: 2026-10-12
+Last updated: 2026-10-13
 
 ## Backlog
 
@@ -9,8 +9,8 @@ Last updated: 2026-10-12
 - Fill the remaining scenario gaps: repeated staff actions, in-service/payment-pending cancellation boundaries, session revalidation, stale board versions, and broader closing/retention coverage.
 - Add scheduler retry/alerting guidance and a production deployment example once the deferred operations decision and secrets/domain are approved.
 - Add production TLS certificate/domain configuration after a human approval artifact.
-- Add DB-gated and browser coverage for service-category lifecycle, payment adjustment/correction/refund history, and appointment turn history.
-- Complete the D1 command port with explicit `batch()`/guard/receipt semantics, rollback/interruption tests, and a final exact money representation.
+- Add remaining Worker/D1 coverage for service-category lifecycle, payment adjustment/correction/refund history, and appointment turn history.
+- Complete D1 rollback/interruption tests and settle the final exact money representation; the critical command branches already use explicit `batch()`/guard/receipt semantics.
 - Broaden tests for the custom Worker account/session boundary, Worker cron authorization, realtime recovery, timezone/DST behavior, and deployed Free-tier capacity.
 - Reintroduce or attach repository Git metadata so branch, diff, and release history can be audited.
 
@@ -18,9 +18,9 @@ Last updated: 2026-10-12
 
 - Run the physical tablet and real-network run sheet from `docs/implementation/TABLET_QA_PLAN.md`.
 - From a Docker-enabled host, verify Compose health, `/api/health`, the closing endpoint, and the trigger script without printing `.env`.
-- Run `RUN_DB_TESTS=true` with an isolated `TEST_DATABASE_URL` and capture any new coverage result.
+- Run `npm run test:e2e:d1` in CI/locally as the canonical database-backed gate; do not reintroduce PostgreSQL-only test setup into the active pipeline.
 - Review production secret handling and ensure scheduler traffic uses a real secret manager.
-- Keep the local D1 workflow repeatable with `npm run db:generate:d1`, `wrangler.local.jsonc`, and the fresh migration; do not create remote resources until approval.
+- Keep the local D1 workflow repeatable with `npm run test:e2e:d1`, `wrangler.local.jsonc`, the fresh migrations, and disposable bootstrap; do not create or reset additional remote resources without approval.
 
 ## In progress
 
@@ -28,18 +28,20 @@ Last updated: 2026-10-12
 
 ## Blocked
 
-- Production TLS/domain/secret/merchant/deploy work is intentionally blocked on human approval gates.
-- D1 production cutover is blocked on transaction/rollback, money, auth, full concurrency, and deployed Worker evidence; the local lease smoke is not a release approval.
+- Production TLS/domain/merchant, traffic-cutover, and rollback work remains blocked on human approval gates; the initial workers.dev deployment is already recorded.
+- D1 production cutover remains blocked on transaction/rollback, money, auth, full concurrency, and deployed Worker evidence; the local lease smoke and scoped workers.dev smoke are not release approval.
 
 ## Completed
 - [x] Completed the approved BR-01 through BR-06 hardening scope: exact-service skip exclusions/override, attendance safety, idempotent same-day visits, cancellation, audited service changes, and atomic support release.
 - [x] Added session-version revalidation, database-backed PIN lockout, verified-session revocation, request-hash conflict detection, board version/reconnect/polling recovery, explicit queue repair, and critical-path telemetry.
 - [x] Added server-side appointment history pagination/projection and disposable benchmark, service-layer load, authenticated HTTP, and pool-constrained load scripts.
-- [x] Applied and seeded all 14 migrations on an isolated native PostgreSQL cluster; sequential DB tests passed (`postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5).
+- [x] Historical legacy PostgreSQL migration/DB checks were recorded separately; they are not the active handoff gate.
+- [x] Canonical Worker/D1 E2E gate passed: local migrations + 101-statement bootstrap, 25 passed and 1 intentional project skip across 26 Playwright cases.
+- [x] Static test gate passed: `npm test -- --run` returned 51/51 tests with no database skips.
 - [x] Protected tablet E2E passed 7/7; returning-guest kiosk passed 2/2; browser resilience passed 3/3; Chromium portrait/landscape review passed with the physical-device limitation recorded.
-- [x] Fresh static gates passed: lint, typecheck, 42 tests with 9 DB-gated skips, Prisma validate, Next production build, vinext compatibility scan, Worker build, and Cloudflare deploy dry-run.
-- [x] Added the separate D1 schema/migration and local Worker smoke: health/catalog/board/pages, check-in, idempotent replay, conflicting-key rejection, SSE initial snapshot, and three concurrent unique appointment codes. Local test fixtures were removed afterward.
-- [x] Vinext/Cloudflare Build Output passes with the D1 binding and explicit query-compiler WASM asset; production deployment remains intentionally not run.
+- [x] Fresh static gates passed: lint, typecheck, 51 tests with no skips, Prisma validate, Next production build, vinext compatibility scan, Worker build, and Cloudflare deploy dry-run.
+- [x] Added the separate D1 schema/migration and repeatable local Worker/D1 E2E gate: health/catalog/board/pages, authentication, kiosk check-in, idempotent replay, staff/admin workflows, payment flows, resilience, and the iPad queue layout regression. Local test state is disposable.
+- [x] Vinext/Cloudflare Build Output passes with the D1 binding and explicit query-compiler WASM asset; the first workers.dev deployment and scoped read-only smoke are recorded in the Cloudflare reports.
 - [x] Restored the service-category taxonomy with ordered/archivable categories, migration backfill, Admin CRUD, category filtering, grouped kiosk presentation, and searchable service-icon selection.
 - [x] Added append-only `TurnEvent` history with actor/staff snapshots and an Admin appointment turn-history view.
 - [x] Added Admin payment history plus audited, idempotent adjustment/correction/refund commands; refunds record an external terminal action and do not process card data.
@@ -69,11 +71,11 @@ Last updated: 2026-10-12
 - [x] PostgreSQL schema, migrations, seed catalog/users/staff, advisory-lock concurrency path.
 - [x] Argon2id authentication/PINs, role guards, short-lived verified staff sessions, audit events, command receipts.
 - [x] Docker standalone build, Compose Postgres/migrate/app services, optional nginx, health endpoint, and CI workflow.
-- [x] Unit/integration test suite and documented lifecycle QA/E2E reports.
+- [x] Unit/contract test suite and documented Worker/D1 lifecycle QA/E2E reports.
 - [x] Closing-job endpoint, local trigger script, and runbook; script now fails on HTTP/timeout errors instead of reporting transport-only success.
 - [x] Admin Attendance, Customers, Staff, and Services read/write modules with PostgreSQL persistence, validation, authorization, audit events, and responsive forms.
 - [x] Admin management regression tests for validation, customer lifecycle, attendance, staff deactivation, and service archive/reactivation.
-- [x] Playwright desktop/tablet suite updated to authenticate against configured PostgreSQL accounts, including Admin customer Add/Edit/Delete.
+- [x] Playwright Worker/D1 desktop/tablet suite authenticates against disposable D1 bootstrap accounts, including Admin customer Add/Edit/Delete.
 - [x] Staff edit modal New PIN input aligned with the other form fields; keep-current-PIN guidance is shown as its placeholder.
 - [x] Removed manual staff initials entry and moved initials derivation into the server/domain layer.
 - [x] Added PostgreSQL-backed Skills and Accounts admin screens with CRUD/lifecycle APIs, validation, audit events, confirmed-delete flow, payment preservation, and safe-delete/last-admin safeguards.

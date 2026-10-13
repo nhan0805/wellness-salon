@@ -1,6 +1,6 @@
 # Architecture decisions
 
-Last updated: 2026-10-12
+Last updated: 2026-10-13
 
 Historical decisions are retained here. The original lifecycle ADR remains in `docs/lifecycle/ADR-001-advisory-lock.md`.
 The implementation-specific BR-01 through BR-06 rules and hardening choices are detailed in [`docs/implementation/DECISIONS.md`](implementation/DECISIONS.md).
@@ -21,7 +21,7 @@ The implementation-specific BR-01 through BR-06 rules and hardening choices are 
 
 - ID: ADR-002
 - Date: 2026-10-08
-- Status: Accepted for V1
+- Status: Superseded by ADR-026 for the current runtime/test target; retained as historical V1 context
 - Context: Operational screens, authentication and reports must behave consistently with the deployed system.
 - Decision: Require `DATABASE_URL` for every application runtime. Prisma/PostgreSQL is the only persistence path; tests that need durable behavior use an isolated PostgreSQL database.
 - Alternatives considered: Keep a process-local adapter; mock individual APIs in browser tests; use SQLite.
@@ -295,10 +295,22 @@ The implementation-specific BR-01 through BR-06 rules and hardening choices are 
 
 - ID: ADR-025
 - Date: 2026-10-12
-- Status: Accepted for migration audit; not a production cutover decision
+- Status: Accepted for migration safety; superseded for the current runtime/test target by ADR-026
 - Context: The requested Cloudflare Free target uses Workers and D1, while the existing PostgreSQL/Prisma runtime encodes transaction-scoped advisory locks and rollback behavior that D1/Prisma does not provide.
 - Decision: Preserve PostgreSQL schema/migrations as the behavioral reference and add a separate SQLite/D1 schema, migration directory, generated client, and Worker adapter path. Use a disposable local D1 state for smoke testing only. Do not create remote resources or route production traffic until critical commands are rewritten and their atomicity, idempotency, money representation, auth, and concurrency behavior are proven.
 - Alternatives considered: Change the existing Prisma provider in place; replay PostgreSQL migrations against D1; deploy the current lease bridge as if it were a transaction.
 - Reason: An additive boundary protects the known BR-01–BR-06 behavior and keeps rollback to the PostgreSQL reference available while D1-specific semantics are tested honestly.
 - Tradeoffs: Two schemas and runtime paths must be kept synchronized during the migration; the current D1 bridge can serialize a smoke flow but cannot roll back partial writes.
 - Consequences: Local D1 commands use `wrangler.local.jsonc` and `prisma/d1/migrations/0001_init.sql`. Remote Cloudflare authentication, D1 creation, secret upload, and deployment remain explicit owner gates.
+
+## ADR-026 — Worker + D1 is the canonical runtime and test target for handoff
+
+- ID: ADR-026
+- Date: 2026-10-13
+- Status: Accepted for the current handoff; production cutover remains blocked
+- Context: The deployment target is Cloudflare Workers + D1. PostgreSQL-only integration tests validate a runtime the deployed Worker no longer uses and therefore cannot be the active release gate.
+- Decision: Treat the Worker `DB` binding, `prisma/d1` schema/migrations, and `npm run test:e2e:d1` as the canonical runtime/test path. Remove PostgreSQL-only suites and PostgreSQL database setup from the active CI gate. Keep the Next/PostgreSQL adapter, Docker Compose, and historical PostgreSQL evidence only for compatibility, rollback, and diagnostics.
+- Alternatives considered: Keep running PostgreSQL tests as the main gate; maintain two equal release gates; delete the PostgreSQL fallback immediately.
+- Reason: Tests must exercise the same persistence/runtime boundary that will be handed over, while preserving a recoverable legacy path until D1 production evidence is complete.
+- Tradeoffs: D1-specific failure-injection, remote Worker, capacity, money, and physical-device evidence remain explicit open gates; the legacy path no longer receives active test-suite maintenance.
+- Consequences: CI runs static tests plus the disposable local Worker/D1 E2E gate; no `RUN_DB_TESTS`, `TEST_DATABASE_URL`, or PostgreSQL service is required for the active pipeline.

@@ -1,20 +1,30 @@
 # Chạy local
 
-## PostgreSQL bắt buộc
+## Worker + D1 (đường chạy chính)
+
+Worker + D1 là runtime và cổng kiểm chứng chính của dự án. Lệnh dưới đây tự build Worker artifact, tạo state D1 local dùng một lần, apply hai migrations, bootstrap 101 câu lệnh dữ liệu chuẩn và chạy toàn bộ Playwright E2E trên Worker:
+
+```bash
+npm run test:e2e:d1
+```
+
+Credential dùng cho test là disposable và lấy từ các biến `D1_TEST_*` nếu cần override. Không dùng database ứng dụng thật cho lệnh này. `npm run dev:vinext`/`cf dev` là đường chẩn đoán; hiện `cf dev` còn bị giới hạn bởi SSR child environment.
+
+## PostgreSQL/Docker legacy (chỉ compatibility/rollback)
 
 ```bash
 cp .env.example .env
-# Điền secret, credential seed và DATABASE_URL trong .env.
+# Điền secret, credential seed và DATABASE_URL trong .env khi cần kiểm tra đường legacy.
 # Nếu chạy trực tiếp qua HTTP localhost, đổi NEXTAUTH_URL=http://localhost:3000
 # và AUTH_COOKIE_SECURE=false; production HTTPS phải giữ AUTH_COOKIE_SECURE=true.
 docker compose --env-file .env -f docker/docker-compose.yml up -d --build
 curl -fsS http://localhost:3000/api/health
 ```
 
-Compose khởi động PostgreSQL, chạy migration + seed, rồi mới mở app ở port 3000. Healthcheck là `/api/health`; dashboard, kiosk catalog và board đều lấy dữ liệu từ database.
+Compose khởi động PostgreSQL, chạy migration + seed, rồi mới mở app ở port 3000. Đây không phải runtime/test gate hiện tại; healthcheck là `/api/health` để kiểm tra compatibility/rollback.
 Trong Compose, app được bind riêng vào `127.0.0.1:3000`; PostgreSQL chỉ bind host port `127.0.0.1:5433` (kết nối nội bộ giữa container vẫn dùng `postgres:5432`). Nếu cần đổi host port PostgreSQL, dùng biến `POSTGRES_HOST_PORT`, không đổi `DATABASE_URL` nội bộ.
 
-Nếu chạy Next.js ngoài Docker, dùng PostgreSQL có sẵn và chạy:
+Nếu cần chạy Next.js legacy ngoài Docker với PostgreSQL có sẵn, dùng:
 
 ```bash
 npm install

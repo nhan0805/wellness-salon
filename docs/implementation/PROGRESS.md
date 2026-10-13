@@ -4,20 +4,20 @@ This tracker records the implementation authorized by the product/engineering br
 
 ## 2026-10-12 Cloudflare Free migration
 
-Status: **Blocked before deployment**.
+Status: **Worker deployed to workers.dev; production sign-off still open**.
 
-- Added official vinext/Cloudflare Worker build configuration and a D1 binding scaffold; no remote resources were created.
+- Added official vinext/Cloudflare Worker build configuration and a D1 binding scaffold; the existing remote D1/Worker resources are now used by the deployed workers.dev release.
 - `npm run build:vinext` and `npx cf build` complete; direct vinext page smoke returns 200 for `/`, `/kiosk`, and `/board`.
 - Worker-visible Argon2id now uses `hash-wasm`; native PHC compatibility was verified.
 - Runtime/bootstrap timezone defaults now use an explicit UTC sentinel. The owner must provide the final IANA timezone before scheduled jobs run.
 - Added a separate D1 schema/migration and client-generation workflow. The local Worker runtime now executes health, catalog, board, public pages, kiosk check-in, idempotent replay, and concurrent code-allocation smoke against disposable local D1 state.
-- The D1 bridge uses an application lease to serialize the existing command callbacks, but it does not provide rollback. Explicit D1 batch/guard/receipt command rewrites, money representation, auth portability, realtime/cron tests, and capacity evidence remain open.
-- Required reports are in `docs/cloudflare/`. Do not authenticate to Cloudflare, create D1, upload secrets, or deploy until the final report's blockers are closed and the owner explicitly approves.
+- The D1 bridge uses an application lease for compatibility reads/fallbacks; critical Worker mutations now use explicit D1 batch/guard/receipt branches. Fault-injection/rollback, money representation, full concurrency, and remote capacity evidence remain open.
+- Required reports are in `docs/cloudflare/`. The first workers.dev deployment is complete; do not treat it as final production approval. Remaining remote mutation/scheduler/capacity/rollback checks and the owner approval gate are still required.
 
 ## Safety baseline
 
 - Repository has no `.git` directory, so a recoverable pre-change source snapshot was created at `/private/tmp/wellness-salon-pre-implementation-20261010.tar.gz`; the current pushed snapshot uses attached metadata at `/private/tmp/wellness-salon-git`.
-- No production database, deployment, or infrastructure was modified.
+- No production database reset, custom domain, or Docker infrastructure change was made. The Worker deployment is recorded in `docs/cloudflare/DEPLOYMENT_GUIDE.md`.
 - The implementation is being kept additive where practical; destructive data operations require an explicit migration or a documented operator action.
 
 ## Phase status
@@ -38,11 +38,15 @@ The current tree adds category-aware service catalog management, searchable serv
 
 ## 2026-10-12 PWA follow-up
 
-Standalone PWA mode was restored for iPad testing: the manifest now uses `display: standalone`, the root layout emits Apple web-app metadata, and the manifest URL is versioned at `?v=10`. The login form remains visible inside the installed app without an extra PWA instruction banner. Credentials remain environment-only and are not prefilled in the client. Local lint/typecheck/build and 34 default tests (9 DB-gated skips without test DB variables) pass; Docker app/PostgreSQL health and the live manifest were verified. Physical iPad/WebKit behavior and secure-context service-worker checks remain open.
+Standalone PWA mode was restored for iPad testing: the manifest now uses `display: standalone`, the root layout emits Apple web-app metadata, and the manifest URL is versioned at `?v=10`. The login form remains visible inside the installed app without an extra PWA instruction banner. Credentials remain environment-only and are not prefilled in the client. Physical iPad/WebKit behavior and secure-context service-worker checks remain open.
 
 ## 2026-10-12 payment confirmation follow-up
 
 Payment confirmation now uses one shared, focus-to-expand amount keypad for the final amount, card-terminal tip, cash tip, and cash received fields. The initial confirm contract no longer carries `adjustmentReason`, and the confirm audit/history projection no longer stores or displays it; amount changes remain traceable through original/current amounts. Reason requirements remain on post-confirmation adjustment, correction, and refund commands. No migration is required. Keypad interaction on physical iPad/WebKit remains part of the manual QA gate.
+
+## 2026-10-13 canonical Worker/D1 gate
+
+The active persistence/test target is Cloudflare Worker + D1. `npm test -- --run` passes 51/51 with no database skips. `npm run test:e2e:d1` builds the Worker artifact, applies the two D1 migrations, generates/applies the 101-statement disposable bootstrap, and passes 25/26 Playwright cases with one intentional desktop-project skip because the responsive queue test runs and passes in the tablet project. The gate covers Worker auth, kiosk check-in/idempotency, board/staff actions, admin/customer/payment workflows, resilience, and the iPad queue layout at 810×1080 and 1080×810. PostgreSQL checks remain historical compatibility/rollback evidence only.
 
 ## Baseline commands and outcomes
 
@@ -61,7 +65,7 @@ These checks were run before implementation changes:
 | DB-backed integration tests | NOT RUN; no disposable test database was provisioned |
 | Mutating Playwright workflows | NOT RUN during the audit baseline |
 
-## Final verification after implementation
+## Historical verification before the canonical D1 gate
 
 | Command / check | Outcome |
 |---|---|
@@ -69,7 +73,7 @@ These checks were run before implementation changes:
 | `npm run typecheck` | PASS |
 | `npm run lint` | PASS |
 | `npm test -- --run` | PASS: 13 files, 37 tests; 3 DB-gated files / 9 tests skipped without DB env |
-| `npm run test:coverage` | PASS: current rerun 24.88% statements/lines, 68.75% branches, 11.39% functions |
+| `npm run test:coverage` | PASS: current tree 14.21% statements/lines, 69.29% branches, 22.95% functions; broad report, not a release threshold |
 | `npx prisma validate` | PASS; Prisma 7 package.json configuration deprecation warning |
 | `npm run build` | PASS; Next.js 16.4.0 Turbopack; all current app/API routes compiled |
 | Local D1 migration / Worker smoke | PASS with scope; full atomicity remains blocked |
@@ -92,4 +96,4 @@ These checks were run before implementation changes:
 
 ## Update protocol
 
-The remaining limitations above are deliberate release gates, not silent assumptions. Do not treat the implementation as production-ready until physical iPad/WebKit/live Wi-Fi review and staging/deployed connection-pool/network SLO measurement are complete. Kiosk full-name behavior is approved and tested. Job scheduling/alerting is explicitly deferred by product decision. Representative reads, authenticated local HTTP, the pool-constrained local profile, critical-path telemetry, the disposable concurrent profile, and browser network emulation are complete but do not establish a production SLO.
+The remaining limitations above are deliberate release gates, not silent assumptions. Do not treat the implementation as fully production-ready until physical iPad/WebKit/live Wi-Fi review, remote auth/mutation/scheduler verification, and staging/deployed connection-pool/network SLO measurement are complete. Kiosk full-name behavior is approved and tested. Job scheduling/alerting is explicitly deferred by product decision. Representative reads, authenticated local HTTP, the pool-constrained local profile, critical-path telemetry, the disposable concurrent profile, and browser network emulation are complete but do not establish a production SLO.

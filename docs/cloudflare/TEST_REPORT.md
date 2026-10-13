@@ -1,7 +1,7 @@
 # Cloudflare Migration Test Report
 
 **Date:** 2026-10-13  
-**Overall status:** Local Worker/D1 build, scheduler authorization, realtime recovery, and capacity model verified; remote account authentication and workers.dev smoke remain the only deployment gates.
+**Overall status:** Local Worker/D1 build and the canonical D1 E2E gate are verified. Worker version `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` is deployed to workers.dev, and non-destructive remote health/catalog/page smoke passed; remote auth/mutation/scheduler evidence, failure-injection, capacity, and final production approval remain open.
 
 ## Checks
 
@@ -9,7 +9,8 @@
 | --- | --- | --- |
 | npm run lint | PASS | Completed with no lint errors after the Worker wrapper and bootstrap script changes. |
 | npm run typecheck | PASS | Completed after generating both PostgreSQL and D1 Prisma clients. |
-| npm test -- --run | PASS | 17 test files passed; 51 tests passed and 9 DB-gated tests were intentionally skipped. Skipped tests are not counted as passes. |
+| npm test -- --run | PASS | 17 test files passed; 51/51 tests passed with no database skips. |
+| npm run test:e2e:d1 | PASS | Worker artifact + disposable local D1 migrations/bootstrap; 25 passed and 1 intentional project-specific skip across 26 Playwright cases, one worker. |
 | Prisma schema validation | PASS | PostgreSQL and D1 clients generate successfully; Prisma emits its existing package.json configuration deprecation warning. |
 | npm run build | PASS | Final Next.js production build completed successfully; the Prisma query-compiler WASM bundling emitted a non-fatal broad-pattern warning. |
 | npm run build:vinext | PASS | Cloudflare Build Output completed with the D1 query-compiler WASM asset; the local plugin emitted a non-fatal Docker socket warning. |
@@ -26,21 +27,21 @@
 | D1 admin read smoke | PASS for smoke scope | Config, catalog, staff, accounts, customers, appointments, appointment search, customer search, reports, board, and services returned HTTP 200 after the D1 search compatibility fix. |
 | D1 job mutation smoke | PASS for smoke scope | Retention returned a successful cleanup result; closing correctly returned `SHIFT_CLOSING_BLOCKED` with blockers, then closed four present staff after local smoke visits were resolved. |
 | cf dev data/page smoke | BLOCKED | Current Cloudflare plugin Build Output mode cannot initialize the SSR child environment required by vinext. |
-| Docker Compose health | PASS | Rebuilt the local production image with the explicit `.env` file; `app` and PostgreSQL are healthy and `/api/health` returned `status: ok`. No `.env` contents were printed and no volumes were reset. |
-| D1 full integration tests | BLOCKED | The command branches and local HTTP smoke are broader now, but full D1 batch/rollback/interruption evidence, concurrency coverage, and remote Worker validation remain incomplete. |
+| Docker Compose health | PASS (legacy compatibility) | Rebuilt the local production image with the explicit `.env` file; `app` and PostgreSQL were healthy and `/api/health` returned `status: ok`. This is not the active D1 release gate. No `.env` contents were printed and no volumes were reset. |
+| D1 full integration tests | PASS (local E2E scope) | The Worker/D1 Playwright gate covers auth, kiosk, board, staff/admin workflows, payment paths, resilience, and responsive queue behavior. Fault-injection/rollback, broader concurrency, and remote Worker validation remain incomplete. |
 | Owner timezone decision | PASS | Owner confirmed `Asia/Ho_Chi_Minh`; the repository `.env` matches and `.env.example` now uses the same IANA value. |
 | Confirmed timezone seasonal-offset unit test | PASS | `Asia/Ho_Chi_Minh` evaluates as UTC+7 on representative January and July instants; this does not replace simulated Cloudflare cron authorization tests. |
 | Scheduler mapping/authorization | PASS (local) | Unit tests cover IANA validation, DST refusal for static mappings, the dynamic D1 timezone/closing-time decision, unknown cron rejection, disabled gate, and protected secret forwarding. One `*/15 * * * *` trigger is configured. |
-| Realtime browser recovery | PASS (local reference runtime) | Existing Playwright resilience coverage exercises SSE reconnect, board retry, and idempotent check-in; the Cloudflare remote stream still needs the first workers.dev smoke. |
+| Realtime browser recovery | PASS (local reference runtime) | Existing Playwright resilience coverage exercises SSE reconnect, board retry, and idempotent check-in; the deployed remote SSE/recovery path still needs an approved remote smoke. |
 | Free-tier capacity model | PASS (planning gate) | Scenarios for 50/100/200 customers/day remain below current Workers/D1 Free limits with the 15-second polling budget; remote metrics and 10 ms CPU accounting remain unmeasured. |
 | npx cf deploy --dry-run | PASS | Build Output and binding inventory validated; dry-run exited before any upload. |
 | npm audit --omit=dev --omit=optional | PASS (last successful run) | The Docker production-prune scope previously reported 0 vulnerabilities and the image contains 90 packages after pruning. A repeat on 2026-10-13 could not reach `registry.npmjs.org` (`ENOTFOUND`); no dependency files changed after the successful audit. |
-| Remote deploy / production smoke | BLOCKED | Wrangler auth has expired and the Cloudflare auth server was unreachable from this environment; no remote D1 or Worker was changed. |
+| Remote deploy / production smoke | PASS with scope limit | Worker `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` deployed at `https://wellness.n8l.workers.dev`; read-only `/api/health`, `/api/services`, `/board`, and `/kiosk` smoke passed. Full remote auth/mutation/scheduler/capacity evidence was not run. |
 
 ## Interpretation
 
-The successful builds, local D1 smoke, scheduler tests, realtime browser tests, and capacity model prove that the artifact is prepared for the remote deployment sequence. They do not replace remote D1/Worker behavior, Cloudflare CPU accounting, or the final production smoke.
+The successful builds, canonical local D1 E2E gate, local scheduler/realtime tests, capacity model, and scoped remote smoke prove that the deployed artifact is reachable and that the public read paths respond. They do not replace D1 fault-injection/rollback evidence, remote auth/mutation behavior, deployed SSE recovery, Cloudflare CPU accounting, scheduler-event verification, or the final production approval. PostgreSQL/Docker evidence is compatibility-only.
 
 ## Required next test run
 
-Next: authenticate Wrangler securely, confirm the target account remains on Workers Free, create the fresh production D1, apply migrations/bootstrap, set `AUTH_SECRET` and `CRON_SECRET` through Wrangler secrets, deploy the workers.dev Worker, and run the non-destructive remote smoke in `DEPLOYMENT_GUIDE.md`. Changing timezone or closing time in Admin later uses the D1 value directly; no code change is required.
+Next: complete the D1 failure-injection/concurrency and money-review gates, run the remaining approved remote auth/mutation/SSE/scheduler checks against the deployed Worker, measure deployed capacity, and obtain final production approval. The existing D1 schema/data and Wrangler secrets were preserved during this deployment; do not recreate or reset them. Changing timezone or closing time in Admin later uses the D1 value directly; no code change is required.

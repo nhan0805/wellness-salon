@@ -1,23 +1,24 @@
 # Handoff
 
-Last updated: 2026-10-12
+Last updated: 2026-10-13
 
 ## Project summary
 
-Nail Shop Management is a Next.js 16 tablet-first operations app for one nail shop. It supports a guest kiosk, staff turn board, admin queue/payment/reports, and PostgreSQL-backed durability.
+Nail Shop Management is a tablet-first operations app for one nail shop. It supports a guest kiosk, staff turn board, admin queue/payment/reports, and Cloudflare Worker + D1 durability. The Next/PostgreSQL path remains available only for legacy compatibility and rollback.
 
 ## Current status
 
 - V1 implementation, the authorized 2026-10-10 reliability-hardening batch, and the 2026-10-11 catalog/payment traceability follow-up are present and build successfully.
-- Fresh static gates pass: `npm run lint`, `npm run typecheck`, `npm test -- --run` (34 passed, 9 DB-gated skipped without a disposable DB), `npx prisma validate`, and `npm run build`.
-- The current coverage rerun reports 24.88% statements/lines, 68.75% branches, and 11.39% functions; this is a broad V8 report that includes untested UI/server modules and is not a release threshold.
-- Disposable PostgreSQL verification is recorded separately: all 14 migrations plus seed passed; `postgres` passed 3/3, `admin-access` 1/1, and `critical-workflows` 5/5 when run sequentially against `127.0.0.1:55432/nailshop_test`.
-- Browser verification is recorded separately: protected tablet workflows 7/7, returning-guest kiosk 2/2, and resilience 3/3. Chromium viewport review at 810×1080 and 1080×810 found no horizontal overflow and primary controls at least 44px.
+- Fresh static gates pass: `npm run lint`, `npm run typecheck`, `npm test -- --run` (51/51 with no database skips), `npx prisma validate`, and `npm run build`.
+- The canonical D1 gate is `npm run test:e2e:d1`: it builds the Worker artifact, applies two migrations and the 101-statement disposable bootstrap, then runs 26 Worker/D1 Playwright cases with 25 passed and one intentional project-specific skip.
+- Historical PostgreSQL verification is retained as rollback/compatibility evidence only; it is not used by the active CI or E2E gate.
+- Browser/responsive verification includes the D1 Worker flows and the queue regression at 810×1080 and 1080×810: no horizontal overflow, no service-name collapse, and primary controls at least 44px.
 - Representative disposable measurements passed: 20,000-appointment read benchmark, 30/30 production-build board HTTP smoke, 120-operation concurrent service-layer profile, 70-operation authenticated HTTP profile, and 350-operation pool-constrained profile; none establishes a production SLO.
 - The iPad-first redesign is complete across Admin, Turn board, and kiosk: touch targets, responsive layouts, safe-area/reduced-motion rules, live refresh feedback, skip-reason controls, and Lucide icon consistency were verified in the in-app browser.
 - The board no longer exposes a separate `START` action. Accept moves the assigned service directly into service through `ACCEPTED`; the legacy `STARTED` appointments/state are removed by migration.
 - Kiosk check-in and payment confirmation now use durable idempotency receipts, customer phones have a normalized unique identity column, and staff ownership/deactivation guards protect active turns.
 - The service catalog is currently category-aware: categories are ordered/archivable, services require one category and can choose a searchable Lucide icon, Admin filters the catalog, and the kiosk groups services by category. This supersedes the earlier category-free interim decision.
+- Worker deployment record: `https://wellness.n8l.workers.dev`, version `ca6490a9-345d-4a25-b69a-be93ecd6a8ce`, deployed 2026-10-13 with the `*/15 * * * *` trigger. Read-only `/api/health`, `/api/services`, `/board`, and `/kiosk` smoke passed; full remote auth/mutation/SSE/scheduler verification and production approval remain open. Existing remote D1 data and secrets were preserved.
 - Admin can inspect appointment turn history and payment history; payment amount/method/tip adjustments, bookkeeping corrections, and full/partial refund records are admin-only, retry-safe, and audit-backed. They document external terminal actions; they do not process card data.
 - The baseline read-only audit remains at `docs/audits/2026-10-10-nail-salon-mvp-audit.md`; the implementation follow-up and evidence live under `docs/implementation/`.
 - Admin Appointments date filters now apply immediately without an `Apply date` button. Parent dashboard polling no longer replaces a manually loaded Day, Month, or valid Range scope with today's rows; stale date requests are ignored.
@@ -28,8 +29,8 @@ Nail Shop Management is a Next.js 16 tablet-first operations app for one nail sh
 - Service visibility and Shop configuration fair-turn routing now use balanced `Yes`/`No` segmented controls with `aria-pressed`; the existing `isActive` and `roundRobinEnabled` API values are unchanged.
 - Shared modal typography and spacing are now normalized for iPad: 24px title, 15–16px context/labels and controls, 14px helper copy, 15px actions, and a clear gap between payment method buttons and Tip.
 - All Admin and Turn board modal families were audited together so payment, access, appointment-action, management/history, and staff-verification dialogs use the same readable hierarchy.
-- Playwright is configured for database-backed desktop/tablet tests with station/admin sign-in and Admin customer Add/Edit/Delete; it needs a seeded PostgreSQL environment and an allowed local listener.
-- Docker was rebuilt and checked on 2026-10-12 with the root `.env` file using `docker compose --env-file .env -f docker/docker-compose.yml up -d --build`; PostgreSQL and the app were healthy, the migration service completed, and `/api/health` returned `status: ok`.
+- Playwright's canonical database-backed config is `playwright.d1.config.ts`; it uses disposable local D1 state with station/admin sign-in and Admin customer Add/Edit/Delete. The legacy PostgreSQL config remains only for compatibility diagnostics.
+- Docker/PostgreSQL is not part of the active D1 handoff gate. If legacy compatibility is checked, follow `AGENTS.md`, load `.env` explicitly, preserve volumes, and verify `/api/health` without printing secrets.
 - Migration `20261010160000_remove_legacy_started_turn_state` removed the old `A003`/`A005` appointment data and the `STARTED` PostgreSQL enum value. `ACCEPTED` remains the active turn marker after Accept.
 - PWA and browser icon metadata now use the same rounded-square PNG artwork at 192px and 512px; the manifest/icon URLs are versioned to avoid retaining the prior circular mask treatment.
 - The PWA/browser artwork now uses the official Lucide `Sparkles` paths with new `icon-sparkles-192.png` and `icon-sparkles-512.png` URLs; reinstall an existing PWA if the operating system still shows its cached icon.
@@ -56,7 +57,7 @@ The full hardening evidence is split across [`docs/implementation/FINAL_REPORT.m
 - Completed the approved BR-01 through BR-06 hardening scope: durable exact-service skip exclusions with audited override, attendance/checkout safety, explicit same-day/idempotent retries, cancellation, audited service changes, and atomic supporting-technician release.
 - Added server-side session-version revalidation, database-backed PIN lockout with a process-local fast path, verified-staff session revocation, request-hash conflict detection, advisory-lock telemetry, request IDs, structured API timings, board version signals, and closing/retention outcome telemetry.
 - Added side-effect-free board reads with an explicit manager queue-repair action, SSE reconnect/backoff, bounded version-aware polling, dynamic ShopConfig presentation, server-side appointment history pagination, and disposable benchmark/load scripts.
-- Completed sequential disposable PostgreSQL migration/seed and critical workflow verification, protected tablet E2E, returning-guest and resilience E2E, Chromium viewport review, and local HTTP/pool/concurrency profiles. Production infrastructure and databases were not touched.
+- Historical compatibility evidence includes sequential disposable PostgreSQL migration/seed, critical workflow verification, and local HTTP/pool/concurrency profiles. The current handoff evidence is the Worker/D1 gate described above; production infrastructure and databases were not touched.
 - Fixed multi-service appointment cards so `Up next` no longer hides all but the currently routed service.
 - Fixed the responsive app/board authentication actions so mobile users can still see and use `Log in` or `Sign out` without header overflow.
 - Added repository-level project memory and synchronized the README index.
@@ -72,7 +73,7 @@ The full hardening evidence is split across [`docs/implementation/FINAL_REPORT.m
 - Added confirmed Account deletion with a database-backed DELETE route, audit event, station-session cleanup, current/last-admin protection, and payment-row preservation.
 - Updated the Admin Queue Assigned column to show database-backed staff names and initials with a stronger visual hierarchy instead of raw staff IDs.
 - Fixed the shared sign-in panel markup and aligned the Admin entry point with the shared sign-in form so the production Next.js build accepts both sign-in pages.
-- Fixed PostgreSQL integration-test cleanup so temporary kiosk appointments release staff availability; verified Linda has no active assignment and is now `AVAILABLE`.
+- Replaced the old PostgreSQL-only integration suites in the active gate with the Worker/D1 E2E gate; the historical PostgreSQL evidence remains documented but is no longer treated as current behavior proof.
 - Made the Board navigation role-aware: staff/station sessions no longer see the `Admin` link, while admin sessions retain it; the Board API now returns the authenticated viewer role for this decision.
 - Standardized the PWA, browser, Apple, and in-app brand icons on one rounded-square artwork set and removed the `any maskable` SVG entry that caused inconsistent platform masking.
 - Renamed the app metadata and installed PWA display name to `Wellness Salon` and bumped the manifest URL version for client refresh.
@@ -98,17 +99,18 @@ The latest follow-up is present as workspace changes. This environment has no us
 
 - Runtime/domain: `src/server/services/prisma-operations.ts`, `src/server/services/admin-operations.ts`, `src/server/auth.ts`, `src/server/security.ts`, `src/server/observability.ts`, `src/domain/*`.
 - Cloudflare runtime/config: `cloudflare.config.ts`, `wrangler.local.jsonc`, `vite.config.ts`, `next.config.mjs`, `src/server/db.ts`, `src/types/cloudflare-workers.d.ts`, `prisma/d1/schema.prisma`, `prisma/d1/migrations/0001_init.sql`, and `tests/shims/cloudflare-workers.ts`.
+- Worker/D1 verification: `playwright.d1.config.ts`, `scripts/run-d1-e2e.mjs`, `tests/e2e/queue-responsive.spec.ts`, `tests/integration/database.test.ts`, and `.github/workflows/ci.yml`.
 - API/UI: `app/api/admin/appointments/*`, `app/api/admin/queue/reconcile`, `app/api/admin/config`, `app/api/admin/skip-reasons`, `app/api/jobs/*`, board/kiosk/admin routes and components.
 - Persistence: `prisma/schema.prisma` and the 2026-10-09/10 migrations for snapshots, multi-service work, icons, normalized phones, legacy `STARTED` removal, operational safety, support release, turn events, and service categories.
 - Follow-up API/UI: `app/api/admin/service-categories`, appointment turn history, customer/payment history, payment adjustment/correction/refund routes, `app/(admin)/admin/page.tsx`, `src/components/amount-keypad.tsx`, `src/components/admin-management.tsx`, `src/domain/locale-options.ts`, `src/server/validation.ts`, and `src/server/services/prisma-operations.ts`.
-- Verification/tooling: `tests/integration/critical-workflows.test.ts`, `tests/e2e/protected-workflows.spec.ts`, `tests/e2e/resilience.spec.ts`, `scripts/seed-benchmark-fixture.ts`, `scripts/load-profile.ts`, and `scripts/http-load-profile.ts`.
+- Verification/tooling: `tests/e2e/protected-workflows.spec.ts`, `tests/e2e/resilience.spec.ts`, `scripts/seed-benchmark-fixture.ts`, `scripts/load-profile.ts`, and `scripts/http-load-profile.ts`. The obsolete PostgreSQL-only integration files were removed from the active suite.
 - Documentation: project-memory files plus `docs/implementation/*`; the read-only audit remains unchanged as the pre-hardening baseline.
 
 ## Important context
 
 - Read `AGENTS.md` before framework code changes. This repository uses the installed Next.js guide under `node_modules/next/dist/docs/`; App Router conventions apply.
 - Read all seven project-memory files before starting a new task, then read the relevant lifecycle artifact under `docs/lifecycle/`.
-- PostgreSQL remains the behavioral reference runtime; `DATABASE_URL` is required for that path. The additive vinext/D1 path uses the Worker `DB` binding and the separate D1 schema. Critical D1 writes now use explicit batches, while the compatibility lease/fallback paths are not production evidence because they cannot roll back partial writes.
+- Cloudflare Worker + D1 is the behavioral reference runtime for this handoff. The Worker uses the `DB` binding and separate D1 schema; critical D1 writes use explicit batches, guards, and receipts. The PostgreSQL/Docker path is a legacy compatibility/rollback path and is not the active test target.
 - Compose uses PostgreSQL 16, a `migrate` service, an `app` service, and an optional `nginx` proxy profile. After changing Compose environment values, run `up -d --build` so the container is recreated; `restart` does not apply new environment values.
 - Seed credentials and the closing secret are read from `.env`; they are never hardcoded in the repository.
 - `POST /api/jobs/closing` accepts a matching `x-cron-secret` or an admin session in every runtime.
@@ -120,7 +122,7 @@ The latest follow-up is present as workspace changes. This environment has no us
 ## Outstanding work
 
 1. Complete physical iPad/WebKit, touch/distance readability, Dynamic Type/VoiceOver, real Wi-Fi interruption, offline submission, refresh-during-mutation, and modal-focus review.
-2. Complete the D1 command port with explicit batch/guard/receipt semantics, choose exact money representation, and prove rollback/interruption behavior for BR-01–BR-06.
+2. Prove D1 rollback/interruption behavior for BR-01–BR-06 and settle the exact money representation.
 3. Port and test Auth.js account/session access, cron authorization, realtime recovery, timezone/DST behavior, and deployed Worker capacity.
 4. Measure staging/deployed lock waits, connection-pool behavior, network latency, and representative backup/history fixtures; rehearse rollback through backup/restore or an approved forward migration.
 5. Fill the remaining scenario gaps in `docs/implementation/TEST_MATRIX.md` and complete TLS/domain/secret/merchant/deploy approval gates before production claims.
@@ -139,28 +141,22 @@ The latest follow-up is present as workspace changes. This environment has no us
 
 ## Recommended next commands
 
-Local Cloudflare checks:
+Canonical local Worker/D1 gate:
 
 ```bash
-npm run db:generate:d1
-npx wrangler d1 migrations apply wellness-salon --local --config=wrangler.local.jsonc
-npm run dev:vinext
-npx vinext check
-npm run build:vinext
-npx cf build
+npm run test:e2e:d1
 ```
 
-From a host with Docker access, the PostgreSQL reference checks remain:
+Optional legacy compatibility check from a Docker-enabled host:
 
 ```bash
 docker compose --env-file .env -f docker/docker-compose.yml up -d --build
 docker compose --env-file .env -f docker/docker-compose.yml ps
 curl -fsS http://127.0.0.1:3000/api/health
-RUN_DB_TESTS=true TEST_DATABASE_URL="<disposable PostgreSQL URL>" npm test -- --run
 CRON_SECRET="<value from .env>" zsh scripts/trigger-closing.sh
 ```
 
-Keep `TEST_DATABASE_URL` isolated from `APPLICATION_DATABASE_URL`/`DATABASE_URL`; never point the DB-gated suite at the application database. Then run the protected Playwright suite in an environment that permits the local listener and update [`docs/lifecycle/E2E-report-v1.md`](lifecycle/E2E-report-v1.md) only when a new run is actually performed.
+Do not add PostgreSQL setup back to CI/E2E unless the runtime target changes again. Keep the workers.dev deployment under supervised-pilot status; remote D1/Worker mutation, scheduler, capacity, rollback, and final production approval remain gated by the Cloudflare reports and explicit owner approval.
 
 ## Notes for the next AI agent
 

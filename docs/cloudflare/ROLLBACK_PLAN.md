@@ -1,11 +1,11 @@
 # Rollback Plan
 
-**Date:** 2026-10-12  
-**Status:** Prepared runbook; no Cloudflare deployment has occurred.
+**Date:** 2026-10-13
+**Status:** Prepared runbook; the first workers.dev deployment has occurred, while production traffic cutover remains blocked by incomplete evidence.
 
-## Before first deployment
+## Before production traffic cutover
 
-The current application is not ready for a traffic cutover because the D1 data layer is incomplete. Keep the existing PostgreSQL/Docker path available as the behavioral reference and do not delete its volumes. A deployment rollback is not a substitute for finishing the D1 port.
+The current application is not ready for a traffic cutover because remote D1 evidence is incomplete. Keep the existing PostgreSQL/Docker path available as the compatibility/rollback path and do not delete its volumes. A deployment rollback is not a substitute for finishing the D1 release gates.
 
 ## After an approved Worker deployment
 

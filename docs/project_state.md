@@ -4,7 +4,7 @@ Last updated: 2026-10-13
 
 ## Cloudflare migration gate — current status
 
-The Cloudflare Free migration is at **local D1 readiness-audit stage and blocked before remote deployment**. The official vinext path builds a Worker artifact; the separate D1 schema/migrations power local health, catalog, board, public pages, authentication, kiosk check-in, staff/appointment/admin/payment workflows, and job smoke. Critical mutation branches now use explicit D1 batches and guards; crash/interruption, full concurrency, remote Worker/D1, scheduler authorization, and capacity evidence remain open. The owner-confirmed IANA timezone is `Asia/Ho_Chi_Minh`; Cloudflare login, remote D1, secrets, production migration, and deployment remain owner-gated.
+The Cloudflare Free migration is at **local D1 readiness plus first workers.dev deployment**. The official vinext path builds a Worker artifact; the separate D1 schema/migrations power local health, catalog, board, public pages, authentication, kiosk check-in, staff/appointment/admin/payment workflows, and job smoke. Worker version `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` is live at `https://wellness.n8l.workers.dev`; read-only health/catalog/page smoke passed. Critical mutation branches now use explicit D1 batches and guards; crash/interruption, full concurrency, remote auth/mutation/SSE/scheduler evidence, and capacity evidence remain open. The owner-confirmed IANA timezone is `Asia/Ho_Chi_Minh`; final production cutover remains owner-gated.
 
 Closing/retention jobs use one guarded `*/15 * * * *` Worker trigger and read the current Admin-configured D1 timezone/closing time before running. Invalid or missing configuration disables them safely; `UTC` remains only the explicit unconfigured bootstrap sentinel. See [`docs/cloudflare/FINAL_REPORT.md`](cloudflare/FINAL_REPORT.md) and the full [`docs/cloudflare/`](cloudflare/) runbook set.
 
@@ -14,22 +14,22 @@ Deliver a tablet-first nail-shop operations system that connects customer self-c
 
 ## Current milestone
 
-V1 functional baseline, iPad-first redesign, reliability hardening, and the follow-up catalog/payment traceability batch are implemented. The PostgreSQL reference runtime remains at supervised-pilot release verification; the separate Cloudflare Free migration is blocked at D1 data-layer portability and must not be treated as a production cutover.
+V1 functional baseline, iPad-first redesign, reliability hardening, and the follow-up catalog/payment traceability batch are implemented. Cloudflare Worker + D1 is the current runtime and test target; the workers.dev deployment is available for supervised verification, while remote production cutover remains blocked by the open D1 evidence and owner approval gates. PostgreSQL/Docker remains available only for legacy compatibility and rollback.
 
 ## Current sprint
 
-Complete failure-injection/concurrency, scheduler, capacity, and remote Worker/D1 evidence for the explicit D1 command branches, settle money representation, preserve the PostgreSQL workflow, and then request production approval.
+Complete failure-injection/concurrency, scheduler, capacity, and remote Worker/D1 evidence for the explicit D1 command branches, settle money representation, and then request production approval.
 
 ## Current task
 
-Verify the Cloudflare Worker/D1 runtime without weakening BR-01–BR-06, record the owner-reviewed readiness decision, and keep remote resource creation/deployment behind explicit approval. Local D1 smoke is broad but deployment remains intentionally out of scope until the open evidence gates close.
+Verify the canonical Worker/D1 runtime without weakening BR-01–BR-06, keep the D1 E2E gate and handoff docs current, and keep any additional remote resource changes behind explicit approval. The first workers.dev deployment is complete; local D1 is verified broadly, while full production cutover remains out of scope until the open evidence gates close.
 
 ## Last completed work
 
 - Completed the authorized BR-01 through BR-06 hardening scope: durable exact-service skip exclusions and audited override, attendance/checkout safety, explicit same-day visits with idempotent retries, cancellation, audited service changes, and atomic support release.
 - Added session-version revalidation, database-backed PIN lockout, verified-session revocation, request-hash conflict detection, advisory-lock/request/sync/job telemetry, and explicit manager queue repair.
 - Added board SSE reconnect/backoff and version-aware polling, dynamic ShopConfig presentation, server-side appointment history pagination/summary projection, and disposable benchmark/load tooling.
-- Completed disposable PostgreSQL migration/seed verification, sequential DB-gated tests, protected tablet E2E, kiosk returning-guest E2E, resilience E2E, and Chromium viewport review; production DB/deployment/infrastructure were not changed.
+- Completed the canonical local Worker/D1 migration/bootstrap and E2E verification, protected tablet workflows, kiosk returning-guest flow, resilience recovery, and Chromium viewport review; production DB/deployment/infrastructure were not changed.
 - Restored the service-category taxonomy with ordered/archivable categories, migration backfill, Admin CRUD/filtering, grouped kiosk presentation, and searchable service-icon selection.
 - Added append-only `TurnEvent` history for assignment, accept/skip/finish, cancellation, reassignment, continuation, and support lifecycle events, with an Admin appointment history view.
 - Added Admin payment history plus audited amount/method/tip adjustment, bookkeeping correction, and full/partial refund recording with retry-safe command scopes.
@@ -87,7 +87,7 @@ Verify the Cloudflare Worker/D1 runtime without weakening BR-01–BR-06, record 
 
 ## Build and test status
 
-Latest local static verification on 2026-10-13: `npm run lint`, `npm run typecheck`, `npm test -- --run` (51 passed, 9 DB-gated skipped without DB env), `npm run build`, `npm run build:vinext`, `npx vinext check` (94%, no library issues), `npx cf build`, and `npx cf deploy --dry-run` pass. Local D1 migration, bootstrap, broad command/admin/job HTTP smoke, scheduler authorization tests, realtime browser recovery, Docker health, and cleanup pass; remote D1/Worker smoke and Cloudflare CPU/quota metrics require Wrangler authentication. The owner confirmed `Asia/Ho_Chi_Minh` on 2026-10-13; changing the timezone in Admin remains supported. No production database, deployment, or infrastructure was changed.
+Latest local static verification on 2026-10-13: `npm run lint`, `npm run typecheck`, `npm test -- --run` (51/51 passed, no DB skips), `npm run build`, `npm run build:vinext`, `npx vinext check` (94%, no library issues), `npx cf build`, and `npx cf deploy --dry-run` pass. `npm run test:e2e:d1` passes 25/26 Worker/D1 cases with one intentional desktop-project skip; it applies two migrations and the 101-statement disposable bootstrap. Local scheduler authorization, realtime recovery, and responsive queue checks pass. Worker version `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` was deployed to workers.dev and read-only health/catalog/page smoke passed; Cloudflare CPU/quota metrics and full remote auth/mutation/scheduler evidence remain open. The owner confirmed `Asia/Ho_Chi_Minh` on 2026-10-13; changing the timezone in Admin remains supported. No production database reset, custom domain, or Docker infrastructure change was made.
 
 Detailed evidence and scenario-level gaps are maintained in [`docs/implementation/FINAL_REPORT.md`](implementation/FINAL_REPORT.md), [`docs/implementation/RELEASE_CHECKLIST.md`](implementation/RELEASE_CHECKLIST.md), and [`docs/implementation/TEST_MATRIX.md`](implementation/TEST_MATRIX.md).
 
@@ -97,17 +97,18 @@ Verification evidence from the baseline and the 2026-10-10 hardening run:
 | --- | --- | --- |
 | `npm run lint` | PASS | No lint errors or warnings in the final run. |
 | `npm run typecheck` | PASS | Must be run after `next build`; a concurrent build can replace `.next/types` while TypeScript is reading it. |
-| `npm test -- --run` | PASS | 42 tests passed; 9 DB-gated tests skipped when no disposable DB variables are provided. |
-| `npm run test:coverage` | PASS | Current rerun: 24.88% statements/lines, 68.75% branches, 11.39% functions. |
+| `npm test -- --run` | PASS | 51 tests passed; no database-backed tests are skipped. |
+| `npm run test:coverage` | PASS | Current tree: 14.21% statements/lines, 69.29% branches, 22.95% functions; broad report, not a release threshold. |
 | `npm run build` | PASS | Next.js 16.4.0 Turbopack production build completed and compiled the current route inventory. |
-| DB-gated Vitest | PASS (recorded implementation run) | Disposable PostgreSQL: `postgres` 3/3, `admin-access` 1/1, `critical-workflows` 5/5; sequential execution required. |
+| `npm run test:e2e:d1` | PASS | Worker artifact + local D1 migrations/bootstrap; 25 passed, 1 intentional project-specific skip across 26 cases. |
+| Historical PostgreSQL checks | Legacy evidence only | Retained for compatibility/rollback context; removed from the active CI/E2E gate. |
 | Playwright/viewport evidence | PASS with limitations | Protected tablet 7/7, returning kiosk 2/2, resilience 3/3, and Chromium portrait/landscape review; physical iPad/WebKit and real Wi-Fi remain. |
-| Docker health | PASS | Final local production-image rebuild completed; app/PostgreSQL reported healthy and `/api/health` returned `status: ok`. No `.env` contents were printed and no volumes were reset. |
+| Docker health | PASS (legacy compatibility) | Final local production-image rebuild completed; app/PostgreSQL reported healthy and `/api/health` returned `status: ok`. This is not the active D1 gate. No `.env` contents were printed and no volumes were reset. |
 
 ## Runtime
 
-- PostgreSQL remains the behavioral reference runtime. The Cloudflare Worker selects the D1 adapter when the `DB` binding is present and uses its custom Web Crypto/HS256 auth boundary; unported D1 mutation paths remain release-gated.
-- If `DATABASE_URL` is missing or PostgreSQL is unavailable, `/api/health` returns a failure and the UI reports a database loading error; no synthetic records are created.
+- Cloudflare Worker + D1 is the behavioral reference runtime for the current handoff. The Worker selects the D1 adapter when the `DB` binding is present and uses its custom Web Crypto/HS256 auth boundary; unported/fault-sensitive D1 paths remain release-gated.
+- The PostgreSQL adapter remains a legacy compatibility/rollback path and is not a current release-test target. Its missing/unavailable `DATABASE_URL` behavior is documented for that fallback only.
 
 ## Open issues
 
@@ -129,5 +130,5 @@ Verification evidence from the baseline and the 2026-10-10 hardening run:
 ## Next recommended task
 
 1. Execute the physical tablet/WebKit and real-network run sheet in `docs/implementation/TABLET_QA_PLAN.md`, including removing/re-adding the standalone PWA icon.
-2. Run `RUN_DB_TESTS=true` with an isolated `TEST_DATABASE_URL` and capture any new DB-gated coverage result.
+2. Run `npm run test:e2e:d1` in the target CI environment and then complete the physical iPad/WebKit and real-network run sheet.
 3. Only after those checks pass, take the production TLS, secret, scheduler, and deploy approvals described in `docs/lifecycle/approvals/README.md`.

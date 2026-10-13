@@ -5,7 +5,7 @@
 
 ## Source of truth and safety
 
-prisma/schema.prisma and the existing PostgreSQL migrations remain the reference implementation. The D1 schema is separate; do not overwrite the PostgreSQL provider or run prisma migrate deploy against D1.
+`prisma/d1/schema.prisma`, `prisma/d1/migrations/*`, and the Worker D1 branches are the source of truth for the active runtime/test target. `prisma/schema.prisma` and the existing PostgreSQL migrations remain a legacy compatibility/rollback path; do not overwrite them or run `prisma migrate deploy` against D1.
 
 Production starts with a fresh D1 database. The migration excludes real production-data import, and existing PostgreSQL/Docker volumes must be preserved.
 
@@ -44,16 +44,10 @@ It does not create appointments, payments, demo history, or import PostgreSQL da
 ## Local workflow
 
 ~~~bash
-npm run db:generate:all
-npx wrangler d1 migrations apply wellness-salon --local --config=wrangler.local.jsonc
-# Generate a reviewed SQL file only after supplying disposable local values:
-D1_BOOTSTRAP_CONFIRM=YES npm run db:seed:d1:sql > /private/tmp/wellness-salon-d1-bootstrap.sql
-npx wrangler d1 execute wellness-salon --local --config=wrangler.local.jsonc --file=/private/tmp/wellness-salon-d1-bootstrap.sql
-npx vinext check
-npm run dev:vinext
+npm run test:e2e:d1
 ~~~
 
-The local database is disposable and must never be treated as a production seed or data import.
+The command builds the Worker artifact, applies both local migrations, emits/applies the disposable 101-statement bootstrap, and runs the D1 Playwright gate. For a manual migration/bootstrap review, use `wrangler.local.jsonc` and disposable values only. The local database is disposable and must never be treated as a production seed or data import.
 
 ## References
 

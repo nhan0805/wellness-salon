@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,23 +12,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: nailshop
-          POSTGRES_USER: nailshop
-          POSTGRES_PASSWORD: nailshop
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd="pg_isready -U nailshop -d nailshop"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=12
     env:
-      DATABASE_URL: postgresql://nailshop:nailshop@localhost:5432/nailshop?schema=public
-      APPLICATION_DATABASE_URL: postgresql://nailshop:nailshop@localhost:5432/nailshop?schema=public
-      TEST_DATABASE_URL: postgresql://nailshop:nailshop@localhost:5432/nailshop_test?schema=public
       AUTH_SECRET: ci-only-32-byte-random-value-replace-me
       AUTH_COOKIE_SECURE: 'false'
       AUTH_TRUST_HOST: 'true'
@@ -39,7 +24,12 @@ jobs:
       STATION_EMAIL: station@ci.invalid
       STATION_PASSWORD: ci-only-station-password
       STAFF_DEFAULT_PIN: '1234'
-      RUN_DB_TESTS: 'true'
+      D1_TEST_PERSIST_TO: ${{ runner.temp }}/wellness-salon-d1
+      D1_TEST_ADMIN_EMAIL: d1-admin@ci.invalid
+      D1_TEST_ADMIN_PASSWORD: d1-ci-admin-password
+      D1_TEST_STATION_EMAIL: d1-station@ci.invalid
+      D1_TEST_STATION_PASSWORD: d1-ci-station-password
+      D1_TEST_STAFF_PIN: '1234'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -47,34 +37,17 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: createdb -h localhost -U nailshop nailshop_test
-        env:
-          PGPASSWORD: nailshop
-      - run: npm run db:generate
-      - run: npm run db:migrate
-      - run: npm run db:seed
-      - run: npm run db:migrate
-        env:
-          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
-      - run: npm run db:seed
-        env:
-          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:coverage
       - run: npm run build
       - run: npm audit --omit=dev --omit=optional --audit-level=high
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
-        env:
-          E2E_ADMIN_EMAIL: admin@ci.invalid
-          E2E_ADMIN_PASSWORD: ci-only-admin-password
-          E2E_STATION_EMAIL: station@ci.invalid
-          E2E_STATION_PASSWORD: ci-only-station-password
+      - run: npm run test:e2e:d1
 
   deploy-production:
     name: Deploy wellness Worker
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 20

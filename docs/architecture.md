@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-10-11
+Last updated: 2026-10-13
 
 ## System overview
 
@@ -19,17 +19,18 @@ Customer kiosk ──POST check-in──> Turn engine ──> Staff board
                           COMPLETED + Daily report
 ```
 
-All route handlers use the PostgreSQL adapter. Pure business rules stay in `src/domain` so they can be tested independently from persistence, while every application request still reads and writes durable database state.
+The Cloudflare Worker route handlers use the D1 adapter when the `DB` binding is present; the Next/PostgreSQL adapter is retained only as a legacy compatibility/rollback path. Pure business rules stay in `src/domain` so they can be tested independently from persistence, while every active Worker request reads and writes durable D1 state.
 
 ## Technology stack
 
 - Next.js 16.4 App Router, React 19, TypeScript strict, Turbopack build.
 - Auth.js Credentials with JWT sessions and role claims (`ADMIN`, `STATION`).
-- PostgreSQL 16 and Prisma 6 migrations/client.
+- Cloudflare Workers + D1 with Prisma's D1 adapter and fresh SQL migrations (canonical runtime).
+- PostgreSQL 16 and Prisma client/migrations for legacy Docker compatibility only.
 - Argon2id for admin passwords and staff PINs.
 - Zod request validation.
 - SSE for board events with client polling fallback.
-- Vitest for unit/integration logic and Playwright for desktop/tablet E2E.
+- Vitest for database-independent unit/contract logic and Playwright for Worker/D1 desktop/tablet E2E.
 - Docker multi-stage standalone image, Docker Compose, optional nginx reverse proxy.
 
 ## Folder structure
@@ -42,8 +43,8 @@ src/server/                  Prisma, auth, security and database services
 src/server/services/         Database turn/check-in/payment/report/admin operations
 prisma/                      Schema, migrations, seed
 tests/unit/                  Pure domain and adapter contract tests
-tests/integration/           Serialization and opt-in PostgreSQL tests
-tests/e2e/                    Kiosk and authorization Playwright tests
+tests/integration/           Database-boundary and contract tests
+tests/e2e/                    Worker/D1 kiosk, authorization, resilience, and responsive Playwright tests
 docs/lifecycle/              Product/requirements/architecture/test artifacts
 docs/runbook/                Local and operational procedures
 docker/                      Build, Compose, entrypoint, nginx
@@ -51,7 +52,7 @@ docker/                      Build, Compose, entrypoint, nginx
 
 ## Runtime and persistence
 
-`DATABASE_URL` is required. Prisma owns durable state; auth and station/admin role guards are enforced; transactions, advisory locks, database uniqueness, audit events, and command receipts protect mutations. A missing or unreachable database is reported as a configuration/health failure rather than replaced with process-local state.
+The active Worker runtime owns durable D1 state through the `DB` binding; Worker auth uses the Web Crypto PBKDF2/HS256 boundary, and D1 mutations use guarded batches, uniqueness, audit events, and command receipts. The legacy Next/PostgreSQL runtime uses `DATABASE_URL`, Auth.js, transactions, and advisory locks for rollback compatibility. Neither path replaces a missing database with process-local records.
 
 ## Major modules
 
@@ -60,11 +61,11 @@ docker/                      Build, Compose, entrypoint, nginx
 - `src/domain/reconciliation.ts`: card + cash reconciliation and labels.
 - `src/domain/concurrency.ts`: in-memory serialization used by logic tests.
 - `src/server/services/prisma-operations.ts`: transactional database implementation for catalog, board, check-in, payments, payment history/corrections/refunds, reports, closing, turn-event history, and staff actions.
-- `src/server/services/admin-operations.ts`: transactional PostgreSQL reads/writes for attendance, customers, staff, skills, service categories/services, and auth accounts, including audit events and safe lifecycle rules.
+- `src/server/services/admin-operations.ts`: database-backed reads/writes for attendance, customers, staff, skills, service categories/services, and auth accounts, including audit events and safe lifecycle rules; D1 Worker branches use explicit batches.
 - `src/components/admin-management.tsx`: responsive admin tables/forms for attendance, customer CRUD/history, staff lifecycle, and category-aware service catalog lifecycle.
 - `src/components/admin-access.tsx`: responsive admin tables/forms for skill definitions and ADMIN/STATION account lifecycle.
 - `src/server/services/turn-engine.ts`: advisory-lock key and shared staff selection helpers.
-- `src/server/auth.ts`: Auth.js credentials, role/session setup.
+- `src/server/auth.ts`: Worker-compatible PBKDF2/HS256 role/session boundary with the legacy Auth.js fallback.
 - `src/server/security.ts`: Argon2id, process-local fast-path protection, and database-backed failed-PIN lockout.
 - `src/server/request-security.ts`: trusted-origin validation and JSON errors.
 - `proxy.ts`: CSP and browser security headers.
@@ -73,11 +74,11 @@ docker/                      Build, Compose, entrypoint, nginx
 
 | Method | Path | Purpose | Authorization |
 | --- | --- | --- | --- |
-| GET | `/api/health` | Liveness/readiness-style health; checks `SELECT 1` in PostgreSQL. | Public |
+| GET | `/api/health` | Liveness/readiness-style health; checks the active D1 binding in the Worker. | Public |
 | POST | `/api/kiosk/check-in` | Validate service/name/phone, upsert customer, assign or wait, return ticket. | Public browser/cron-compatible origin rule |
-| GET | `/api/board` | Return all current turns, up-next queue, and staff roster from PostgreSQL for the public read-only board. | Public |
+| GET | `/api/board` | Return all current turns, up-next queue, and staff roster from D1 for the public read-only board. | Public |
 | POST | `/api/board` | Staff actions: accept/skip/finish/check-in/check-out/add-support. Accept moves the assigned service directly into service; there is no separate Start action. | `STATION` or `ADMIN` |
-| GET | `/api/sse/board` | Initial PostgreSQL board snapshot and keepalives for the public read-only board. | Public |
+| GET | `/api/sse/board` | Initial D1 board snapshot and keepalives for the public read-only board. | Public |
 | GET | `/api/admin/appointments` | Appointments for the requested business date (`?date=YYYY-MM-DD`), defaulting to the current business date. | `ADMIN` |
 | GET | `/api/admin/reports` | Revenue, payment split, service/staff attribution, reconciliation for the requested business date (`?date=YYYY-MM-DD`), defaulting to the current business date. | `ADMIN` |
 | POST | `/api/admin/payments/confirm` | Record CARD/CASH payment, final amount, optional tip/cash details, and complete the appointment after the external terminal action. Initial confirmation has no `adjustmentReason` field. | `ADMIN` |
@@ -135,11 +136,11 @@ Important constraints:
 
 - Unique customer phone, appointment code within a business date, payment per appointment, attendance per staff/business date, staff-skill pair, service-skill pair, supporting-staff pair, and command receipt `(scope,key)`.
 - Foreign keys protect catalog/operation relationships; completed payment is not deleted by appointment cascade.
-- Business date is stored as a PostgreSQL `DATE`; timezone and closing time are configured in `ShopConfig`.
+- Business date is stored as D1-compatible text in the Worker schema (and as PostgreSQL `DATE` only in the legacy schema); timezone and closing time are configured in `ShopConfig`.
 
 ## Concurrency and idempotency
 
-The database path starts assignment/check-in and other shop mutations inside a transaction and calls:
+The active D1 path starts assignment/check-in and other shop mutations with conditional updates, idempotency receipts, and `D1Database.batch()` boundaries. The legacy PostgreSQL path additionally serializes queue mutations inside a transaction with:
 
 ```sql
 SELECT pg_advisory_xact_lock(hashtextextended('nail-shop:default:' || business_date, 0));
@@ -172,16 +173,16 @@ This serializes competing queue operations even when the candidate row does not 
 ## Deployment architecture
 
 ```text
-nginx (optional :8080, rate limits/TLS boundary)
-             |
-        Next runner (:3000, non-root)
-             |
-     PostgreSQL 16 (:5432)
+Browser/tablet
+      |
+Cloudflare Worker (canonical) ---> D1
 
-migrate service: prisma migrate deploy + npm run db:seed
+Legacy compatibility only:
+nginx (optional :8080) -> Next runner (:3000) -> PostgreSQL 16 (:5432)
+migrate service: Prisma migrate deploy + seed
 ```
 
-The Dockerfile builds a standalone Next runner, keeps a separate migrator stage, prunes dev/optional packages for the runner, and has an HTTP healthcheck. `docker compose up --build` is the intended local PostgreSQL path. Production certificate mounting, real secrets, merchant terminals, and deploy/rollback remain approval gates.
+The Worker artifact is built by vinext and verified through `npm run test:e2e:d1`. The current workers.dev deployment is the supervised Worker target; the Dockerfile and Compose stack remain a legacy compatibility path with an HTTP healthcheck. Production certificate/domain changes, merchant terminals, remote migration/reset, traffic cutover, and rollback remain approval gates.
 
 ## Environment configuration
 
@@ -189,7 +190,7 @@ See `.env.example` and `docker/docker-compose.yml`.
 
 | Variable | Meaning | Local default |
 | --- | --- | --- |
-| `DATABASE_URL` | Required Prisma/PostgreSQL connection. | Compose service URL |
+| `DATABASE_URL` | Legacy Prisma/PostgreSQL connection; not required by the Worker/D1 gate. | Compose service URL |
 | `AUTH_SECRET` | Auth.js signing secret. | Placeholder only |
 | `AUTH_COOKIE_SECURE` | Explicit secure-cookie override. | `false` in Compose |
 | `AUTH_TRUST_HOST` | Auth.js trusted-host setting. | `true` |

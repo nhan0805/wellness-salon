@@ -1,6 +1,6 @@
 # Release checklist
 
-This checklist distinguishes implementation evidence from release verification that still requires a disposable migrated database and a real tablet review.
+This checklist distinguishes implementation evidence from release verification that still requires D1 failure/remote evidence and a real tablet review. The Worker + D1 E2E gate is the active database-backed test path; PostgreSQL is compatibility/rollback only.
 
 ## Implementation evidence
 
@@ -10,7 +10,7 @@ This checklist distinguishes implementation evidence from release verification t
 - [x] Kiosk lookup/check-in and public board responses were reviewed for unnecessary customer data exposure; public board customer identity/skip details are redacted.
 - [x] Kiosk privacy decision recorded as option A: a matching phone may show the stored full name for guest confirmation; lookup response is limited, marked `no-store`, and covered by returning-guest E2E.
 - [x] Mutation endpoints use origin checks, role checks, schema validation, and idempotency for operations that can be retried.
-- [x] No production database, deployment, or infrastructure was changed during implementation.
+- [x] No production database reset, custom domain, or Docker infrastructure change was made; the first workers.dev Worker deployment is recorded in the Cloudflare deployment guide.
 - [x] Closing job respects configured timezone/closing time and blocks staff with active operational work.
 - [x] Retention cleanup is documented and exposed as an admin/cron-protected job; scheduler configuration remains an operator responsibility.
 - [x] Queue reconciliation is an explicit manager action rather than a side effect of board reads.
@@ -23,11 +23,11 @@ This checklist distinguishes implementation evidence from release verification t
 
 ## Release verification still required
 
-- [x] Apply and review migrations on a disposable PostgreSQL database — 14 migrations and seed passed on isolated native PostgreSQL.
-- [x] Run the current BR-01 through BR-06 database-backed integration tests — postgres 3/3, admin access 1/1, critical workflows 5/5 when run sequentially.
+- [x] Apply and review the active D1 migrations/bootstrap on disposable local state — two migrations and 101 bootstrap statements applied successfully.
+- [x] Run the canonical Worker/D1 E2E gate — `npm run test:e2e:d1` passed 25/26 cases with one intentional desktop-project skip.
 - [ ] Verify existing appointment, turn, attendance, payment, and customer history against a representative backup or fixture — a representative 20,000-appointment read fixture is measured, but it is not a production backup and does not cover every operational entity.
-- [x] Run authenticated protected mutating Playwright workflows with seeded admin/station accounts — tablet project 7/7 on a clean test DB.
-- [x] Run authenticated HTTP load profiles — standard 3 role flows × 10 cycles (70 operations) and pool-constrained 3 role flows × 50 cycles (350 operations), both zero errors; local disposable DB/app only.
+- [x] Run authenticated protected mutating Worker/D1 Playwright workflows with disposable bootstrap admin/station accounts — included in the canonical gate.
+- [x] Historical authenticated HTTP load profiles — standard 3 role flows × 10 cycles and pool-constrained 3 role flows × 50 cycles completed with zero errors; retained as legacy compatibility evidence only.
 - [x] Verify service changes, cancellation, payment completion, and support release through the current DB/UI matrix; queue reconciliation/closing/retention still need broader fixture coverage.
 - [x] Verify management tablet in Chromium portrait and landscape viewport emulation — no horizontal overflow observed; physical iPad remains.
 - [ ] Verify staff turn display readability from a distance and touch interaction on deployed hardware.
@@ -43,13 +43,14 @@ This checklist distinguishes implementation evidence from release verification t
 - [x] `npx prisma generate`
 - [x] `npm run lint`
 - [x] `npm run typecheck`
-- [x] `npm test -- --run` — 31 passed, 9 DB-gated tests skipped without DB env
-- [x] `npm run test:coverage` — 24.88% statements/lines, 68.75% branches, 11.39% functions
+- [x] `npm test -- --run` — 51 passed, no database skips
+- [x] `npm run test:coverage` — 14.21% statements/lines, 69.29% branches, 22.95% functions; broad report, not a release threshold
 - [x] `npx prisma validate`
 - [x] `npm run build`
-- [x] Full tablet E2E — 7/7 on isolated app/test DB
-- [x] Browser resilience E2E — 3/3 on isolated app/test DB, including deterministic board-network interruption/Retry recovery; physical/offline network remains
-- [x] Kiosk returning-guest E2E — 2/2; approved full-name behavior is read-only
-- [x] Disposable PostgreSQL migrations and DB-gated tests — sequential pass
+- [x] Full Worker/D1 tablet E2E — included in the canonical 25/26 gate
+- [x] Browser resilience E2E — included in the canonical Worker/D1 gate; physical/offline network remains
+- [x] Kiosk returning-guest E2E — included in the canonical Worker/D1 gate; approved full-name behavior is read-only
+- [x] Disposable D1 migrations/bootstrap and Worker E2E — 25 passed, 1 intentional project-specific skip
+- [x] Historical PostgreSQL migrations and DB checks — retained as legacy compatibility evidence, not an active release gate
 - [x] Disposable service-layer read/write load profile — 120 operations, zero errors; lock-wait telemetry captured
 - [x] Chromium portrait/landscape screenshot + DOM review — pass with physical-device limitation

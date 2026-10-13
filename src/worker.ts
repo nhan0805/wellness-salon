@@ -1,5 +1,5 @@
 import vinextWorker from 'vinext/server/fetch-handler';
-import { isValidIanaTimezone, scheduledJobForTick } from '@/src/domain/scheduler';
+import { isValidIanaTimezone, scheduledJobForTick } from './domain/scheduler.ts';
 
 type WorkerEnvironment = Record<string, unknown> & {
   CRON_SECRET?: string;

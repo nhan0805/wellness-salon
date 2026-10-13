@@ -7,11 +7,11 @@
 
 Runtime/bootstrap defaults now use `UTC` as a safe unconfigured sentinel. `UTC` is not the salon's final business timezone. The authoritative value is `ShopConfig.timezone`, and the owner-confirmed salon timezone is `Asia/Ho_Chi_Minh`; production traffic, closing, retention, and date-sensitive reporting still require the scheduler gate to be enabled deliberately.
 
-The prior Vietnam fallback was removed from runtime defaults. The owner has now explicitly confirmed `Asia/Ho_Chi_Minh` for this salon; it is persisted by the reviewed local bootstrap/config path and must be written to the fresh remote D1 bootstrap.
+The prior Vietnam fallback was removed from runtime defaults. The owner has now explicitly confirmed `Asia/Ho_Chi_Minh` for this salon; the deployed remote D1 service catalog reports that timezone and the remote scheduler behavior still needs an approved event-level check.
 
 ## Required gate
 
-Before deployment, the operator must validate and persist `Asia/Ho_Chi_Minh` in the fresh D1 ShopConfig row. The Worker must refuse or safely disable scheduled jobs when the timezone is missing/invalid or when `PRODUCTION_TIMEZONE_CONFIRMED` is false. No password, token, or secret is requested in this document.
+Before enabling production traffic/scheduler operations, the operator must validate and preserve `Asia/Ho_Chi_Minh` in the deployed D1 ShopConfig row. The Worker must refuse or safely disable scheduled jobs when the timezone is missing/invalid or when `PRODUCTION_TIMEZONE_CONFIRMED` is false. No password, token, or secret is requested in this document.
 
 ## Covered behavior
 
@@ -22,7 +22,7 @@ The port must verify opening/closing boundaries, business dates, retention cutof
 - Added `DEFAULT_TIMEZONE = 'UTC'` as a documented bootstrap value.
 - Updated schema, seed, Docker bootstrap, and empty-state defaults to avoid a hidden Vietnam production assumption.
 - Added a PostgreSQL reference migration that changes only the schema default and preserves existing configured rows.
-- The owner decision is complete, but no remote database has been created or written yet.
+- The owner decision is complete and the deployed remote D1 catalog reports `Asia/Ho_Chi_Minh`; a scheduled-event execution check remains open.
 
 ## Scheduler behavior after a UI change
 

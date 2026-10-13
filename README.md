@@ -4,25 +4,22 @@ Nail Shop Management là web app tablet-first cho một tiệm nail, gồm custo
 
 ## Stack
 
-Next.js App Router, TypeScript strict, PostgreSQL 16, Prisma migration, role-based credentials, Zod, SSE + polling fallback, Vitest, Playwright, Docker standalone/nginx, and an additive vinext/Cloudflare Workers + D1 path.
+Cloudflare Workers + D1 (canonical runtime and test target), Next.js App Router/vinext, TypeScript strict, role-based credentials, Zod, SSE + polling fallback, Vitest, Playwright, and a legacy Docker/PostgreSQL compatibility path.
 
 ## Cloudflare Free migration status
 
-The repository now contains a Cloudflare/vinext build path, a separate SQLite/D1 schema and local migrations, a Worker-compatible auth boundary, explicit D1 batch branches for critical mutations, and a clean bootstrap SQL generator. The migration is intentionally **not production-ready**: fault-injection/concurrency evidence, financial storage review, full BR-01–BR-06 coverage, scheduler authorization, capacity, and remote smoke remain open. The owner has confirmed `Asia/Ho_Chi_Minh`; no remote Cloudflare resource, production database, secret upload, or deployment was created.
+The Cloudflare Worker + D1 path is the canonical runtime and test target for this handoff. It contains a separate SQLite/D1 schema and local migrations, a Worker-compatible auth boundary, explicit D1 batch branches for critical mutations, a clean bootstrap SQL generator, and a repeatable D1 Worker E2E gate. The first Worker deployment is live at [wellness.n8l.workers.dev](https://wellness.n8l.workers.dev) and its non-destructive health/catalog/page smoke passed. The migration is still intentionally **not fully production-approved**: fault-injection/concurrency evidence, financial storage review, broader BR-01–BR-06 coverage, deployed capacity, remote auth/mutation/scheduler smoke, and final owner approval remain open. The owner has confirmed `Asia/Ho_Chi_Minh`; the existing remote D1 and secrets were preserved and no custom domain or production-data import was used.
 
 Local Cloudflare checks:
 
 ```bash
 npm run db:generate:d1
-npx wrangler d1 migrations apply wellness-salon --local --config=wrangler.local.jsonc
-npm run dev:vinext
-# in another shell:
+npm run test:e2e:d1
 npx vinext check
-npm run build:vinext
 npx cf build
 ```
 
-The local migration uses an empty Wrangler D1 state and disposable smoke fixtures only. Read the [Cloudflare final report](docs/cloudflare/FINAL_REPORT.md) and [compatibility audit](docs/cloudflare/COMPATIBILITY_AUDIT.md) before attempting any deployment. The Worker uses one guarded UTC quarter-hour trigger and reads the timezone/closing time from D1, so changing timezone in Admin is supported without a code change. Remote authentication/deployment still requires secure Wrangler login and the final production smoke. The existing PostgreSQL/Docker runtime remains the behavioral reference path.
+`npm run test:e2e:d1` builds the Worker artifact, applies the two D1 migrations, generates/applies the 101-statement disposable bootstrap, and runs the Worker E2E suite against local D1. `npm run dev:vinext` and Docker/PostgreSQL are retained for compatibility diagnostics and rollback only; they are not the current CI/E2E behavioral target. Read the [Cloudflare final report](docs/cloudflare/FINAL_REPORT.md), [deployment record](docs/cloudflare/DEPLOYMENT_GUIDE.md), and [compatibility audit](docs/cloudflare/COMPATIBILITY_AUDIT.md) for the current remote status. The deployed URL has only passed the scoped non-destructive smoke so far; do not infer full production readiness from that check.
 
 The effective Docker production dependency audit is clean after pruning build/seed-only packages (`npm audit --omit=dev --omit=optional` reports 0 vulnerabilities).
 
@@ -34,19 +31,20 @@ npm run db:generate
 npm run lint
 npm run typecheck
 npm test
+npm run test:e2e:d1
 npx prisma validate
 npm run build
 ```
 
-Kết quả kiểm chứng ngày 13/10/2026: lint, typecheck, 42 unit/integration tests PASS và 9 DB-gated tests được bỏ qua có chủ đích khi chưa có database test riêng. Local D1 migration, bootstrap 101 statements, public routes, check-in idempotency/concurrency, Worker login/session và payment-confirmation smoke PASS. Cloudflare/D1-specific results and blockers are recorded in `docs/cloudflare/TEST_REPORT.md`.
+Kết quả kiểm chứng ngày 13/10/2026: lint, typecheck và 51/51 unit/contract tests PASS, không còn PostgreSQL test bị skip; D1 Worker E2E PASS 25/26 (một skip có chủ đích vì cùng test chạy trên project Chromium desktop và pass trên project tablet). Local D1 migrations, bootstrap 101 statements, public routes, authentication, kiosk/board/admin workflows và responsive queue regression đều PASS. Cloudflare/D1-specific blockers are recorded in `docs/cloudflare/TEST_REPORT.md`.
 
 ## Chạy app
 
 ```bash
-npm run dev
+npm run test:e2e:d1
 ```
 
-Hoặc PostgreSQL thật:
+Lệnh trên là cổng kiểm chứng lặp lại cho Worker + D1 local. PostgreSQL/Docker chỉ dùng khi cần kiểm tra đường tương thích legacy:
 
 ```bash
 docker compose --env-file .env -f docker/docker-compose.yml up -d --build
@@ -72,7 +70,7 @@ src/domain/          Pure routing, fairness, state machines, reconciliation
 src/server/          Prisma/auth/security/database/SSE services
 prisma/              schema, migration and idempotent seed
 prisma/d1/           separate SQLite/D1 schema and fresh migration history
-tests/               unit, integration gates and Playwright E2E
+tests/               unit/contract tests and Worker/D1 Playwright E2E
 docs/lifecycle/      versioned PO → PRD → BA → SA → QA → tests → CI/CD
 docs/runbook/        local and operational notes
 docs/cloudflare/     Cloudflare Free migration audit, D1 design, tests, deployment, backup, rollback, and readiness reports
@@ -99,4 +97,4 @@ The repository keeps the current project context in the following files. Read th
 
 ## Production notes / human gates
 
-Ứng dụng reference hiện yêu cầu `DATABASE_URL` và dùng PostgreSQL adapter, với role guard, verified staff session và advisory lock. Docker/CI chạy migration, seed và PostgreSQL concurrency suite thật. Cloudflare/D1 có runtime Worker riêng, PBKDF2/HS256 auth boundary, fresh migrations và bootstrap SQL; production deployment vẫn bị khóa bởi các báo cáo trong `docs/cloudflare/`. TLS/domain/certificate, secrets thật, merchant integration và production deploy approval là human gate; V1 không xử lý dữ liệu thẻ.
+D1 Worker + D1 là runtime/test target hiện tại, với PBKDF2/HS256 auth boundary, fresh migrations và bootstrap SQL. PostgreSQL adapter/Docker vẫn được giữ cho compatibility/rollback, nhưng không còn là cổng test hoặc behavioral reference của handoff. Production deployment vẫn bị khóa bởi các báo cáo trong `docs/cloudflare/`; TLS/domain/certificate, secrets thật, merchant integration và production deploy approval là human gate. V1 không xử lý dữ liệu thẻ.

@@ -1,7 +1,7 @@
 # Cloudflare Free-Tier Capacity
 
 **Date:** 2026-10-13  
-**Status:** Conservative single-salon model completed; production usage must still be observed after the first workers.dev smoke.
+**Status:** Conservative single-salon model completed; production usage must still be observed on the deployed workers.dev Worker.
 
 ## Published limits to design against
 
@@ -48,7 +48,7 @@ The fixed polling workload dominates this small-salon model. The request and D1 
 ## Measured artifact and unmeasured runtime values
 
 - `npx cf build` and `npx cf deploy --dry-run` pass. The generated Worker entry is approximately 294 KB raw / 76 KB gzip in the local output, with the Prisma query compiler shipped as a separate ~1.9 MB WASM asset; both are well below the current script and asset limits.
-- Local D1 HTTP smoke passed the critical read/write paths, but local loopback does not measure Cloudflare's 10 ms CPU accounting. Login/PIN PBKDF2, report size, and remote D1 row metrics must be checked after the first workers.dev deployment.
+- Local D1 HTTP smoke passed the critical read/write paths, but local loopback does not measure Cloudflare's 10 ms CPU accounting. Login/PIN PBKDF2, report size, and remote D1 row metrics must be checked on the deployed workers.dev Worker.
 - The scheduled handler uses one `*/15 * * * *` trigger, reads D1 `ShopConfig`, and performs only two business jobs per day. The other quarter-hour ticks exit after a single configuration read.
 
 ## Upgrade conditions

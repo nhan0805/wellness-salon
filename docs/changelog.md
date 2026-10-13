@@ -2,6 +2,17 @@
 
 Release-style history of meaningful repository changes. Dates use the project timezone context and are based on the artifacts currently present in the workspace.
 
+## Unreleased — 2026-10-13
+
+### D1 handoff/test target
+
+- Made Cloudflare Worker + D1 the canonical runtime and database-backed test target for handoff; PostgreSQL/Docker remains compatibility/rollback only.
+- Added `npm run test:e2e:d1`, which builds the Worker artifact, applies two D1 migrations, applies the 101-statement disposable bootstrap, and runs the Worker/D1 Playwright gate.
+- Removed PostgreSQL-only integration suites and PostgreSQL service/setup from the active CI pipeline. The static suite now passes 51/51 with no DB skips; the D1 gate passes 25/26 with one intentional desktop-project skip.
+- Added the iPad queue responsive regression for portrait/landscape layouts and synchronized README, handoff, architecture, migration, test matrix, release checklist, and Cloudflare reports.
+- Deployed Worker version `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` to `https://wellness.n8l.workers.dev` with the configured `*/15 * * * *` trigger; read-only health/catalog/page smoke passed.
+- Preserved the existing remote D1 schema/data and Wrangler secrets; no D1 reset, custom domain, or production-data import was performed. Full remote auth/mutation/scheduler/capacity verification remains open.
+
 ## Unreleased — 2026-10-12
 
 ### Cloudflare Free migration audit

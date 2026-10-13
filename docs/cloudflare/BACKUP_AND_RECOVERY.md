@@ -1,11 +1,11 @@
 # Backup and Recovery
 
-**Date:** 2026-10-12  
-**Status:** Procedure documented; no remote D1 database exists to back up.
+**Date:** 2026-10-13
+**Status:** Procedure documented; the remote D1 database exists and was preserved during the workers.dev deployment. No export or restore was run in this deployment.
 
 ## D1 backup policy
 
-After an approved remote database exists, schedule and retain encrypted D1 exports outside the repository. The operator should use the current Wrangler D1 export command for the exact account/version, for example:
+For the existing remote database, schedule and retain encrypted D1 exports outside the repository. The operator should use the current Wrangler D1 export command for the exact account/version, for example:
 
 ```bash
 wrangler d1 export wellness-salon --remote --output ./private-backups/wellness-salon-<timestamp>.sql
@@ -24,5 +24,5 @@ Confirm the current CLI syntax before execution. Never print credentials or expo
 
 ## Current state
 
-No remote D1 database, export, backup bucket, or production secret has been created. Existing PostgreSQL/Docker volumes remain outside this migration and must be preserved.
+The remote `wellness-salon` D1 database and required Wrangler secrets exist; its schema and operational row counts were checked read-only before deployment. No D1 export, backup bucket, restore rehearsal, or production-data reset was performed. Existing PostgreSQL/Docker volumes remain outside this migration and must be preserved.
 

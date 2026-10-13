@@ -11,7 +11,7 @@ const playwrightPort = process.env.PLAYWRIGHT_PORT ?? '3000';
 
 export default defineConfig({
   testDir: './tests/e2e',
-  // E2E projects share one disposable database and one dev server in CI.
+  // Legacy Next/PostgreSQL compatibility config. The active gate is playwright.d1.config.ts.
   fullyParallel: false,
   workers: process.env.CI ? 1 : undefined,
   forbidOnly: !!process.env.CI,

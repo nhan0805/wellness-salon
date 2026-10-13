@@ -1,7 +1,7 @@
 # Cloudflare Performance Plan
 
-**Date:** 2026-10-12  
-**Status:** Build measured; production performance not established.
+**Date:** 2026-10-13
+**Status:** Worker/D1 functional E2E measured locally; production performance not established.
 
 ## Build evidence
 
@@ -12,7 +12,7 @@
 
 ## Workload constraints
 
-The current application has only a narrow local D1 smoke, so no honest end-to-end D1 latency, CPU, subrequest, or production concurrency result exists. Before deployment, measure separately:
+The local `npm run test:e2e:d1` gate now covers the main Worker/D1 functional workflows, but it does not establish end-to-end D1 latency, CPU, subrequest, or production concurrency limits. On the deployed Worker, measure separately:
 
 - public board read and the 15-second SSE/polling refresh fallback;
 - kiosk lookup and check-in;
@@ -33,5 +33,5 @@ Keep queries indexed and projections narrow. Bound page sizes, SSE lifetimes, po
 
 ## Gate
 
-Performance is a release gate only after the D1 data layer is ported, representative fixtures exist, and the Worker runtime has measured command latency and error behavior. Do not tune by increasing paid limits; the requested target is the Free plan.
+Performance remains a release gate until representative deployed command latency and error behavior are measured. Do not tune by increasing paid limits; the requested target is the Free plan.
 

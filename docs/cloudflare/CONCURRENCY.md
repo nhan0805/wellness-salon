@@ -3,9 +3,9 @@
 **Date:** 2026-10-13  
 **Status:** Critical D1 mutation branches now use explicit batch/guard/receipt orchestration; production still needs remote evidence and the final account/secret gate.
 
-## PostgreSQL reference behavior
+## Legacy PostgreSQL compatibility behavior
 
-The current implementation uses Prisma $transaction and PostgreSQL advisory locks around queue routing, staff actions, idempotency receipts, reconciliation, closing, and retention. Those mechanisms remain the reference behavior, not portable D1 implementation details.
+The legacy Next/Docker path uses Prisma `$transaction` and PostgreSQL advisory locks around queue routing, staff actions, idempotency receipts, reconciliation, closing, and retention. Those mechanisms are retained for rollback/compatibility; the active Worker/D1 gate exercises the D1 batch/guard/receipt paths below.
 
 ## D1 constraint and current bridge
 
@@ -36,4 +36,4 @@ Every mutation must prove:
 
 ## Local evidence
 
-The disposable local D1 smoke produced unique concurrent appointment codes, replayed the original check-in, rejected a conflicting check-in, exercised staff routing/actions and appointment changes, exercised admin CRUD and attendance, confirmed/replayed/conflicted payments, ran retention, and verified both closing blockers and a successful closing mutation. Unit coverage also exercises guarded scheduler authorization and replay behavior. This remains local evidence; deployed remote behavior and quota telemetry still require the first workers.dev smoke.
+The disposable local D1 smoke produced unique concurrent appointment codes, replayed the original check-in, rejected a conflicting check-in, exercised staff routing/actions and appointment changes, exercised admin CRUD and attendance, confirmed/replayed/conflicted payments, ran retention, and verified both closing blockers and a successful closing mutation. Unit coverage also exercises guarded scheduler authorization and replay behavior. This remains local evidence; the initial workers.dev health/catalog/page smoke passed, but deployed mutation behavior and quota telemetry still require a broader approved remote run.

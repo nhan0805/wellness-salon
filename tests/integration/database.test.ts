@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-describe('PostgreSQL integration gate', () => {
-  it('documents the real database suite as an opt-in CI job', () => {
-    expect(['false', 'true']).toContain(process.env.RUN_DB_TESTS ?? 'false');
+describe('D1 integration boundary', () => {
+  it('keeps runtime database verification in the Worker/D1 E2E gate', () => {
+    expect(process.env.RUN_DB_TESTS).not.toBe('true');
+    expect(process.env.TEST_DATABASE_URL).toBeUndefined();
   });
 });

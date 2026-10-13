@@ -1,6 +1,10 @@
 # Implementation decisions
 
-Last updated: 2026-10-11
+Last updated: 2026-10-13
+
+## 2026-10-13 handoff decision
+
+- Cloudflare Worker + D1 is the active runtime and test target. The PostgreSQL/Docker path and its historical fixtures remain compatibility/rollback evidence only; active CI must not require PostgreSQL.
 
 ## 2026-10-11 follow-up decisions
 
@@ -41,7 +45,7 @@ Supporting technicians finish with the primary technician. There is no independe
 - No merchant payment gateway, card processing, staff mobile application, payroll/commissions, inventory, loyalty, multi-tenant expansion, microservices, event sourcing, or full offline-first architecture is being added in this batch.
 - Existing payment confirmation remains an operational record, not a payment processor integration.
 - `CANCELLED` is intentionally distinct from `COMPLETED`; cancelled services remain visible in history and are excluded from payment items.
-- PostgreSQL remains the source of truth. Browser state is a cache and must never be used to authorize a mutation.
+- D1 migrations/Worker branches are the source of truth for the active deployment target. The PostgreSQL schema is retained for legacy rollback. Browser state is a cache and must never be used to authorize a mutation.
 
 ## Implementation decisions
 
@@ -58,5 +62,5 @@ Supporting technicians finish with the primary technician. There is no independe
 - Public board responses redact customer name/phone and exclusion details; staff names and operational availability remain visible because the board is a shared staff-facing display.
 - Queue repair is an explicit manager action. It is not performed by read-only board requests, which prevents an SSE/refresh storm from creating hidden writes.
 - Retention cleanup is exposed as a protected job endpoint and is not automatically scheduled by the application. The deployment operator must schedule it with the configured job secret.
-- Tests that require a database must use `TEST_DATABASE_URL`, and the test harness must refuse to run if it equals the configured application database URL.
+- The active database-backed gate uses disposable local D1 through `npm run test:e2e:d1`; it must never target production state. Historical PostgreSQL tests are not part of the active CI contract.
 - Public kiosk returning-customer lookup uses the approved full-name behavior: a matching phone may display the stored full name on the shared kiosk so the guest can confirm it. The lookup response is limited to `found`, `name`, and readiness/error fields, is marked `no-store`, and does not expose the phone or customer record. Rate limiting remains an infrastructure/operator concern because the shared kiosk is a trusted-origin surface.
