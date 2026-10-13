@@ -38,7 +38,7 @@
     "prebuild:vinext": "npm run db:generate:d1",
     "build:vinext": "CLOUDFLARE_VITE_FORCE_BUILD_OUTPUT=true vite build && node scripts/prepare-vinext-cloudflare-output.mjs",
     "start:vinext": "vite preview",
-    "deploy:vinext": "npm run build:vinext && wrangler deploy --config wrangler.production.jsonc --no-bundle"
+    "deploy:vinext": "npm run build:vinext && wrangler deploy --config wrangler.production.jsonc"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
