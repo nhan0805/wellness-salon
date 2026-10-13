@@ -16,3 +16,4 @@ Dockerfile.local
 .vinext/
 .cloudflare/
 .wrangler/
+.d1-test-state/

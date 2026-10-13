@@ -3,6 +3,16 @@
   "name": "nail-shop-management-local",
   "compatibility_date": "2026-10-12",
   "compatibility_flags": ["nodejs_compat", "no_handle_cross_request_promise_resolution"],
+  "vars": {
+    "AUTH_SECRET": "ci-only-32-byte-random-value-replace-me",
+    "AUTH_COOKIE_SECURE": "false",
+    "AUTH_TRUST_HOST": "true",
+    "NEXTAUTH_URL": "http://127.0.0.1:3001",
+    "CRON_SECRET": "ci-only-cron-secret",
+    "SHOP_TIMEZONE": "Asia/Ho_Chi_Minh",
+    "PRODUCTION_TIMEZONE_CONFIRMED": "true",
+    "SCHEDULER_CRON": "*/15 * * * *"
+  },
   "d1_databases": [
     {
       "binding": "DB",
