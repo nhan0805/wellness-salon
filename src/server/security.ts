@@ -1,10 +1,9 @@
 import { argon2Verify } from 'hash-wasm';
-import { getD1Database, isD1Runtime, prisma, withD1Lease } from '@/src/server/db';
+import { getD1Database, prisma, withD1Lease } from '@/src/server/db';
 import { decodeBase64Url, encodeBase64Url } from '@/src/server/web-crypto';
 
 // Web Crypto PBKDF2 is available in Workers without dynamically compiling a
-// WASM module. The legacy Argon2id verifier remains for PostgreSQL reference
-// data and can be removed after all reference credentials are rotated.
+// native module. D1 bootstrap and account-management writes use this format.
 // Cloudflare Workers Web Crypto currently rejects PBKDF2 iteration counts
 // above 100,000. Keep the application and D1 bootstrap on the same maximum
 // supported value so credentials can be verified in production.
@@ -91,39 +90,24 @@ export async function assertDbPinNotLocked(staffId: string, now = new Date()) {
 
 export async function recordDbPinAttempt(staffId: string, successful: boolean, now = new Date()) {
   recordPinAttempt(staffId, successful, now.getTime());
-  if (await isD1Runtime()) {
-    return withD1Lease(async (database) => {
-      if (successful) {
-        await database.prepare('DELETE FROM staff_pin_lockouts WHERE staff_id = ?').bind(staffId).run();
-        return;
-      }
-      const current = await database
-        .prepare('SELECT failure_count FROM staff_pin_lockouts WHERE staff_id = ?')
-        .bind(staffId)
-        .first<{ failure_count: number }>();
-      const failureCount = Number(current?.failure_count ?? 0) + 1;
-      const lockedUntil = failureCount >= 5 ? new Date(now.getTime() + 60_000).toISOString().replace('Z', '+00:00') : null;
-      const nowIso = now.toISOString().replace('Z', '+00:00');
-      await database
-        .prepare(`INSERT INTO staff_pin_lockouts (staff_id, failure_count, locked_until, updated_at)
-          VALUES (?, ?, ?, ?)
-          ON CONFLICT(staff_id) DO UPDATE SET failure_count = excluded.failure_count, locked_until = excluded.locked_until, updated_at = excluded.updated_at`)
-        .bind(staffId, failureCount, lockedUntil, nowIso)
-        .run();
-    });
-  }
-  await prisma.$transaction(async (tx) => {
+  return withD1Lease(async (database) => {
     if (successful) {
-      await tx.staffPinLockout.deleteMany({ where: { staffId } });
+      await database.prepare('DELETE FROM staff_pin_lockouts WHERE staff_id = ?').bind(staffId).run();
       return;
     }
-    const current = await tx.staffPinLockout.findUnique({ where: { staffId }, select: { failureCount: true } });
-    const failureCount = (current?.failureCount ?? 0) + 1;
-    await tx.staffPinLockout.upsert({
-      where: { staffId },
-      update: { failureCount, lockedUntil: failureCount >= 5 ? new Date(now.getTime() + 60_000) : null },
-      create: { staffId, failureCount, lockedUntil: failureCount >= 5 ? new Date(now.getTime() + 60_000) : null },
-    });
+    const current = await database
+      .prepare('SELECT failure_count FROM staff_pin_lockouts WHERE staff_id = ?')
+      .bind(staffId)
+      .first<{ failure_count: number }>();
+    const failureCount = Number(current?.failure_count ?? 0) + 1;
+    const lockedUntil = failureCount >= 5 ? new Date(now.getTime() + 60_000).toISOString().replace('Z', '+00:00') : null;
+    const nowIso = now.toISOString().replace('Z', '+00:00');
+    await database
+      .prepare(`INSERT INTO staff_pin_lockouts (staff_id, failure_count, locked_until, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(staff_id) DO UPDATE SET failure_count = excluded.failure_count, locked_until = excluded.locked_until, updated_at = excluded.updated_at`)
+      .bind(staffId, failureCount, lockedUntil, nowIso)
+      .run();
   });
 }
 
@@ -136,53 +120,33 @@ function normalizeLoginEmail(email: string) {
 
 export async function assertDbLoginNotLocked(email: string, now = new Date()) {
   const normalizedEmail = normalizeLoginEmail(email);
-  if (await isD1Runtime()) {
-    const database = await getD1Database();
-    const state = await database
-      ?.prepare('SELECT locked_until FROM auth_login_lockouts WHERE email = ? LIMIT 1')
-      .bind(normalizedEmail)
-      .first<{ locked_until: string | null }>();
-    if (state?.locked_until && new Date(state.locked_until) > now) throw new Error('Account temporarily locked. Try again shortly.');
-    return;
-  }
-  const state = await prisma.authLoginLockout.findUnique({ where: { email: normalizedEmail }, select: { lockedUntil: true } });
-  if (state?.lockedUntil && state.lockedUntil > now) throw new Error('Account temporarily locked. Try again shortly.');
+  const database = await getD1Database();
+  const state = await database
+    .prepare('SELECT locked_until FROM auth_login_lockouts WHERE email = ? LIMIT 1')
+    .bind(normalizedEmail)
+    .first<{ locked_until: string | null }>();
+  if (state?.locked_until && new Date(state.locked_until) > now) throw new Error('Account temporarily locked. Try again shortly.');
 }
 
 export async function recordDbLoginAttempt(email: string, successful: boolean, now = new Date()) {
   const normalizedEmail = normalizeLoginEmail(email);
-  if (await isD1Runtime()) {
-    return withD1Lease(async (database) => {
-      if (successful) {
-        await database.prepare('DELETE FROM auth_login_lockouts WHERE email = ?').bind(normalizedEmail).run();
-        return;
-      }
-      const current = await database
-        .prepare('SELECT failure_count FROM auth_login_lockouts WHERE email = ?')
-        .bind(normalizedEmail)
-        .first<{ failure_count: number }>();
-      const failureCount = Number(current?.failure_count ?? 0) + 1;
-      const lockedUntil = failureCount >= LOGIN_LOCK_FAILURES ? new Date(now.getTime() + LOGIN_LOCK_DURATION_MS).toISOString().replace('Z', '+00:00') : null;
-      const nowIso = now.toISOString().replace('Z', '+00:00');
-      await database
-        .prepare(`INSERT INTO auth_login_lockouts (email, failure_count, locked_until, updated_at)
-          VALUES (?, ?, ?, ?)
-          ON CONFLICT(email) DO UPDATE SET failure_count = excluded.failure_count, locked_until = excluded.locked_until, updated_at = excluded.updated_at`)
-        .bind(normalizedEmail, failureCount, lockedUntil, nowIso)
-        .run();
-    });
-  }
-  await prisma.$transaction(async (tx) => {
+  return withD1Lease(async (database) => {
     if (successful) {
-      await tx.authLoginLockout.deleteMany({ where: { email: normalizedEmail } });
+      await database.prepare('DELETE FROM auth_login_lockouts WHERE email = ?').bind(normalizedEmail).run();
       return;
     }
-    const current = await tx.authLoginLockout.findUnique({ where: { email: normalizedEmail }, select: { failureCount: true } });
-    const failureCount = (current?.failureCount ?? 0) + 1;
-    await tx.authLoginLockout.upsert({
-      where: { email: normalizedEmail },
-      update: { failureCount, lockedUntil: failureCount >= LOGIN_LOCK_FAILURES ? new Date(now.getTime() + LOGIN_LOCK_DURATION_MS) : null },
-      create: { email: normalizedEmail, failureCount, lockedUntil: failureCount >= LOGIN_LOCK_FAILURES ? new Date(now.getTime() + LOGIN_LOCK_DURATION_MS) : null },
-    });
+    const current = await database
+      .prepare('SELECT failure_count FROM auth_login_lockouts WHERE email = ?')
+      .bind(normalizedEmail)
+      .first<{ failure_count: number }>();
+    const failureCount = Number(current?.failure_count ?? 0) + 1;
+    const lockedUntil = failureCount >= LOGIN_LOCK_FAILURES ? new Date(now.getTime() + LOGIN_LOCK_DURATION_MS).toISOString().replace('Z', '+00:00') : null;
+    const nowIso = now.toISOString().replace('Z', '+00:00');
+    await database
+      .prepare(`INSERT INTO auth_login_lockouts (email, failure_count, locked_until, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(email) DO UPDATE SET failure_count = excluded.failure_count, locked_until = excluded.locked_until, updated_at = excluded.updated_at`)
+      .bind(normalizedEmail, failureCount, lockedUntil, nowIso)
+      .run();
   });
 }

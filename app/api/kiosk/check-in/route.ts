@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/d1-client';
 import { NextResponse } from 'next/server';
 import { checkInSchema } from '@/src/server/validation';
 import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';

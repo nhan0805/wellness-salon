@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-URL="${CLOSING_URL:-http://localhost:3000/api/jobs/closing}"
+URL="${CLOSING_URL:-http://127.0.0.1:3001/api/jobs/closing}"
 SECRET="${CRON_SECRET:-}"
 TIMEOUT_SECONDS="${CURL_TIMEOUT_SECONDS:-15}"
 

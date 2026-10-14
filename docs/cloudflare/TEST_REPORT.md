@@ -8,13 +8,13 @@
 | Check | Status | Result |
 | --- | --- | --- |
 | npm run lint | PASS | Completed with no lint errors after the Worker wrapper and bootstrap script changes. |
-| npm run typecheck | PASS | Completed after generating both PostgreSQL and D1 Prisma clients. |
+| npm run typecheck | PASS | Completed after generating the D1 Prisma client. |
 | npm test -- --run | PASS | 17 test files passed; 51/51 tests passed with no database skips. |
 | npm run test:e2e:d1 | PASS | Worker artifact + disposable local D1 migrations/bootstrap; 25 passed and 1 intentional project-specific skip across 26 Playwright cases, one worker. |
-| Prisma schema validation | PASS | PostgreSQL and D1 clients generate successfully; Prisma emits its existing package.json configuration deprecation warning. |
+| Prisma schema validation | PASS | The D1 client generates successfully; Prisma emits its existing package.json configuration deprecation warning. |
 | npm run build | PASS | Final Next.js production build completed successfully; the Prisma query-compiler WASM bundling emitted a non-fatal broad-pattern warning. |
-| npm run build:vinext | PASS | Cloudflare Build Output completed with the D1 query-compiler WASM asset; the local plugin emitted a non-fatal Docker socket warning. |
-| npx cf build | PASS | Build Output completed with the Worker wrapper, assets, D1 DB binding, and nodejs_compat; the local plugin emitted a non-fatal Docker socket warning. |
+| npm run build:vinext | PASS | Cloudflare Build Output completed with the D1 query-compiler WASM asset. |
+| npx cf build | PASS | Build Output completed with the Worker wrapper, assets, D1 DB binding, and nodejs_compat. |
 | npx vinext check | PASS WITH PARTIALS | 94% compatible: all imports and detected libraries pass; only the known `typedRoutes` and `reactStrictMode` partial-support notices remain. |
 | Local D1 migrations | PASS | 0001_init.sql and 0002_auth_login_lockouts.sql applied successfully to disposable Wrangler state. |
 | D1 bootstrap generator | PASS | 101 idempotent bootstrap statements generated with disposable credentials and applied successfully to local D1. No demo appointment or payment data was added by the bootstrap; operational smoke rows were removed afterward while the bootstrap catalog/admin/staff rows and two migration records were retained. |
@@ -27,7 +27,6 @@
 | D1 admin read smoke | PASS for smoke scope | Config, catalog, staff, accounts, customers, appointments, appointment search, customer search, reports, board, and services returned HTTP 200 after the D1 search compatibility fix. |
 | D1 job mutation smoke | PASS for smoke scope | Retention returned a successful cleanup result; closing correctly returned `SHIFT_CLOSING_BLOCKED` with blockers, then closed four present staff after local smoke visits were resolved. |
 | cf dev data/page smoke | BLOCKED | Current Cloudflare plugin Build Output mode cannot initialize the SSR child environment required by vinext. |
-| Docker Compose health | PASS (legacy compatibility) | Rebuilt the local production image with the explicit `.env` file; `app` and PostgreSQL were healthy and `/api/health` returned `status: ok`. This is not the active D1 release gate. No `.env` contents were printed and no volumes were reset. |
 | D1 full integration tests | PASS (local E2E scope) | The Worker/D1 Playwright gate covers auth, kiosk, board, staff/admin workflows, payment paths, resilience, and responsive queue behavior. Fault-injection/rollback, broader concurrency, and remote Worker validation remain incomplete. |
 | Owner timezone decision | PASS | Owner confirmed `Asia/Ho_Chi_Minh`; the repository `.env` matches and `.env.example` now uses the same IANA value. |
 | Confirmed timezone seasonal-offset unit test | PASS | `Asia/Ho_Chi_Minh` evaluates as UTC+7 on representative January and July instants; this does not replace simulated Cloudflare cron authorization tests. |
@@ -35,12 +34,12 @@
 | Realtime browser recovery | PASS (local reference runtime) | Existing Playwright resilience coverage exercises SSE reconnect, board retry, and idempotent check-in; the deployed remote SSE/recovery path still needs an approved remote smoke. |
 | Free-tier capacity model | PASS (planning gate) | Scenarios for 50/100/200 customers/day remain below current Workers/D1 Free limits with the 15-second polling budget; remote metrics and 10 ms CPU accounting remain unmeasured. |
 | npx cf deploy --dry-run | PASS | Build Output and binding inventory validated; dry-run exited before any upload. |
-| npm audit --omit=dev --omit=optional | PASS (last successful run) | The Docker production-prune scope previously reported 0 vulnerabilities and the image contains 90 packages after pruning. A repeat on 2026-10-13 could not reach `registry.npmjs.org` (`ENOTFOUND`); no dependency files changed after the successful audit. |
+| npm audit --omit=dev --omit=optional | PASS (last successful run) | The last successful dependency audit reported 0 vulnerabilities. A repeat on 2026-10-13 could not reach `registry.npmjs.org` (`ENOTFOUND`); no dependency files changed after the successful audit. |
 | Remote deploy / production smoke | PASS with scope limit | Worker `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` deployed at `https://wellness.n8l.workers.dev`; read-only `/api/health`, `/api/services`, `/board`, and `/kiosk` smoke passed. Full remote auth/mutation/scheduler/capacity evidence was not run. |
 
 ## Interpretation
 
-The successful builds, canonical local D1 E2E gate, local scheduler/realtime tests, capacity model, and scoped remote smoke prove that the deployed artifact is reachable and that the public read paths respond. They do not replace D1 fault-injection/rollback evidence, remote auth/mutation behavior, deployed SSE recovery, Cloudflare CPU accounting, scheduler-event verification, or the final production approval. PostgreSQL/Docker evidence is compatibility-only.
+The successful builds, canonical local D1 E2E gate, local scheduler/realtime tests, capacity model, and scoped remote smoke prove that the deployed artifact is reachable and that the public read paths respond. They do not replace D1 fault-injection/rollback evidence, remote auth/mutation behavior, deployed SSE recovery, Cloudflare CPU accounting, scheduler-event verification, or the final production approval.
 
 ## Required next test run
 

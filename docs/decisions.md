@@ -1,9 +1,13 @@
 # Architecture decisions
 
-Last updated: 2026-10-13
+Last updated: 2026-10-14
 
 Historical decisions are retained here. The original lifecycle ADR remains in `docs/lifecycle/ADR-001-advisory-lock.md`.
 The implementation-specific BR-01 through BR-06 rules and hardening choices are detailed in [`docs/implementation/DECISIONS.md`](implementation/DECISIONS.md).
+
+## Current runtime decision
+
+The repository now contains only the Cloudflare Worker + local D1 (SQLite) runtime. The server-database schema/migrations, local container stack, native server database dependencies, and their test/benchmark entrypoints were removed from the active tree. Historical ADRs below describe earlier implementation phases and are not current setup instructions.
 
 ## ADR-001 — Transaction-scoped advisory lock
 
@@ -307,10 +311,21 @@ The implementation-specific BR-01 through BR-06 rules and hardening choices are 
 
 - ID: ADR-026
 - Date: 2026-10-13
-- Status: Accepted for the current handoff; production cutover remains blocked
+- Status: Superseded by ADR-027 for repository runtime cleanup
 - Context: The deployment target is Cloudflare Workers + D1. PostgreSQL-only integration tests validate a runtime the deployed Worker no longer uses and therefore cannot be the active release gate.
 - Decision: Treat the Worker `DB` binding, `prisma/d1` schema/migrations, and `npm run test:e2e:d1` as the canonical runtime/test path. Remove PostgreSQL-only suites and PostgreSQL database setup from the active CI gate. Keep the Next/PostgreSQL adapter, Docker Compose, and historical PostgreSQL evidence only for compatibility, rollback, and diagnostics.
 - Alternatives considered: Keep running PostgreSQL tests as the main gate; maintain two equal release gates; delete the PostgreSQL fallback immediately.
 - Reason: Tests must exercise the same persistence/runtime boundary that will be handed over, while preserving a recoverable legacy path until D1 production evidence is complete.
 - Tradeoffs: D1-specific failure-injection, remote Worker, capacity, money, and physical-device evidence remain explicit open gates; the legacy path no longer receives active test-suite maintenance.
-- Consequences: CI runs static tests plus the disposable local Worker/D1 E2E gate; no `RUN_DB_TESTS`, `TEST_DATABASE_URL`, or PostgreSQL service is required for the active pipeline.
+- Consequences: CI runs static tests plus the disposable local Worker/D1 E2E gate.
+
+## ADR-027 — Worker + local D1 is the only repository runtime
+
+- ID: ADR-027
+- Date: 2026-10-14
+- Status: Accepted
+- Context: The application is deployed as a Cloudflare Worker backed by D1. Keeping a second local persistence/runtime stack creates unsupported behavior drift and leaves deleted tooling in the normal developer workflow.
+- Decision: Remove the local PostgreSQL schema/migrations/seed path, Docker/Compose files, server-database dependencies, server-database benchmark scripts, and legacy database-backed Playwright configuration. Keep `prisma/d1`, the generated D1 client, Wrangler configs, Worker build, disposable local D1 bootstrap, and `npm run test:e2e:d1` as the only runtime/test path.
+- Alternatives considered: Keep two local runtimes; keep the old path as a hidden rollback option; point local development at remote D1.
+- Reason: Local behavior must match the deployed Worker boundary while protecting remote D1 from accidental test writes.
+- Consequences: `npm run dev` uses the Worker-compatible local app on port 3001; missing D1 binding fails fast; production rollback uses Cloudflare Worker versions and D1 backup/restore procedures.

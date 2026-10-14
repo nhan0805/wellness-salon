@@ -10,7 +10,6 @@ test-results
 *.log
 !.env.example
 dist
-Dockerfile.local
 .DS_Store
 *.tsbuildinfo
 .vinext/

@@ -24,5 +24,5 @@ Confirm the current CLI syntax before execution. Never print credentials or expo
 
 ## Current state
 
-The remote `wellness-salon` D1 database and required Wrangler secrets exist; its schema and operational row counts were checked read-only before deployment. No D1 export, backup bucket, restore rehearsal, or production-data reset was performed. Existing PostgreSQL/Docker volumes remain outside this migration and must be preserved.
+The remote `wellness-salon` D1 database and required Wrangler secrets exist; its schema and operational row counts were checked read-only before deployment. No D1 export, backup bucket, restore rehearsal, or production-data reset was performed.
 

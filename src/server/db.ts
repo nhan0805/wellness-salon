@@ -1,6 +1,4 @@
-import type { PrismaClient as PostgresPrismaClient } from '@prisma/client';
 import type { PrismaClient as D1PrismaClient } from '@prisma/d1-client';
-import { getBuildTimeValue } from '@/src/server/runtime-config';
 
 type PrismaCompilerWasm = {
   getRuntime: () => Promise<unknown>;
@@ -19,11 +17,11 @@ export type D1DatabaseLike = {
   batch: <T = unknown>(statements: D1Statement[]) => Promise<T[]>;
 };
 
-type RuntimePrisma = PostgresPrismaClient | D1PrismaClient;
+type RuntimePrisma = D1PrismaClient;
 
 type Runtime = {
   client: RuntimePrisma;
-  database: D1DatabaseLike | null;
+  database: D1DatabaseLike;
 };
 
 let runtimePromise: Promise<Runtime> | undefined;
@@ -50,62 +48,54 @@ async function getRuntime(): Promise<Runtime> {
 }
 
 export async function isD1Runtime() {
-  return Boolean((await getRuntime()).database);
+  await getRuntime();
+  return true;
 }
 
-export async function getD1Database(): Promise<D1DatabaseLike | null> {
+export async function getD1Database(): Promise<D1DatabaseLike> {
   return (await getRuntime()).database;
 }
 
 async function initializeRuntime(): Promise<Runtime> {
   const database = await getCloudflareDatabase();
+  if (!database) throw new Error('Cloudflare D1 database binding is not available');
 
-  if (database) {
-    // The generated D1 client main entrypoint selects Prisma's driver-adapter
-    // compatible WASM runtime under Cloudflare's workerd conditions. The
-    // `/edge` entrypoint is incompatible with Prisma driver adapters.
-    // Use the generated adapter-compatible WASM entrypoint explicitly. The
-    // package root can resolve to the Node entrypoint under Vite's dynamic
-    // import analysis, which falls back to a filesystem read of the compiler.
-    const { PrismaClient } = await import('@prisma/d1-client/wasm.js');
-    const { PrismaD1 } = await import('@prisma/adapter-d1');
-    const [{ default: compilerWasm }, compilerRuntime] = await Promise.all([
-      import('@prisma/d1-client/query_compiler_bg.wasm?module') as Promise<{ default: WebAssembly.Module }>,
-      import('@prisma/d1-client/query_compiler_bg.js'),
-    ]);
-    const compiler: PrismaCompilerWasm = {
-      getRuntime: async () => compilerRuntime,
-      getQueryCompilerWasmModule: async () => compilerWasm,
-    };
-    const clientOptions = {
-      adapter: new PrismaD1(database as never),
-      // Prisma 6's generated client type does not expose the internal
-      // compiler override used by the adapter-compatible WASM entrypoint.
-      // Keep the runtime override isolated at this boundary until Prisma's
-      // generated D1 client exposes a typed hook.
-      __internal: {
-        configOverride: (config: { compilerWasm?: PrismaCompilerWasm }) => ({ ...config, compilerWasm: compiler }),
-      },
-    } as never;
-    return {
-      client: new PrismaClient(clientOptions),
-      database,
-    };
-  }
-
-  const { PrismaClient } = await import('@prisma/client');
-  const client = new PrismaClient({
-    log: getBuildTimeValue('NODE_ENV') === 'development' ? ['warn', 'error'] : ['error'],
-  });
-  return { client, database: null };
+  // The generated D1 client main entrypoint selects Prisma's driver-adapter
+  // compatible WASM runtime under Cloudflare's workerd conditions. The
+  // `/edge` entrypoint is incompatible with Prisma driver adapters.
+  // Use the generated adapter-compatible WASM entrypoint explicitly. The
+  // package root can resolve to the Node entrypoint under Vite's dynamic
+  // import analysis, which falls back to a filesystem read of the compiler.
+  const { PrismaClient } = await import('@prisma/d1-client/wasm.js');
+  const { PrismaD1 } = await import('@prisma/adapter-d1');
+  const [{ default: compilerWasm }, compilerRuntime] = await Promise.all([
+    import('@prisma/d1-client/query_compiler_bg.wasm?module') as Promise<{ default: WebAssembly.Module }>,
+    import('@prisma/d1-client/query_compiler_bg.js'),
+  ]);
+  const compiler: PrismaCompilerWasm = {
+    getRuntime: async () => compilerRuntime,
+    getQueryCompilerWasmModule: async () => compilerWasm,
+  };
+  const clientOptions = {
+    adapter: new PrismaD1(database as never),
+    // Prisma 6's generated D1 client type does not expose the internal
+    // compiler override used by the adapter-compatible WASM entrypoint.
+    // Keep the runtime override isolated at this boundary until Prisma's
+    // generated D1 client exposes a typed hook.
+    __internal: {
+      configOverride: (config: { compilerWasm?: PrismaCompilerWasm }) => ({ ...config, compilerWasm: compiler }),
+    },
+  } as never;
+  return {
+    client: new PrismaClient(clientOptions),
+    database,
+  };
 }
 
 async function getCloudflareDatabase(): Promise<D1DatabaseLike | undefined> {
   try {
-    // Keep the platform-only module out of the Node/Next build graph at
-    // evaluation time. Vinext/Workers resolves this import at request time;
-    // the PostgreSQL reference runtime falls back cleanly when the module is
-    // unavailable.
+    // Keep the platform-only module out of the build graph at evaluation time.
+    // Vinext/Workers resolves this import at request time.
     const { env } = await import('cloudflare:workers');
     return (env as { DB?: D1DatabaseLike }).DB;
   } catch (error) {
@@ -165,7 +155,7 @@ export async function runD1Batch(statements: D1Statement[]) {
   return database.batch(statements);
 }
 
-const proxyTarget = {} as PostgresPrismaClient;
+const proxyTarget = {} as D1PrismaClient;
 
 function delegateProxy(model: PropertyKey) {
   return new Proxy(
@@ -176,7 +166,7 @@ function delegateProxy(model: PropertyKey) {
           getRuntime().then((runtime) => {
             const delegate = (runtime.client as unknown as Record<PropertyKey, Record<PropertyKey, (...values: unknown[]) => unknown>>)[model];
             const operation = () => Promise.resolve(delegate[method](...args));
-            return runtime.database ? runD1Prisma(operation) : operation();
+            return runD1Prisma(operation);
           });
       },
     },
@@ -187,12 +177,8 @@ export const prisma = new Proxy(proxyTarget, {
   get(_target, property) {
     if (property === 'then') return undefined;
     if (property === '$transaction') {
-      return async (operation: unknown, options?: unknown) => {
+      return async (operation: unknown) => {
         const runtime = await getRuntime();
-
-        if (!runtime.database) {
-          return (runtime.client as PostgresPrismaClient).$transaction(operation as never, options as never);
-        }
 
         return runD1Transaction(runtime.database, async () => {
           if (Array.isArray(operation)) {
@@ -211,10 +197,10 @@ export const prisma = new Proxy(proxyTarget, {
         getRuntime().then((runtime) => {
           const method = (runtime.client as unknown as Record<PropertyKey, (...values: unknown[]) => unknown>)[property];
           const operation = () => Promise.resolve(method.apply(runtime.client, args));
-          return runtime.database ? runD1Prisma(operation) : operation();
+          return runD1Prisma(operation);
         });
     }
 
     return delegateProxy(property);
   },
-}) as unknown as PostgresPrismaClient;
+}) as unknown as D1PrismaClient;

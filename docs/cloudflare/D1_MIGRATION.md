@@ -5,13 +5,13 @@
 
 ## Source of truth and safety
 
-`prisma/d1/schema.prisma`, `prisma/d1/migrations/*`, and the Worker D1 branches are the source of truth for the active runtime/test target. `prisma/schema.prisma` and the existing PostgreSQL migrations remain a legacy compatibility/rollback path; do not overwrite them or run `prisma migrate deploy` against D1.
+`prisma/d1/schema.prisma`, `prisma/d1/migrations/*`, and the Worker D1 branches are the only source of truth for the runtime/test target. Use the explicit D1 migration commands; do not run a server-database migration workflow against the Worker.
 
-Production starts with a fresh D1 database. The migration excludes real production-data import, and existing PostgreSQL/Docker volumes must be preserved.
+Production starts with a reviewed D1 database state. The migration excludes real production-data import; local E2E state is disposable and remote D1 state must be backed up before reviewed changes.
 
 ## D1 representations
 
-| PostgreSQL/reference value | D1 representation |
+| Application value | D1 representation |
 | --- | --- |
 | Decimal money | Numeric compatibility columns remain in the baseline; validation and application arithmetic normalize values through integer minor units. Production financial review is still required before release. |
 | DateTime | UTC ISO text; direct D1 writes use the adapter-compatible +00:00 form and business-date conversion uses the owner-selected IANA timezone. |
@@ -28,7 +28,7 @@ Production starts with a fresh D1 database. The migration excludes real producti
 
 ## Transaction constraint
 
-Prisma's D1 adapter is not a substitute for the PostgreSQL transaction model. D1 command branches now use D1Database.batch() with conditional updates and idempotency receipts for check-in, staff actions, payment lifecycle, appointment changes, reconciliation, closing, retention, and admin writes. The local lease remains a compatibility guard for reads/legacy fallback paths. Production is still not cleared until interruption/fault-injection, concurrency, remote Worker, cron authorization, and capacity evidence is complete.
+Prisma's D1 adapter does not provide a rollback transaction boundary. D1 command branches use D1Database.batch() with conditional updates, a local lease, and idempotency receipts for check-in, staff actions, payment lifecycle, appointment changes, reconciliation, closing, retention, and admin writes. Production is still not cleared until interruption/fault-injection, concurrency, remote Worker, cron authorization, and capacity evidence is complete.
 
 ## Clean bootstrap
 
@@ -39,7 +39,7 @@ npm run db:seed:d1:sql runs scripts/seed-d1-bootstrap.ts. With owner-supplied en
 - ADMIN and STATION accounts with Worker-compatible PBKDF2 hashes;
 - skip reasons and ShopConfig with the selected IANA timezone.
 
-It does not create appointments, payments, demo history, or import PostgreSQL data. The operator reviews the generated file before applying it to the fresh remote D1.
+It does not create appointments, payments, demo history, or import production data. The operator reviews the generated file before applying it to the reviewed remote D1.
 
 ## Local workflow
 

@@ -2,7 +2,7 @@
 
 ## Scope
 
-The test app ran against the disposable PostgreSQL database on port 3100. Chromium viewport emulation was used at 810×1080 (portrait) and 1080×810 (landscape) for the kiosk, public board, sign-in, and authenticated admin dashboard.
+The test app ran against disposable local D1 through the Worker-compatible runtime. Chromium viewport emulation was used at 810×1080 (portrait) and 1080×810 (landscape) for the kiosk, public board, sign-in, and authenticated admin dashboard.
 
 The screenshots were captured in `/private/tmp` during the audit:
 

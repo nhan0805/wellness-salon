@@ -10,10 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Local app verification rules
 
-- When the user is viewing `http://localhost:3000`, first check whether Docker is serving the app before assuming a browser refresh will show source changes. The repository's Docker setup runs a production image with `node server.js`, so UI and server changes require a rebuild.
-- For Docker-based verification, load the repository `.env` explicitly because `docker/docker-compose.yml` requires those variables:
-  `docker compose --env-file .env -f docker/docker-compose.yml up -d --build app`
-- After rebuilding, verify the container is healthy with `docker compose --env-file .env -f docker/docker-compose.yml ps` and `curl -fsS http://127.0.0.1:3000/api/health`. If the change is UI-specific, also confirm the generated bundle contains a distinctive selector, label, or implementation marker before reporting that the change is live.
-- Only then reload the browser. If the browser still shows an older interface, use a hard refresh and verify that the browser is on the expected host and port. Do not conclude that the implementation failed until the running container and its generated assets have been checked.
-- Recreating the app container can invalidate an existing Auth.js session cookie. If the browser is redirected to `/admin/sign-in` after a rebuild, tell the user to log in again; never enter credentials unless the user explicitly authorizes it. Do not delete Docker volumes or reset the database as part of this troubleshooting.
-- Never print the contents of `.env` or expose its secrets in command output. Keep database volumes intact unless the user explicitly requests a destructive reset.
+- The local application runs as the Cloudflare Worker with a disposable local D1 database on `http://127.0.0.1:3001`.
+- For verification, use `npm run test:e2e:d1`; it builds the Worker artifact, applies local D1 migrations, generates the bootstrap SQL, and runs the Worker E2E suite.
+- If the browser shows an older interface, stop the current Wrangler/Vite process, rerun the D1 build/test command, and hard-refresh the browser. Confirm the browser is on port `3001`.
+- Never print the contents of `.env` or expose its secrets in command output. Do not target the deployed D1 database from local tests.

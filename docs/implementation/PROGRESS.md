@@ -1,99 +1,41 @@
 # Implementation progress
 
-This tracker records the implementation authorized by the product/engineering brief in the attached user instructions. The existing audit remains at `docs/audits/2026-10-10-nail-salon-mvp-audit.md`.
+Last updated: 2026-10-14
 
-## 2026-10-12 Cloudflare Free migration
+## Active target
 
-Status: **Worker deployed to workers.dev; production sign-off still open**.
+Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test target. Local E2E state is disposable. The Worker is deployed at `https://wellness.n8l.workers.dev`; read-only smoke passed, while authenticated remote behavior, failure-injection, capacity, and final production approval remain open.
 
-- Added official vinext/Cloudflare Worker build configuration and a D1 binding scaffold; the existing remote D1/Worker resources are now used by the deployed workers.dev release.
-- `npm run build:vinext` and `npx cf build` complete; direct vinext page smoke returns 200 for `/`, `/kiosk`, and `/board`.
-- Worker-visible Argon2id now uses `hash-wasm`; native PHC compatibility was verified.
-- Runtime/bootstrap timezone defaults now use an explicit UTC sentinel. The owner must provide the final IANA timezone before scheduled jobs run.
-- Added a separate D1 schema/migration and client-generation workflow. The local Worker runtime now executes health, catalog, board, public pages, kiosk check-in, idempotent replay, and concurrent code-allocation smoke against disposable local D1 state.
-- The D1 bridge uses an application lease for compatibility reads/fallbacks; critical Worker mutations now use explicit D1 batch/guard/receipt branches. Fault-injection/rollback, money representation, full concurrency, and remote capacity evidence remain open.
-- Required reports are in `docs/cloudflare/`. The first workers.dev deployment is complete; do not treat it as final production approval. Remaining remote mutation/scheduler/capacity/rollback checks and the owner approval gate are still required.
+## Delivered
 
-## Safety baseline
+- Kiosk check-in, public board, station/admin authentication, staff verification, attendance, routing, payments, reports, customer/staff/service/account management, appointment history, and retention/closing jobs.
+- D1 schema and migrations under `prisma/d1/`, generated `@prisma/d1-client`, Worker query-compiler WASM loading, and `DB` binding validation.
+- D1 guarded batches, leases, command receipts, request-hash conflict checks, audit events, session-version revalidation, and database-backed lockouts.
+- Worker-compatible PBKDF2 credential verification and HS256 sessions.
+- Repeatable local bootstrap and Worker E2E harness through `scripts/seed-d1-bootstrap.ts` and `scripts/run-d1-e2e.mjs`.
+- Tablet/PWA layout, SSE reconnect, bounded polling, public redaction, service categories/icons, multi-skill routing, payment history, and audited corrections/refunds.
 
-- Repository has no `.git` directory, so a recoverable pre-change source snapshot was created at `/private/tmp/wellness-salon-pre-implementation-20261010.tar.gz`; the current pushed snapshot uses attached metadata at `/private/tmp/wellness-salon-git`.
-- No production database reset, custom domain, or Docker infrastructure change was made. The Worker deployment is recorded in `docs/cloudflare/DEPLOYMENT_GUIDE.md`.
-- The implementation is being kept additive where practical; destructive data operations require an explicit migration or a documented operator action.
+## Verification evidence
 
-## Phase status
+| Check | Result |
+| --- | --- |
+| `npm run lint` | PASS in the recorded local gate |
+| `npm run typecheck` | PASS on 2026-10-14 after D1 client generation |
+| `npm test -- --run` | 51/51 PASS, no database skips |
+| `npm run build:vinext` | PASS in the recorded Worker gate |
+| `npm run test:e2e:d1` | 25/26 PASS; one intentional desktop-project skip |
+| Local D1 migrations/bootstrap | PASS; two migrations and 101 bootstrap statements |
+| Local Worker route/command smoke | PASS for health, auth, kiosk, board, admin, payments, closing, retention, and resilience scope |
+| `npx cf deploy --dry-run` | PASS in the recorded deployment gate |
+| Remote workers.dev read-only smoke | PASS for health, catalog, board, and kiosk |
 
-| Phase | Scope | Status | Evidence / notes |
-|---|---|---|---|
-| 0 | Preparation, decisions, baseline, rollback | Complete | Scope, decisions, rollback snapshot, and audit baseline are recorded. |
-| 1 | Security and correctness | Complete | Session invalidation, persistent PIN lockout, authorization checks, validation, cancellation, and audit paths are implemented. |
-| 2 | Realtime, idempotency, concurrency | Complete | Request receipts, payload-hash conflicts, transaction/advisory locks, monotonic board versions, SSE recovery, and bounded polling are implemented. |
-| 3 | Operational workflows | Complete | Attendance/checkout safety, cancellation, reassignment, queue repair, closing, and retention paths are implemented. |
-| 4 | Service changes, support staff, skip reasons | Complete | Service-change audit/snapshots, permanent exact-service exclusions, manager override, skip-reason master data, and atomic support release are implemented. |
-| 5 | Performance, configuration, observability | Complete with representative measured limits | ShopConfig is authoritative; active-support indexes, request IDs, structured API timings, critical-path rejection/lock/sync/job telemetry, a lean board read model, repeatable benchmark/load scripts, and a 20,000-appointment disposable fixture are available. A local Prisma `connection_limit=3` profile is measured; deployed pool/network/SLO measurements remain open. |
-| 6 | UI, accessibility, E2E, release readiness | Complete with stated limitations | Protected tablet E2E passes 7/7, kiosk returning-guest E2E passes 2/2, resilience E2E passes 3/3 including deterministic board-network interruption/retry, Chromium iPad-viewport screenshots/DOM checks were reviewed, and static/DB quality gates pass. Physical iPad/WebKit, live Wi-Fi, and offline submission remain open. |
+## Open gates
 
-## 2026-10-11 follow-up
+- D1 crash/interruption and broader concurrent mutation assertions.
+- Deployed Worker auth/mutation/SSE/scheduler smoke and Free-tier CPU/latency observation.
+- Physical iPad/WebKit, real Wi-Fi interruption, offline submission, Dynamic Type, and VoiceOver review.
+- D1 export/restore rehearsal, scheduler alerting, production secrets/domain/TLS, and owner approval.
 
-The current tree adds category-aware service catalog management, searchable service icons, append-only turn-event history, payment history, audited payment adjustment/correction/refund commands, and the compact appointment action menu. Static gates pass after the follow-up; dedicated disposable DB/E2E coverage for these new paths remains a backlog item. The earlier 2026-10-10 hardening phases and their evidence remain valid for the code paths they cover.
+## Operating rule
 
-## 2026-10-12 PWA follow-up
-
-Standalone PWA mode was restored for iPad testing: the manifest now uses `display: standalone`, the root layout emits Apple web-app metadata, and the manifest URL is versioned at `?v=10`. The login form remains visible inside the installed app without an extra PWA instruction banner. Credentials remain environment-only and are not prefilled in the client. Physical iPad/WebKit behavior and secure-context service-worker checks remain open.
-
-## 2026-10-12 payment confirmation follow-up
-
-Payment confirmation now uses one shared, focus-to-expand amount keypad for the final amount, card-terminal tip, cash tip, and cash received fields. The initial confirm contract no longer carries `adjustmentReason`, and the confirm audit/history projection no longer stores or displays it; amount changes remain traceable through original/current amounts. Reason requirements remain on post-confirmation adjustment, correction, and refund commands. No migration is required. Keypad interaction on physical iPad/WebKit remains part of the manual QA gate.
-
-## 2026-10-13 canonical Worker/D1 gate
-
-The active persistence/test target is Cloudflare Worker + D1. `npm test -- --run` passes 51/51 with no database skips. `npm run test:e2e:d1` builds the Worker artifact, applies the two D1 migrations, generates/applies the 101-statement disposable bootstrap, and passes 25/26 Playwright cases with one intentional desktop-project skip because the responsive queue test runs and passes in the tablet project. The gate covers Worker auth, kiosk check-in/idempotency, board/staff actions, admin/customer/payment workflows, resilience, and the iPad queue layout at 810×1080 and 1080×810. PostgreSQL checks remain historical compatibility/rollback evidence only.
-
-## Baseline commands and outcomes
-
-These checks were run before implementation changes:
-
-| Command | Outcome |
-|---|---|
-| `npm run lint` | PASS |
-| `npm run typecheck` | PASS |
-| `npm test -- --run` | PASS: 8 files, 22 tests; 3 tests skipped |
-| `npm run test:coverage` | PASS; 13.5% statements/lines, 60.31% branches, 14.28% functions |
-| `npx prisma validate` | PASS; Prisma 7 package.json configuration deprecation warning |
-| `npm run build` | PASS; Next 16.4.0 Turbopack |
-| `npm audit --omit=dev --omit=optional --audit-level=high` | PASS: 0 vulnerabilities |
-| Safe Playwright public authorization checks | PASS: 2 tests |
-| DB-backed integration tests | NOT RUN; no disposable test database was provisioned |
-| Mutating Playwright workflows | NOT RUN during the audit baseline |
-
-## Historical verification before the canonical D1 gate
-
-| Command / check | Outcome |
-|---|---|
-| `npx prisma generate` | PASS; Prisma Client 6.19.3 generated; Prisma 7 package.json configuration deprecation warning |
-| `npm run typecheck` | PASS |
-| `npm run lint` | PASS |
-| `npm test -- --run` | PASS: 13 files, 37 tests; 3 DB-gated files / 9 tests skipped without DB env |
-| `npm run test:coverage` | PASS: current tree 14.21% statements/lines, 69.29% branches, 22.95% functions; broad report, not a release threshold |
-| `npx prisma validate` | PASS; Prisma 7 package.json configuration deprecation warning |
-| `npm run build` | PASS; Next.js 16.4.0 Turbopack; all current app/API routes compiled |
-| Local D1 migration / Worker smoke | PASS with scope; full atomicity remains blocked |
-| Tablet public authorization smoke: board visitor + kiosk | PASS: 2/2; server required approved out-of-sandbox bind |
-| `npm audit --omit=dev --omit=optional --audit-level=high` | NOT VERIFIED after implementation because the audit endpoint was unavailable (`ENOTFOUND registry.npmjs.org`); pre-change baseline was 0 high-severity vulnerabilities and no dependencies were changed in this batch |
-| PostgreSQL migration + seed | PASS on isolated native PostgreSQL `127.0.0.1:55432/nailshop_test`; all 14 migrations applied and seed completed; production DB untouched |
-| PostgreSQL-backed integration tests | PASS when run sequentially against the disposable DB: `postgres` 3/3 (including paginated history), `admin-access` 1/1, `critical-workflows` 5/5. A parallel multi-file run exposed shared-DB fixture interference; do not parallelize these files against one DB. |
-| Protected mutating Playwright workflows | PASS: protected tablet project 7/7 from a clean test DB on isolated app port 3100; Chromium, one worker |
-| iPad viewport visual/DOM review | PASS with limitation: kiosk, board, sign-in, and authenticated admin captured at 810×1080 and 1080×810; no horizontal overflow and primary controls met 44px measurement. WebKit/physical iPad not available. |
-| Observability smoke | PASS: `/api/health` echoed supplied `x-request-id`; board generated one and emitted structured completion timing |
-| DB benchmark | PASS on small test fixture, 20 iterations + 2 warmups: board p50 1.76ms/p95 3.26ms/2,613-byte payload; appointments p50 1.66ms/p95 1.91ms/4,122 bytes; report day p95 0.58ms; report month p95 0.50ms |
-| Representative DB benchmark | PASS on disposable 20,000-appointment fixture: board p50/p95 73.70/107.89ms with 3,899-byte payload; legacy filtered history 96.08/104.48ms with 1,515,072-byte payload; new 25-row history page 5.16/6.34ms with 34,360-byte payload; report day/month p95 5.32/16.27ms |
-| Production-build HTTP smoke | PASS with scope limit: three concurrent clients × ten cycles, 30/30 board requests HTTP 200, p50/p95 114.59/219.84ms; request IDs echoed |
-| Disposable concurrent read/write load profile | PASS with scope limit: three service-layer clients × ten cycles, 120 operations, zero errors; board p50/p95/p99 92.40/152.20/170.98ms, check-in write 37.38/78.53/128.86ms; seven advisory-lock waits ≥10ms, maximum 56.87ms |
-| Authenticated HTTP load profile | PASS with scope limit: three role flows × ten cycles, 70 HTTP operations, zero errors; management/board/kiosk reads and kiosk writes returned expected statuses; p95 36.26ms for admin appointments, 30.20ms for board, and 45.83ms for check-in; max observed DB connections 13, active 3 |
-| Kiosk returning-guest E2E | PASS: 2/2 on production build/local disposable DB; approved full-name lookup is displayed read-only and the customer can continue without re-entering the name |
-| Browser resilience E2E | PASS: `tests/e2e/resilience.spec.ts` 3/3; transient SSE disconnect and board snapshot network interruption recovered to Live, and same idempotency key returned one appointment |
-| Pool-constrained authenticated HTTP profile | PASS with scope limit: production build + disposable PostgreSQL with Prisma `connection_limit=3`/`pool_timeout=5`; 350 operations, zero errors, max observed 6 total/2 active DB connections; deployed network/SLO not established |
-| Migration rollback rehearsal | NOT RUN; no down migration exists; use backup/restore or forward corrective migration after approval |
-
-## Update protocol
-
-The remaining limitations above are deliberate release gates, not silent assumptions. Do not treat the implementation as fully production-ready until physical iPad/WebKit/live Wi-Fi review, remote auth/mutation/scheduler verification, and staging/deployed connection-pool/network SLO measurement are complete. Kiosk full-name behavior is approved and tested. Job scheduling/alerting is explicitly deferred by product decision. Representative reads, authenticated local HTTP, the pool-constrained local profile, critical-path telemetry, the disposable concurrent profile, and browser network emulation are complete but do not establish a production SLO.
+Keep local checks on `wrangler.local.jsonc` and disposable D1 state. Do not mutate remote D1 from local tests, print `.env`, or introduce a second database runtime without an explicit architecture decision.

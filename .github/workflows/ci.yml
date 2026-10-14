@@ -15,7 +15,7 @@ jobs:
       AUTH_SECRET: ci-only-32-byte-random-value-replace-me
       AUTH_COOKIE_SECURE: 'false'
       AUTH_TRUST_HOST: 'true'
-      NEXTAUTH_URL: http://127.0.0.1:3000
+      NEXTAUTH_URL: http://127.0.0.1:3001
       CRON_SECRET: ci-only-cron-secret
       SHOP_TIMEZONE: Asia/Ho_Chi_Minh
       ADMIN_EMAIL: admin@ci.invalid

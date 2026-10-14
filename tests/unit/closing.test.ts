@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AppointmentStatus } from '@prisma/client';
+import { AppointmentStatus } from '@prisma/d1-client';
 import { getAppointmentClosingBlocker } from '@/src/server/services/prisma-operations';
 
 const base = {

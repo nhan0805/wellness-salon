@@ -3,13 +3,9 @@
 **Date:** 2026-10-13  
 **Status:** Critical D1 mutation branches now use explicit batch/guard/receipt orchestration; production still needs remote evidence and the final account/secret gate.
 
-## Legacy PostgreSQL compatibility behavior
+## D1 constraint and current orchestration
 
-The legacy Next/Docker path uses Prisma `$transaction` and PostgreSQL advisory locks around queue routing, staff actions, idempotency receipts, reconciliation, closing, and retention. Those mechanisms are retained for rollback/compatibility; the active Worker/D1 gate exercises the D1 batch/guard/receipt paths below.
-
-## D1 constraint and current bridge
-
-Prisma's D1 adapter cannot preserve the PostgreSQL transaction guarantee: D1 transactions are not a rollback boundary and queries execute individually. The bridge uses a __app_locks row lease to serialize legacy callback paths. The lease prevents same-shop races during the callback, but it cannot undo a write that succeeded before a later write fails.
+Prisma's D1 adapter does not provide a rollback transaction boundary: D1 statements execute individually and a later failure cannot undo an earlier successful write. The Worker therefore uses a `__app_locks` row lease to serialize same-shop critical sections, plus guarded predicates, explicit batches, and replay receipts. The lease prevents same-shop races during the callback but does not make a partial write reversible.
 
 The explicit D1 branches use D1Database.batch() plus predicates and replay receipts:
 
@@ -21,7 +17,7 @@ The explicit D1 branches use D1Database.batch() plus predicates and replay recei
 - business-date direct writes use the same +00:00 DateTime representation as Prisma's D1 adapter;
 - exact money arithmetic is performed in integer minor units at validation and service boundaries.
 
-These branches remove the known D1 write-path gap. Reads and compatibility fallback code still use the Prisma D1 adapter. Local batch/guard/replay tests and HTTP smoke cover the critical command families, but remote D1 evidence and a production capacity observation remain deployment gates. Do not describe local smoke as a substitute for remote behavior or quota telemetry.
+These branches are the only active write path. Local batch/guard/replay tests and HTTP smoke cover the critical command families, but remote D1 evidence and a production capacity observation remain deployment gates. Do not describe local smoke as a substitute for remote behavior or quota telemetry.
 
 ## Required invariants
 

@@ -1,6 +1,6 @@
 import { headers } from 'next/headers';
 import { z } from 'zod';
-import { getD1Database, isD1Runtime, prisma } from '@/src/server/db';
+import { getD1Database } from '@/src/server/db';
 import { hasTrustedOrigin } from '@/src/server/request-security';
 import { assertDbLoginNotLocked, recordDbLoginAttempt, verifySecret } from '@/src/server/security';
 import { getRuntimeValue, isProductionRuntime } from '@/src/server/runtime-config';
@@ -66,24 +66,15 @@ function safeDisplayName(displayName: string | null | undefined, role: AuthRole)
 }
 
 async function findAuthUser(where: { id?: string; email?: string }): Promise<AuthUserRecord | null> {
-  if (await isD1Runtime()) {
-    const database = await getD1Database();
-    const column = where.id ? 'id' : 'email';
-    const value = where.id ?? where.email;
-    const row = await database
-      ?.prepare(`SELECT id, email, display_name, password_hash, role, is_active, session_version FROM auth_users WHERE ${column} = ? LIMIT 1`)
-      .bind(value)
-      .first<{ id: string; email: string; display_name: string | null; password_hash: string; role: AuthRole; is_active: number; session_version: number }>();
-    return row
-      ? { id: row.id, email: row.email, displayName: row.display_name, passwordHash: row.password_hash, role: row.role, isActive: Boolean(row.is_active), sessionVersion: Number(row.session_version) }
-      : null;
-  }
-
-  const row = where.id
-    ? await prisma.authUser.findUnique({ where: { id: where.id } })
-    : await prisma.authUser.findUnique({ where: { email: where.email! } });
+  const database = await getD1Database();
+  const column = where.id ? 'id' : 'email';
+  const value = where.id ?? where.email;
+  const row = await database
+    .prepare(`SELECT id, email, display_name, password_hash, role, is_active, session_version FROM auth_users WHERE ${column} = ? LIMIT 1`)
+    .bind(value)
+    .first<{ id: string; email: string; display_name: string | null; password_hash: string; role: AuthRole; is_active: number; session_version: number }>();
   return row
-    ? { id: row.id, email: row.email, displayName: row.displayName, passwordHash: row.passwordHash, role: row.role as AuthRole, isActive: row.isActive, sessionVersion: row.sessionVersion }
+    ? { id: row.id, email: row.email, displayName: row.display_name, passwordHash: row.password_hash, role: row.role, isActive: Boolean(row.is_active), sessionVersion: Number(row.session_version) }
     : null;
 }
 

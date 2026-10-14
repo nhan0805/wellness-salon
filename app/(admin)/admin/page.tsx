@@ -167,6 +167,12 @@ type Report = {
   dailyTrend: ReportTrendPoint[];
   reconciliation: { recordedTotal: number; difference: number; isBalanced: boolean };
 };
+type ShopSnapshot = {
+  timezone: string;
+  openingTime: string;
+  closingTime: string;
+  currency: string;
+};
 
 const navItems: Array<{ id: Section; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
@@ -210,6 +216,54 @@ const emptyReport: Report = {
   dailyTrend: [],
   reconciliation: { recordedTotal: 0, difference: 0, isBalanced: true },
 };
+
+const ADMIN_DASHBOARD_REQUEST_TIMEOUT_MS = 15_000;
+
+function getAdminApiError(payload: unknown) {
+  if (!payload || typeof payload !== 'object' || !('error' in payload)) return '';
+  const error = (payload as { error?: unknown }).error;
+  return typeof error === 'string' ? error : '';
+}
+
+async function fetchAdminDashboardJson<T>(
+  path: string,
+  label: string,
+  parentSignal: AbortSignal,
+): Promise<T> {
+  const requestController = new AbortController();
+  let timedOut = false;
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true;
+    requestController.abort();
+  }, ADMIN_DASHBOARD_REQUEST_TIMEOUT_MS);
+  const abortRequest = () => requestController.abort();
+
+  if (parentSignal.aborted) requestController.abort();
+  else parentSignal.addEventListener('abort', abortRequest, { once: true });
+
+  try {
+    const response = await fetch(path, {
+      cache: 'no-store',
+      signal: requestController.signal,
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      const detail = getAdminApiError(payload);
+      throw new Error(`${label} failed (${response.status})${detail ? `: ${detail}` : ''}`);
+    }
+    return payload as T;
+  } catch (error) {
+    if (timedOut) {
+      throw new Error(
+        `${label} timed out after ${ADMIN_DASHBOARD_REQUEST_TIMEOUT_MS / 1000} seconds.`,
+      );
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+    parentSignal.removeEventListener('abort', abortRequest);
+  }
+}
 
 export default function AdminPage() {
   const [accountViewer, setAccountViewer] = useState<AccountViewer>(
@@ -312,39 +366,34 @@ export default function AdminPage() {
         section === 'overview' || section === 'queue' || section === 'payments';
       const shouldLoadReports = section === 'overview' || section === 'appointments';
       const shouldLoadConfig = section === 'overview';
-      const [liveAppointmentsResponse, reportAppointmentsResponse, reportResponse, configResponse] =
-        await Promise.all([
-          shouldLoadLive
-            ? fetch('/api/admin/appointments', { cache: 'no-store', signal: controller.signal })
-            : Promise.resolve(null),
-          shouldLoadReports
-            ? fetch('/api/admin/appointments' + appointmentsQuery, {
-                cache: 'no-store',
-                signal: controller.signal,
-              })
-            : Promise.resolve(null),
-          shouldLoadReports
-            ? fetch('/api/admin/reports' + reportQuery, {
-                cache: 'no-store',
-                signal: controller.signal,
-              })
-            : Promise.resolve(null),
-          shouldLoadConfig
-            ? fetch('/api/admin/config', { cache: 'no-store', signal: controller.signal })
-            : Promise.resolve(null),
-        ]);
-      if (
-        (shouldLoadLive && !liveAppointmentsResponse?.ok) ||
-        (shouldLoadReports && (!reportAppointmentsResponse?.ok || !reportResponse?.ok)) ||
-        (shouldLoadConfig && !configResponse?.ok)
-      )
-        throw new Error('Unable to load dashboard data');
       const [liveAppointmentsPayload, reportAppointmentsPayload, reportPayload, configPayload] =
         await Promise.all([
-          liveAppointmentsResponse ? liveAppointmentsResponse.json() : Promise.resolve(null),
-          reportAppointmentsResponse ? reportAppointmentsResponse.json() : Promise.resolve(null),
-          reportResponse ? reportResponse.json() : Promise.resolve(null),
-          configResponse ? configResponse.json() : Promise.resolve(null),
+          shouldLoadLive
+            ? fetchAdminDashboardJson<{
+                appointments?: Appointment[];
+              }>('/api/admin/appointments', 'Live appointments', controller.signal)
+            : Promise.resolve(null),
+          shouldLoadReports
+            ? fetchAdminDashboardJson<{
+                appointments?: Appointment[];
+              }>(
+                '/api/admin/appointments' + appointmentsQuery,
+                'Report appointments',
+                controller.signal,
+              )
+            : Promise.resolve(null),
+          shouldLoadReports
+            ? fetchAdminDashboardJson<Report>(
+                '/api/admin/reports' + reportQuery,
+                'Reports',
+                controller.signal,
+              )
+            : Promise.resolve(null),
+          shouldLoadConfig
+            ? fetchAdminDashboardJson<{
+                shop?: ShopSnapshot;
+              }>('/api/admin/config', 'Shop config', controller.signal)
+            : Promise.resolve(null),
         ]);
       if (revision !== refreshRevisionRef.current) return;
       if (liveAppointmentsPayload) setAppointments(liveAppointmentsPayload.appointments ?? []);
@@ -363,6 +412,7 @@ export default function AdminPage() {
     } catch (error) {
       if (revision !== refreshRevisionRef.current) return;
       if (error instanceof DOMException && error.name === 'AbortError') return;
+      controller.abort();
       setLoadError(error instanceof Error ? error.message : 'Unable to load dashboard data');
       setStaleSince((current) => current ?? new Date());
     } finally {
@@ -1060,6 +1110,7 @@ export default function AdminPage() {
             );
           })}
         </nav>
+        <p className="shop-config-scroll-hint">Swipe horizontally to see more settings sections</p>
         <div className="shop-config-tab-content">
           {shopConfigSection === 'general' ? <AdminShopConfig onToast={setToast} /> : null}
           {shopConfigSection === 'staff' ? (

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { ActorType } from '@prisma/client';
+import { ActorType } from '@prisma/d1-client';
 import { auth } from '@/src/server/auth';
 import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
 import { cleanupDbOperationalData } from '@/src/server/services/prisma-operations';

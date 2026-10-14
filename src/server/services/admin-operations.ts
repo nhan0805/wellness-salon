@@ -1,4 +1,4 @@
-import { AppointmentStatus, AttendanceClosedBy as PrismaAttendanceClosedBy, AttendanceStatus, Availability, AuthRole, Prisma } from '@prisma/client';
+import { AppointmentStatus, AttendanceClosedBy as PrismaAttendanceClosedBy, AttendanceStatus, Availability, AuthRole, Prisma } from '@prisma/d1-client';
 import { randomId } from '@/src/server/web-crypto';
 import type { AdminAccountSnapshot, AdminAttendanceSnapshot, AdminCustomerHistorySnapshot, AdminCustomerSnapshot, AdminServiceCategorySnapshot, AdminServiceSnapshot, AdminSkipReasonSnapshot, AdminSkillManagementSnapshot, AdminSkillSnapshot, AdminStaffSnapshot, ServiceCategorySnapshot } from '@/src/domain/types';
 import { deriveStaffInitials } from '@/src/domain/staff';

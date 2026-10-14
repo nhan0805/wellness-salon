@@ -20,8 +20,7 @@ The port must verify opening/closing boundaries, business dates, retention cutof
 ## Current changes
 
 - Added `DEFAULT_TIMEZONE = 'UTC'` as a documented bootstrap value.
-- Updated schema, seed, Docker bootstrap, and empty-state defaults to avoid a hidden Vietnam production assumption.
-- Added a PostgreSQL reference migration that changes only the schema default and preserves existing configured rows.
+- Updated D1 schema, bootstrap, and empty-state defaults to avoid a hidden Vietnam production assumption.
 - The owner decision is complete and the deployed remote D1 catalog reports `Asia/Ho_Chi_Minh`; a scheduled-event execution check remains open.
 
 ## Scheduler behavior after a UI change

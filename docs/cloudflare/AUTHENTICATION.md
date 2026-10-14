@@ -25,7 +25,7 @@ New credentials use Web Crypto PBKDF2-HMAC-SHA-256:
 pbkdf2-sha256$310000$<base64url salt>$<base64url digest>
 ~~~
 
-The Worker can verify this format without native modules or dynamic WASM compilation. Legacy Argon2id PHC hashes remain readable for the PostgreSQL/reference path and should be rotated when each account next changes its password or PIN. The argon2 package remains seed-only Node code; it is not loaded by the Worker security path.
+The Worker can verify this format without native modules or dynamic WASM compilation. Existing Argon2id PHC hashes remain readable for account migration and should be rotated when each account next changes its password or PIN. New bootstrap credentials use PBKDF2; no native Argon2 package is required.
 
 tests/unit/security.test.ts covers matching and non-matching PBKDF2 secrets and malformed hashes. The local D1 HTTP smoke also verified successful login, session retrieval, and generic failure handling.
 

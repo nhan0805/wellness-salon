@@ -7,7 +7,7 @@ import {
   Prisma,
   TurnEventType,
   TurnStatus,
-} from '@prisma/client';
+} from '@prisma/d1-client';
 import { routeNextTurn } from '@/src/domain/turn-routing';
 import {
   transitionAppointment,
@@ -854,9 +854,8 @@ async function nextAppointmentCode(
   tx: typeof prisma | Prisma.TransactionClient,
   businessDate: Date,
 ) {
-  // Keep code allocation portable across PostgreSQL and SQLite/D1. The
-  // PostgreSQL reference used SUBSTRING(... FROM ...) and a regex predicate,
-  // neither of which is valid SQLite syntax. D1 commands are serialized by
+  // Keep code allocation compatible with SQLite/D1. D1 commands are
+  // serialized by
   // the application lease before this read and the following appointment
   // insert, so the max calculation remains single-writer within a shop.
   const rows = await tx.appointment.findMany({
@@ -2273,6 +2272,7 @@ export async function confirmDbPayment(input: {
     if (!admin) throw new Error('Admin account not found');
     const payment = await tx.payment.create({
       data: {
+        id: randomId(),
         appointmentId: appointment.id,
         amount: finalAmount,
         tip,

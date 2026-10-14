@@ -11,7 +11,7 @@ The board uses SSE with reconnect/backoff and a bounded polling fallback. Respon
 
 - Keep SSE as a bounded initial snapshot/keepalive stream; the client ignores keepalives instead of turning them into database reads.
 - Keep polling as the safe 15-second fallback, with abort signals, version guards, stale-state indication, and no unbounded connection retention.
-- Read board snapshots through the D1 read model and compare version progression against the PostgreSQL reference fixtures.
+- Read board snapshots through the D1 read model and compare version progression across Worker requests.
 - Do not assume WebSockets, Durable Objects, or cross-request in-memory state. Any such choice requires an explicit free-tier capacity review.
 - Test disconnect, retry, stale snapshot, authorization, redaction, and rapid mutation sequences under the Worker runtime.
 

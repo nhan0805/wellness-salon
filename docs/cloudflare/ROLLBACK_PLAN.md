@@ -5,7 +5,7 @@
 
 ## Before production traffic cutover
 
-The current application is not ready for a traffic cutover because remote D1 evidence is incomplete. Keep the existing PostgreSQL/Docker path available as the compatibility/rollback path and do not delete its volumes. A deployment rollback is not a substitute for finishing the D1 release gates.
+The current application is not ready for a traffic cutover because remote D1 evidence is incomplete. Keep the last verified Worker version and D1 export procedure available. A Worker version rollback is not a substitute for finishing the D1 release gates.
 
 ## After an approved Worker deployment
 

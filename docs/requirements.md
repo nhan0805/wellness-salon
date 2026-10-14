@@ -4,7 +4,7 @@ Last updated: 2026-10-13
 
 This file is the implementation-facing summary of the approved lifecycle artifacts in `docs/lifecycle/`.
 
-Current handoff target: Cloudflare Worker + D1. PostgreSQL/Docker remains a legacy compatibility/rollback path and is not the active database-backed test target.
+Current handoff target: Cloudflare Worker + D1 (SQLite). This is the only application runtime and database-backed test target.
 
 ## Business objectives
 
@@ -31,7 +31,7 @@ Current handoff target: Cloudflare Worker + D1. PostgreSQL/Docker remains a lega
 | FR-ADM-005 | Admin can create, rename, and safely remove skill definitions; skills assigned to staff or services cannot be deleted. | `AdminAccessManagement`; `/api/admin/skills`; Prisma relation counts, Zod validation, role guard, audit events, and safe-delete rule. |
 | FR-ADM-006 | Admin can create, update, reset, activate/deactivate, and safely delete ADMIN/STATION accounts without removing the last active admin or the current admin session. Deleting an account preserves payment rows and clears only the optional account reference. | `AdminAccessManagement`; `/api/admin/accounts`; Argon2id password hashing, Zod validation, role guard, audit events, confirmation, and account lifecycle safeguards. |
 | FR-ENG-001 | Assignment considers active, present, available staff with every skill required by the service and applies fairness ordering after those eligibility filters. | `src/domain/turn-routing.ts`; service skill matching uses an all-skills rule. |
-| FR-ENG-002 | Appointment, turn, attendance, payment, and command operations enforce valid transitions/idempotency. | `state-machines.ts`, D1 guarded batches, Prisma constraints, `CommandReceipt` request hashes, and legacy transaction/advisory-lock fallback. |
+| FR-ENG-002 | Appointment, turn, attendance, payment, and command operations enforce valid transitions/idempotency. | `state-machines.ts`, D1 guarded batches, Prisma D1 constraints, and `CommandReceipt` request hashes. |
 
 ## Hardening rules now enforced
 
@@ -47,12 +47,12 @@ Current handoff target: Cloudflare Worker + D1. PostgreSQL/Docker remains a lega
 
 ## Non-functional requirements
 
-- Security: Argon2id for passwords/PINs; no plaintext secret logs; httpOnly strict same-site cookies; server-side account/session-version revalidation; database-backed PIN lockout with a process-local fast path; CSP and security headers; trusted-origin checks on mutations; rate limiting at nginx in the proxy profile.
+- Security: Web Crypto PBKDF2/HS256 for Worker credentials and sessions; no plaintext secret logs; httpOnly strict same-site cookies; server-side account/session-version revalidation; database-backed PIN lockout with a process-local fast path; CSP and security headers; trusted-origin checks on mutations; Worker/app request guards.
 - Consistency: one payment per appointment, one attendance record per staff/business date, append-only audit events, request-hash idempotency receipts, monotonic board versions, and serialized assignment per shop/business date.
-- Availability: `/api/health` is suitable for container health checks; board SSE has keepalives and a polling fallback.
+- Availability: `/api/health` reports Worker/D1 readiness; board SSE has keepalives and a polling fallback.
 - UX: tablet-first layout, touch-friendly controls, visible focus states, reduced-motion support, status communication that is not color-only, and visible authentication actions on narrow/mobile widths; secondary status/navigation controls may collapse to preserve space.
 - Time and money: default timezone `Asia/Ho_Chi_Minh`, default currency `USD`, closing time `21:00`; all are configurable through `ShopConfig`/environment defaults.
-- Operations: Docker standalone image, non-root runner, migration service, healthcheck, protected closing/retention jobs, request/lock/sync/job telemetry, CI verification, and documented rollback/human gates.
+- Operations: Worker build output, D1 migrations/bootstrap, protected closing/retention jobs, request/lease/sync/job telemetry, CI verification, and documented Cloudflare rollback/human gates.
 
 ## Assumptions
 
@@ -63,12 +63,12 @@ Current handoff target: Cloudflare Worker + D1. PostgreSQL/Docker remains a lega
 - Automatic closing runs against the configured business date and marks checkout-eligible open attendance `CHECKED_OUT` with `closedBy=AUTO`; staff attached to `IN_SERVICE` or `PAYMENT_PENDING` appointments remain checked in until payment is completed.
 - Payment is recorded only after a merchant terminal has completed; this app never reads card data.
 - Returning-customer kiosk lookup follows the approved privacy option A: a matching phone may display the stored full name read-only; the response is limited, `no-store`, and does not expose the phone/customer record.
-- Cloudflare Worker + D1 is the active application runtime store; missing D1 binding/configuration is a startup/health failure. PostgreSQL/Docker is retained only for legacy compatibility and rollback.
+- Cloudflare Worker + D1 is the application runtime store; missing D1 binding/configuration is a startup/health failure.
 
 ## Constraints
 
 - Next.js 16 App Router conventions and the repository-specific `AGENTS.md` rules apply.
-- D1 schema/migrations are the durable database path for the Worker target. PostgreSQL 16/Prisma migrations remain a legacy compatibility path.
+- `prisma/d1/schema.prisma` and `prisma/d1/migrations` are the only durable database schema and migration path.
 - Auth.js Credentials is the current authentication mechanism; no external identity provider is configured.
 - Production TLS/domain, real secrets, merchant integration, and deploy/rollback are human approval gates.
 - The current workspace does not contain a `.git` directory; the current push uses the attached external Git metadata documented in `docs/handoff.md`.

@@ -5,7 +5,7 @@ Last updated: 2026-10-13
 ## Backlog
 
 - Complete physical iPad/WebKit, distance readability, Dynamic Type/VoiceOver, real Wi-Fi interruption, offline submission, and modal interaction review.
-- Measure staging/deployed connection-pool, lock-wait, network, and representative-history behavior; document backup/restore rollback.
+- Measure deployed Worker/D1 latency, lease-wait, network, and representative-history behavior; document D1 export/restore rollback.
 - Fill the remaining scenario gaps: repeated staff actions, in-service/payment-pending cancellation boundaries, session revalidation, stale board versions, and broader closing/retention coverage.
 - Add scheduler retry/alerting guidance and a production deployment example once the deferred operations decision and secrets/domain are approved.
 - Add production TLS certificate/domain configuration after a human approval artifact.
@@ -17,8 +17,8 @@ Last updated: 2026-10-13
 ## Planned
 
 - Run the physical tablet and real-network run sheet from `docs/implementation/TABLET_QA_PLAN.md`.
-- From a Docker-enabled host, verify Compose health, `/api/health`, the closing endpoint, and the trigger script without printing `.env`.
-- Run `npm run test:e2e:d1` in CI/locally as the canonical database-backed gate; do not reintroduce PostgreSQL-only test setup into the active pipeline.
+- Verify the deployed Worker `/api/health`, closing endpoint, scheduler trigger, and D1 readiness without printing `.env`.
+- Run `npm run test:e2e:d1` in CI/locally as the canonical database-backed gate; keep the active pipeline on disposable local D1 only.
 - Review production secret handling and ensure scheduler traffic uses a real secret manager.
 - Keep the local D1 workflow repeatable with `npm run test:e2e:d1`, `wrangler.local.jsonc`, the fresh migrations, and disposable bootstrap; do not create or reset additional remote resources without approval.
 
@@ -34,8 +34,8 @@ Last updated: 2026-10-13
 ## Completed
 - [x] Completed the approved BR-01 through BR-06 hardening scope: exact-service skip exclusions/override, attendance safety, idempotent same-day visits, cancellation, audited service changes, and atomic support release.
 - [x] Added session-version revalidation, database-backed PIN lockout, verified-session revocation, request-hash conflict detection, board version/reconnect/polling recovery, explicit queue repair, and critical-path telemetry.
-- [x] Added server-side appointment history pagination/projection and disposable benchmark, service-layer load, authenticated HTTP, and pool-constrained load scripts.
-- [x] Historical legacy PostgreSQL migration/DB checks were recorded separately; they are not the active handoff gate.
+- [x] Added server-side appointment history pagination/projection and repeatable local Worker/D1 verification tooling.
+- [x] Local D1 migration/bootstrap checks are the active handoff gate.
 - [x] Canonical Worker/D1 E2E gate passed: local migrations + 101-statement bootstrap, 25 passed and 1 intentional project skip across 26 Playwright cases.
 - [x] Static test gate passed: `npm test -- --run` returned 51/51 tests with no database skips.
 - [x] Protected tablet E2E passed 7/7; returning-guest kiosk passed 2/2; browser resilience passed 3/3; Chromium portrait/landscape review passed with the physical-device limitation recorded.
@@ -62,21 +62,21 @@ Last updated: 2026-10-13
 - [x] Made the dashboard `Open turns` KPI open the Payments screen directly with visible and keyboard-accessible action affordance.
 - [x] Added dashboard KPI navigation to Reports, Queue, and filtered Completed Appointments screens.
 - [x] Updated Admin Queue to show all services per appointment with individual and total durations.
-- [x] Restored standalone PWA metadata for iPad testing, kept the login form visible inside the installed app, and rebuilt/health-checked the Docker production container without exposing seed credentials.
+- [x] Restored standalone PWA metadata for iPad testing and kept the login form visible inside the installed app without exposing seed credentials.
 
 - [x] Customer kiosk check-in flow with service catalog, validation, ticket code, assignment/waiting response.
 - [x] Staff board with current/up-next queue, staff roster, SSE/polling refresh, verified actions, skip reasons, and rerouting.
 - [x] Appointment/turn/attendance state machines and fair staff selection.
 - [x] Admin appointment/payment/report surfaces and card/cash reconciliation.
-- [x] PostgreSQL schema, migrations, seed catalog/users/staff, advisory-lock concurrency path.
+- [x] SQLite/D1 schema, migrations, bootstrap catalog/users/staff, lease/batch concurrency path.
 - [x] Argon2id authentication/PINs, role guards, short-lived verified staff sessions, audit events, command receipts.
-- [x] Docker standalone build, Compose Postgres/migrate/app services, optional nginx, health endpoint, and CI workflow.
+- [x] Cloudflare Worker build output, D1 migrations/bootstrap, health endpoint, and CI workflow.
 - [x] Unit/contract test suite and documented Worker/D1 lifecycle QA/E2E reports.
 - [x] Closing-job endpoint, local trigger script, and runbook; script now fails on HTTP/timeout errors instead of reporting transport-only success.
-- [x] Admin Attendance, Customers, Staff, and Services read/write modules with PostgreSQL persistence, validation, authorization, audit events, and responsive forms.
+- [x] Admin Attendance, Customers, Staff, and Services read/write modules with D1 persistence, validation, authorization, audit events, and responsive forms.
 - [x] Admin management regression tests for validation, customer lifecycle, attendance, staff deactivation, and service archive/reactivation.
 - [x] Playwright Worker/D1 desktop/tablet suite authenticates against disposable D1 bootstrap accounts, including Admin customer Add/Edit/Delete.
 - [x] Staff edit modal New PIN input aligned with the other form fields; keep-current-PIN guidance is shown as its placeholder.
 - [x] Removed manual staff initials entry and moved initials derivation into the server/domain layer.
-- [x] Added PostgreSQL-backed Skills and Accounts admin screens with CRUD/lifecycle APIs, validation, audit events, confirmed-delete flow, payment preservation, and safe-delete/last-admin safeguards.
+- [x] Added D1-backed Skills and Accounts admin screens with CRUD/lifecycle APIs, validation, audit events, confirmed-delete flow, payment preservation, and safe-delete/last-admin safeguards.
 - [x] Repository project-memory files: state, requirements, architecture, tasks, decisions, changelog, and handoff.

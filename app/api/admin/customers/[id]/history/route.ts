@@ -1,4 +1,4 @@
-import { AppointmentStatus } from '@prisma/client';
+import { AppointmentStatus } from '@prisma/d1-client';
 import { NextResponse } from 'next/server';
 import { getAdminActor } from '@/src/server/admin-auth';
 import { parseBusinessDate } from '@/src/server/services/prisma-operations';

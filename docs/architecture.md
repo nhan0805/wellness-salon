@@ -19,19 +19,17 @@ Customer kiosk ──POST check-in──> Turn engine ──> Staff board
                           COMPLETED + Daily report
 ```
 
-The Cloudflare Worker route handlers use the D1 adapter when the `DB` binding is present; the Next/PostgreSQL adapter is retained only as a legacy compatibility/rollback path. Pure business rules stay in `src/domain` so they can be tested independently from persistence, while every active Worker request reads and writes durable D1 state.
+The Cloudflare Worker route handlers use the D1 adapter through the `DB` binding. Pure business rules stay in `src/domain` so they can be tested independently from persistence, while every request reads and writes durable D1 state.
 
 ## Technology stack
 
 - Next.js 16.4 App Router, React 19, TypeScript strict, Turbopack build.
 - Auth.js Credentials with JWT sessions and role claims (`ADMIN`, `STATION`).
 - Cloudflare Workers + D1 with Prisma's D1 adapter and fresh SQL migrations (canonical runtime).
-- PostgreSQL 16 and Prisma client/migrations for legacy Docker compatibility only.
-- Argon2id for admin passwords and staff PINs.
+- PBKDF2/HS256 for Worker-compatible sessions and credential verification.
 - Zod request validation.
 - SSE for board events with client polling fallback.
 - Vitest for database-independent unit/contract logic and Playwright for Worker/D1 desktop/tablet E2E.
-- Docker multi-stage standalone image, Docker Compose, optional nginx reverse proxy.
 
 ## Folder structure
 
@@ -41,18 +39,17 @@ app/api/                     HTTP API boundary
 src/domain/                  Pure types, routing, state machines, reconciliation
 src/server/                  Prisma, auth, security and database services
 src/server/services/         Database turn/check-in/payment/report/admin operations
-prisma/                      Schema, migrations, seed
+prisma/d1/                   SQLite/D1 schema and migration history
 tests/unit/                  Pure domain and adapter contract tests
 tests/integration/           Database-boundary and contract tests
 tests/e2e/                    Worker/D1 kiosk, authorization, resilience, and responsive Playwright tests
 docs/lifecycle/              Product/requirements/architecture/test artifacts
 docs/runbook/                Local and operational procedures
-docker/                      Build, Compose, entrypoint, nginx
 ```
 
 ## Runtime and persistence
 
-The active Worker runtime owns durable D1 state through the `DB` binding; Worker auth uses the Web Crypto PBKDF2/HS256 boundary, and D1 mutations use guarded batches, uniqueness, audit events, and command receipts. The legacy Next/PostgreSQL runtime uses `DATABASE_URL`, Auth.js, transactions, and advisory locks for rollback compatibility. Neither path replaces a missing database with process-local records.
+The Worker runtime owns durable D1 state through the `DB` binding; Worker auth uses the Web Crypto PBKDF2/HS256 boundary, and D1 mutations use guarded batches, uniqueness, audit events, and command receipts. A missing D1 binding is a startup/health failure; the application never replaces durable state with process-local records.
 
 ## Major modules
 
@@ -61,12 +58,12 @@ The active Worker runtime owns durable D1 state through the `DB` binding; Worker
 - `src/domain/reconciliation.ts`: card + cash reconciliation and labels.
 - `src/domain/concurrency.ts`: in-memory serialization used by logic tests.
 - `src/server/services/prisma-operations.ts`: transactional database implementation for catalog, board, check-in, payments, payment history/corrections/refunds, reports, closing, turn-event history, and staff actions.
-- `src/server/services/admin-operations.ts`: database-backed reads/writes for attendance, customers, staff, skills, service categories/services, and auth accounts, including audit events and safe lifecycle rules; D1 Worker branches use explicit batches.
+- `src/server/services/admin-operations.ts`: D1-backed reads/writes for attendance, customers, staff, skills, service categories/services, and auth accounts, including audit events and safe lifecycle rules.
 - `src/components/admin-management.tsx`: responsive admin tables/forms for attendance, customer CRUD/history, staff lifecycle, and category-aware service catalog lifecycle.
 - `src/components/admin-access.tsx`: responsive admin tables/forms for skill definitions and ADMIN/STATION account lifecycle.
-- `src/server/services/turn-engine.ts`: advisory-lock key and shared staff selection helpers.
-- `src/server/auth.ts`: Worker-compatible PBKDF2/HS256 role/session boundary with the legacy Auth.js fallback.
-- `src/server/security.ts`: Argon2id, process-local fast-path protection, and database-backed failed-PIN lockout.
+- `src/server/services/turn-engine.ts`: shared staff selection and D1 mutation helpers.
+- `src/server/auth.ts`: Worker-compatible PBKDF2/HS256 role/session boundary.
+- `src/server/security.ts`: PBKDF2 verification, process-local fast-path protection, and D1-backed failed-PIN lockout.
 - `src/server/request-security.ts`: trusted-origin validation and JSON errors.
 - `proxy.ts`: CSP and browser security headers.
 
@@ -136,17 +133,11 @@ Important constraints:
 
 - Unique customer phone, appointment code within a business date, payment per appointment, attendance per staff/business date, staff-skill pair, service-skill pair, supporting-staff pair, and command receipt `(scope,key)`.
 - Foreign keys protect catalog/operation relationships; completed payment is not deleted by appointment cascade.
-- Business date is stored as D1-compatible text in the Worker schema (and as PostgreSQL `DATE` only in the legacy schema); timezone and closing time are configured in `ShopConfig`.
+- Business date is stored as D1-compatible text in the Worker schema; timezone and closing time are configured in `ShopConfig`.
 
 ## Concurrency and idempotency
 
-The active D1 path starts assignment/check-in and other shop mutations with conditional updates, idempotency receipts, and `D1Database.batch()` boundaries. The legacy PostgreSQL path additionally serializes queue mutations inside a transaction with:
-
-```sql
-SELECT pg_advisory_xact_lock(hashtextextended('nail-shop:default:' || business_date, 0));
-```
-
-This serializes competing queue operations even when the candidate row does not yet exist. Database uniqueness and command receipts provide the second line of defense. Receipts store a request hash, replay the original response for the same key/payload, and reject a reused key with different details. Board mutations increment a monotonic `ShopConfig.stateVersion`; clients ignore stale versions and recover through bounded polling/reconnect. The key must include tenant identity if the system becomes multi-tenant.
+The D1 path starts assignment/check-in and other shop mutations with conditional updates, an application lease row, idempotency receipts, and `D1Database.batch()` boundaries. Database uniqueness and command receipts provide the second line of defense. Receipts store a request hash, replay the original response for the same key/payload, and reject a reused key with different details. Board mutations increment a monotonic `ShopConfig.stateVersion`; clients ignore stale versions and recover through bounded polling/reconnect. The lease key must include tenant identity if the system becomes multi-tenant.
 
 ## Operational hardening
 
@@ -156,18 +147,18 @@ This serializes competing queue operations even when the candidate row does not 
 - The service catalog supports category CRUD/archive, category filtering on Admin, category grouping on the kiosk, and searchable service-icon selection. Static timezone/currency option lists keep configuration labels deterministic across server and browser renders.
 - Payment history is audit-backed rather than a separate adjustment table: current payment values remain queryable for reports, while adjustment/correction/refund events retain reason, actor, and previous/current or refunded amounts.
 - Payment confirmation uses the shared `AmountKeypad` for final amount, card/cash tip, and cash received; the keypad expands on focus/click and is collapsed by default. Initial confirmation keeps the original amount in the audit metadata for traceability but does not require a reason; later adjustment/correction/refund commands remain reasoned and audited.
-- Critical APIs emit request IDs and structured completion timings; rejected commands, advisory-lock waits, board snapshot version/time, and closing/retention outcomes are available for deployment logging.
+- Critical APIs emit request IDs and structured completion timings; rejected commands, board snapshot version/time, and closing/retention outcomes are available for deployment logging.
 - Closing and retention are protected job endpoints. The application does not run an internal scheduler; deployment operators own scheduling, retries, alerting, and secret rotation.
 
 ## Security design
 
-- Passwords and staff PINs are Argon2id hashes using memory cost 19,456 KiB, time cost 2, and parallelism 1.
+- Passwords and staff PINs use Worker-compatible PBKDF2 hashes.
 - Auth.js session cookie is httpOnly, strict same-site, and secure in production unless explicitly disabled for local development.
 - Five failed PIN attempts temporarily lock that staff ID for 60 seconds. A process-local fast path protects the current instance and a `StaffPinLockout` row makes the lockout durable across restarts/processes.
 - Staff mutations require a four-digit PIN or an unexpired verified session; admin payment confirmation requires an admin role.
 - The public board read endpoints intentionally expose operational turn codes, redacted guest labels, service details, and staff availability needed for the floor display; customer phone numbers and names stay hidden, while mutations remain protected by station/admin auth and staff verification.
 - Admin management mutations require an admin role, validate all body fields with Zod, enforce trusted origins, and append audit events. Staff initials are derived server-side from the staff name; customer records with appointment history are not hard-deleted; skills in use cannot be deleted; staff and services are deactivated/archived; and the last active admin/current admin session cannot be removed from admin access.
-- `proxy.ts` sets CSP, frame/content/referrer/permissions headers and HSTS in production; nginx adds rate limiting and a second layer of headers in the proxy profile.
+- `proxy.ts` sets CSP, frame/content/referrer/permissions headers and HSTS in production.
 - Secrets are environment variables and must be rotated through the deployment secret store.
 
 ## Deployment architecture
@@ -176,25 +167,20 @@ This serializes competing queue operations even when the candidate row does not 
 Browser/tablet
       |
 Cloudflare Worker (canonical) ---> D1
-
-Legacy compatibility only:
-nginx (optional :8080) -> Next runner (:3000) -> PostgreSQL 16 (:5432)
-migrate service: Prisma migrate deploy + seed
 ```
 
-The Worker artifact is built by vinext and verified through `npm run test:e2e:d1`. The current workers.dev deployment is the supervised Worker target; the Dockerfile and Compose stack remain a legacy compatibility path with an HTTP healthcheck. Production certificate/domain changes, merchant terminals, remote migration/reset, traffic cutover, and rollback remain approval gates.
+The Worker artifact is built by vinext and verified through `npm run test:e2e:d1`. The current workers.dev deployment is the supervised Worker target; domain changes, merchant terminals, remote migration/reset, traffic cutover, and rollback remain approval gates.
 
 ## Environment configuration
 
-See `.env.example` and `docker/docker-compose.yml`.
+See `.env.example`, `wrangler.local.jsonc`, and `wrangler.production.jsonc`.
 
 | Variable | Meaning | Local default |
 | --- | --- | --- |
-| `DATABASE_URL` | Legacy Prisma/PostgreSQL connection; not required by the Worker/D1 gate. | Compose service URL |
-| `AUTH_SECRET` | Auth.js signing secret. | Placeholder only |
-| `AUTH_COOKIE_SECURE` | Explicit secure-cookie override. | `false` in Compose |
+| `AUTH_SECRET` | Worker session signing secret. | Placeholder only |
+| `AUTH_COOKIE_SECURE` | Explicit secure-cookie override. | `false` locally |
 | `AUTH_TRUST_HOST` | Auth.js trusted-host setting. | `true` |
-| `NEXTAUTH_URL` | Canonical local/configured origin. | `http://localhost:3000` |
+| `NEXTAUTH_URL` | Canonical local/configured origin. | `http://127.0.0.1:3001` |
 | `SHOP_TIMEZONE` | Bootstrap fallback only when `ShopConfig` has not been seeded. | `Asia/Ho_Chi_Minh` |
 | `CRON_SECRET` | Required scheduler authorization for closing and retention jobs. | Set through `.env` |
 
@@ -203,6 +189,6 @@ See `.env.example` and `docker/docker-compose.yml`.
 - Follow `AGENTS.md` and the installed Next.js documentation before changing framework code.
 - Keep business rules in pure domain modules; keep persistence/auth concerns in `src/server`.
 - Validate external input with Zod and enforce authorization at route boundaries.
-- Use transactions for related state changes and append an `AuditEvent` for meaningful business transitions.
+- Use guarded D1 batches/leases for related state changes and append an `AuditEvent` for meaningful business transitions.
 - Preserve idempotency keys for retried kiosk/staff/payment commands.
 - Add or update unit/integration/E2E coverage with behavior changes and update the project-memory docs in the same task.

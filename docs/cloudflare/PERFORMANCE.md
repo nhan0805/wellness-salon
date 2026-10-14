@@ -22,14 +22,14 @@ The local `npm run test:e2e:d1` gate now covers the main Worker/D1 functional wo
 - closing/retention cron execution;
 - representative history/report result sizes.
 
-Keep queries indexed and projections narrow. Bound page sizes, SSE lifetimes, polling intervals, request bodies, and retry counts. Measure Worker CPU and wall time in the actual runtime; local loopback numbers from the PostgreSQL implementation do not transfer to D1.
+Keep queries indexed and projections narrow. Bound page sizes, SSE lifetimes, polling intervals, request bodies, and retry counts. Measure Worker CPU and wall time in the actual runtime; local loopback numbers do not transfer directly to deployed D1.
 
 ## Known risks
 
 - Workers Free HTTP/Cron CPU is limited to 10 ms per invocation.
 - PBKDF2 intentionally consumes CPU and may need a login-specific capacity decision.
 - D1 row writes include index maintenance and can exhaust the daily write budget faster than row counts suggest.
-- A route that accidentally imports the PostgreSQL client can fail at runtime even when the Worker bundle builds.
+- A route that accidentally imports a non-Worker database client can fail at runtime even when the Worker bundle builds.
 
 ## Gate
 

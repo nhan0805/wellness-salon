@@ -5,7 +5,7 @@
 
 ## Scope
 
-This audit covers the Cloudflare Workers Free + D1 migration requested for Wellness Salon. Worker + D1 is the active behavioral target; PostgreSQL/Prisma is retained only for compatibility/rollback and no real data is imported.
+This audit covers the Cloudflare Workers Free + D1 runtime for Wellness Salon. Worker + D1 is the only active behavioral target; local E2E uses disposable state and no real data is imported.
 
 ## Findings
 
@@ -22,8 +22,8 @@ This audit covers the Cloudflare Workers Free + D1 migration requested for Welln
 | D1 batch command paths | Partial / broadened | Critical branches now cover check-in, staff actions, payment lifecycle, appointment mutations, reconciliation, closing, retention, and admin CRUD with batches, guards, and receipts. Fault-injection, full concurrency, and remote rollback/retry evidence is still missing. |
 | Money handling | Partial | Validation and application arithmetic use integer minor units; the D1 schema still stores compatibility numeric columns and needs production accounting review. |
 | Timezone/scheduler | Compatible with a guarded dynamic trigger | Owner confirmed `Asia/Ho_Chi_Minh`. One `*/15 * * * *` UTC trigger reads the current D1 `ShopConfig` timezone/closing time, so the Admin UI remains authoritative; invalid or missing configuration fails closed. |
-| Production deployment | Dry-run only | `npx cf deploy --dry-run` validated the generated artifact and bindings without upload. No login, remote D1 creation, secret upload, production migration, custom domain, or Worker deployment was performed. |
-| Production dependency audit | Pass | Build/seed-only dependencies were moved to devDependencies; the exact Docker production prune scope (`--omit=dev --omit=optional`) reports 0 vulnerabilities. |
+| Production deployment | Supervised workers.dev deployment | `npx cf deploy --dry-run` validated the artifact before the recorded workers.dev deploy; read-only remote health/catalog/page smoke passed. Authenticated remote mutation/scheduler evidence remains open. |
+| Production dependency audit | Pass | Build/seed-only dependencies were moved to devDependencies; the last successful `npm audit --omit=dev --omit=optional` reported 0 vulnerabilities. |
 
 ## Compatibility decision
 

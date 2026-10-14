@@ -36,7 +36,7 @@ The direct vinext dev server is the verified local D1 route smoke path. cf dev r
 The following steps are for the owner/operator after the D1 command port, tests, capacity review, scheduler review, and explicit production approval. They are not to be run automatically by a migration audit:
 
 1. Authenticate to Cloudflare through the secure interactive Wrangler flow. Do not paste or request tokens in chat.
-2. Create the fresh D1 database with the name wellness-salon and record the generated database ID. Do not import PostgreSQL data.
+2. Create or select the reviewed D1 database with the name wellness-salon and record the generated database ID. Do not import production data.
 3. Apply the reviewed migrations to the remote database:
 
 ~~~bash
@@ -60,7 +60,7 @@ npx wrangler d1 execute wellness-salon --remote --file=/private/tmp/wellness-sal
 
 - Do not create a custom domain during the first deployment.
 - Do not import real production data.
-- Do not delete Docker/PostgreSQL volumes.
+- Do not reset or overwrite remote D1 data during a deployment.
 - Do not report success from a build alone.
 - Never deploy automatically from a local build or test command.
 - Stop and obtain owner direction if any D1/concurrency/auth/money/timezone gate is incomplete.
