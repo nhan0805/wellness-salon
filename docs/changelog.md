@@ -2,6 +2,22 @@
 
 Release-style history of meaningful repository changes. Dates use the project timezone context and are based on the artifacts currently present in the workspace.
 
+## Unreleased — 2026-10-15
+
+### Admin loading resilience
+
+- Added bounded client-side request deadlines for Admin reads and mutations, with cancellation of superseded requests, stale-response guards, and Retry/error states.
+- Changed Dashboard refreshes to apply successful sections independently and to skip overlapping background refreshes, so one slow endpoint no longer holds the entire page in a loading state.
+- Changed the Attendance read to use direct D1 SQL instead of waiting behind the shared Prisma request queue.
+- Added an authenticated Worker/D1 Attendance E2E smoke covering the loading-to-rendered transition.
+
+### Verification
+
+- `npm run lint` and `npm run typecheck` pass.
+- `npm test` passes 54 tests.
+- `npm run test:e2e:d1` passes 31 tests with one intentional skip.
+- Some long-lived board/reconnect E2E flows still print Workers-runtime request-cancellation warnings; this remains an operational follow-up rather than a reason to hide errors behind an unbounded spinner.
+
 ## Unreleased — 2026-10-13
 
 ### D1 handoff/test target

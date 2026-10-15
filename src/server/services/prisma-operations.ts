@@ -24,6 +24,14 @@ import type {
   ServiceCandidate,
   StaffCandidate,
 } from '@/src/domain/types';
+import {
+  businessDaysOverdue,
+  classifyPastAppointment,
+  isPastUnresolvedStatus,
+  PAST_UNRESOLVED_STATUSES,
+  pastAppointmentGuidance,
+  type PastAppointmentResolutionKind,
+} from '@/src/domain/past-appointments';
 import { normalizeServiceIconKey } from '@/src/domain/service-icons';
 import { normalizePhoneNumber } from '@/src/domain/phone';
 import { moneyFromMinorUnits, toMinorUnits } from '@/src/domain/money';
@@ -1320,6 +1328,77 @@ export async function getDbAppointmentFilterOptions() {
   return { staff, services };
 }
 
+export type PastUnresolvedAppointment = {
+  appointment: AppointmentSnapshot;
+  businessDate: string;
+  daysOverdue: number;
+  resolutionKind: PastAppointmentResolutionKind;
+  guidance: (typeof pastAppointmentGuidance)[PastAppointmentResolutionKind];
+};
+
+export type PastUnresolvedSummary = {
+  total: number;
+  unserved: number;
+  assignmentGap: number;
+  serviceInterrupted: number;
+  paymentReview: number;
+};
+
+export async function getDbPastUnresolvedAppointments(): Promise<{
+  currentBusinessDate: string;
+  appointments: PastUnresolvedAppointment[];
+  summary: PastUnresolvedSummary;
+  hasMore: boolean;
+}> {
+  const currentDate = await currentDbBusinessDate();
+  const where: Prisma.AppointmentWhereInput = {
+    businessDate: { lt: currentDate },
+    status: { in: PAST_UNRESOLVED_STATUSES as AppointmentStatus[] },
+  };
+  const [total, statusCounts, rows] = await Promise.all([
+    prisma.appointment.count({ where }),
+    Promise.all(
+      PAST_UNRESOLVED_STATUSES.map(async (status) => ({
+        status,
+        count: await prisma.appointment.count({ where: { ...where, status } }),
+      })),
+    ),
+    prisma.appointment.findMany({
+      where,
+      include: historyAppointmentInclude,
+      orderBy: [{ businessDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      take: 100,
+    }),
+  ]);
+  const countByStatus = new Map(statusCounts.map((entry) => [entry.status, entry.count]));
+  const summary: PastUnresolvedSummary = {
+    total,
+    unserved:
+      (countByStatus.get(AppointmentStatus.CREATED) ?? 0) +
+      (countByStatus.get(AppointmentStatus.WAITING) ?? 0),
+    assignmentGap: countByStatus.get(AppointmentStatus.ASSIGNED) ?? 0,
+    serviceInterrupted: countByStatus.get(AppointmentStatus.IN_SERVICE) ?? 0,
+    paymentReview: countByStatus.get(AppointmentStatus.PAYMENT_PENDING) ?? 0,
+  };
+  const appointments = rows.map((row) => {
+    const appointment = mapAppointment(row);
+    const resolutionKind = classifyPastAppointment(appointment.status);
+    return {
+      appointment,
+      businessDate: formatBusinessDate(row.businessDate),
+      daysOverdue: businessDaysOverdue(row.businessDate, currentDate),
+      resolutionKind,
+      guidance: pastAppointmentGuidance[resolutionKind],
+    };
+  });
+  return {
+    currentBusinessDate: formatBusinessDate(currentDate),
+    appointments,
+    summary,
+    hasMore: total > appointments.length,
+  };
+}
+
 function d1Statement(database: D1DatabaseLike, query: string, ...values: unknown[]) {
   return database.prepare(query).bind(...values);
 }
@@ -1964,7 +2043,9 @@ async function confirmDbPaymentD1(input: {
     });
     const businessDate = currentBusinessDate(new Date(), shopConfig?.timezone ?? SHOP_TIMEZONE);
     const appointment = await prisma.appointment.findUnique({ where: { id: input.appointmentId }, include: appointmentInclude });
-    if (!appointment || formatBusinessDate(appointment.businessDate) !== formatBusinessDate(businessDate)) throw new Error('Appointment not found');
+    if (!appointment) throw new Error('Appointment not found');
+    const shouldReleaseCurrentStaff =
+      formatBusinessDate(appointment.businessDate) === formatBusinessDate(businessDate);
     const finalAmount = roundMoney(input.amount ?? Number(appointment.amount));
     const tip = roundMoney(input.tip ?? 0);
     const originalAmount = roundMoney(Number(appointment.amount));
@@ -1980,7 +2061,9 @@ async function confirmDbPaymentD1(input: {
     }
     const appointmentStaffIds = [...new Set([appointment.primaryStaffId, ...appointment.services.map((service) => service.primaryStaffId), ...appointment.supportingStaff.map((staff) => staff.staffId)].filter((staffId): staffId is string => Boolean(staffId)))];
     if (appointment.payment) {
-      const releaseStatements = d1ReleaseStaffStatements(database, businessDate, appointmentStaffIds);
+      const releaseStatements = shouldReleaseCurrentStaff
+        ? d1ReleaseStaffStatements(database, businessDate, appointmentStaffIds)
+        : [];
       if (input.idempotencyKey)
         releaseStatements.push(
           d1Statement(
@@ -2012,7 +2095,7 @@ async function confirmDbPaymentD1(input: {
       ...payableServices.map((service) => d1Statement(database, `INSERT INTO payment_items (id, payment_id, appointment_service_id, service_name_snapshot, staff_name_snapshot, amount)
         VALUES (?, ?, ?, ?, ?, ?)`, randomId(), paymentId, service.id, service.serviceNameSnapshot, service.primaryStaff?.name ?? null, Number(service.amount))),
       d1Statement(database, `UPDATE appointments SET status = ?, completed_at = ? WHERE id = ? AND status = ?`, AppointmentStatus.COMPLETED, nowIso, appointment.id, AppointmentStatus.PAYMENT_PENDING),
-      ...(appointmentStaffIds.length ? [d1Statement(database, `UPDATE staff_service_state
+      ...(shouldReleaseCurrentStaff && appointmentStaffIds.length ? [d1Statement(database, `UPDATE staff_service_state
         SET availability = ?
         WHERE staff_id IN (${appointmentStaffIds.map(() => '?').join(', ')})
           AND availability = ?
@@ -2181,11 +2264,13 @@ export async function confirmDbPayment(input: {
   const businessDate = await currentDbBusinessDate();
   return prisma.$transaction(async (tx) => {
     await lockShopBusinessDate(tx, businessDate.toISOString());
-    const appointment = await tx.appointment.findFirst({
-      where: { id: input.appointmentId, businessDate },
+    const appointment = await tx.appointment.findUnique({
+      where: { id: input.appointmentId },
       include: appointmentInclude,
     });
     if (!appointment) throw new Error('Appointment not found');
+    const shouldReleaseCurrentStaff =
+      formatBusinessDate(appointment.businessDate) === formatBusinessDate(businessDate);
     const finalAmount = roundMoney(input.amount ?? Number(appointment.amount));
     const tip = roundMoney(input.tip ?? 0);
     const originalAmount = roundMoney(Number(appointment.amount));
@@ -2234,7 +2319,8 @@ export async function confirmDbPayment(input: {
       ),
     ];
     if (appointment.payment) {
-      await releaseCompletedAppointmentStaff(tx, businessDate, appointmentStaffIds);
+      if (shouldReleaseCurrentStaff)
+        await releaseCompletedAppointmentStaff(tx, businessDate, appointmentStaffIds);
       const response = {
         ok: true,
         appointment: mapAppointment(appointment),
@@ -2302,7 +2388,8 @@ export async function confirmDbPayment(input: {
       data: { status: AppointmentStatus.COMPLETED, completedAt: new Date() },
       include: appointmentInclude,
     });
-    await releaseCompletedAppointmentStaff(tx, businessDate, appointmentStaffIds);
+    if (shouldReleaseCurrentStaff)
+      await releaseCompletedAppointmentStaff(tx, businessDate, appointmentStaffIds);
     await tx.auditEvent.create({
       data: {
         actorType: 'ADMIN',
@@ -3275,6 +3362,628 @@ export async function cancelDbAppointment(input: CancellationInput) {
       });
     return response;
   });
+}
+
+type PastAppointmentResolutionInput = {
+  appointmentId: string;
+  appointmentServiceId?: string;
+  action: 'CANCEL_UNSERVED' | 'MARK_COMPLETED';
+  staffId?: string;
+  reason: string;
+  confirmed?: boolean;
+  idempotencyKey?: string;
+  adminId: string;
+};
+
+const pastAppointmentActionableStatuses: AppointmentStatus[] = [
+  AppointmentStatus.CREATED,
+  AppointmentStatus.WAITING,
+  AppointmentStatus.ASSIGNED,
+  AppointmentStatus.IN_SERVICE,
+];
+
+function isPastAppointmentActionableStatus(status: AppointmentStatus) {
+  return pastAppointmentActionableStatuses.includes(status);
+}
+
+function pastAppointmentResolutionMessage(
+  action: PastAppointmentResolutionInput['action'],
+  code: string,
+) {
+  return action === 'MARK_COMPLETED'
+    ? `${code} reconciled as completed. Payment is ready to collect.`
+    : `${code} marked as unserved.`;
+}
+
+async function resolvePastAppointmentTx(
+  tx: Prisma.TransactionClient,
+  input: PastAppointmentResolutionInput,
+  currentBusinessDate: Date,
+) {
+  const scope = `past-resolve:${input.appointmentId}:${input.appointmentServiceId ?? 'auto'}`;
+  const normalizedRequestHash = await requestHash({
+    appointmentId: input.appointmentId,
+    appointmentServiceId: input.appointmentServiceId ?? null,
+    action: input.action,
+    staffId: input.staffId ?? null,
+    reason: input.reason.trim(),
+    confirmed: input.confirmed === true,
+  });
+  let appointment = await tx.appointment.findUnique({
+    where: { id: input.appointmentId },
+    include: appointmentInclude,
+  });
+  if (!appointment) throw new Error('Appointment not found');
+  if (input.idempotencyKey) {
+    const prior = await tx.commandReceipt.findUnique({
+      where: { scope_key: { scope, key: input.idempotencyKey } },
+    });
+    if (prior) {
+      if (prior.requestHash && prior.requestHash !== normalizedRequestHash)
+        throw new Error('This historical resolution key was already used for different details');
+      return {
+        ok: true,
+        appointment: mapAppointment(appointment),
+        message: pastAppointmentResolutionMessage(input.action, appointment.code),
+        idempotent: true,
+      };
+    }
+  }
+  await lockShopBusinessDate(tx, appointment.businessDate.toISOString());
+  appointment = await tx.appointment.findUnique({
+    where: { id: input.appointmentId },
+    include: appointmentInclude,
+  });
+  if (!appointment) throw new Error('Appointment not found');
+  if (appointment.businessDate.getTime() >= currentBusinessDate.getTime())
+    throw new Error('Only appointments from a previous business date can be resolved here');
+  if (!isPastUnresolvedStatus(appointment.status))
+    throw new Error('This appointment is already resolved');
+  if (appointment.payment)
+    throw new Error('Payment-confirmed history cannot be changed');
+
+  const actionableServices = appointment.services.filter((service) =>
+    isPastAppointmentActionableStatus(service.status),
+  );
+  const target = input.appointmentServiceId
+    ? appointment.services.find((service) => service.id === input.appointmentServiceId)
+    : actionableServices.length === 1
+      ? actionableServices[0]
+      : undefined;
+  if (!target) {
+    throw new Error(
+      actionableServices.length > 1
+        ? 'Choose the service to resolve; this visit has more than one unfinished service'
+        : 'Appointment service not found',
+    );
+  }
+  if (!isPastAppointmentActionableStatus(target.status))
+    throw new Error('Only unfinished services can be resolved from past appointments');
+  if (
+    input.action === 'CANCEL_UNSERVED' &&
+    target.status === AppointmentStatus.IN_SERVICE &&
+    input.confirmed !== true
+  ) {
+    throw new Error('Confirm that the in-service record should be marked unserved');
+  }
+
+  const reason = input.reason.trim();
+  const now = new Date();
+  const nextServices = appointment.services.map((service) => ({ ...service }));
+  const nextTarget = nextServices.find((service) => service.id === target.id);
+  if (!nextTarget) throw new Error('Appointment service not found');
+  let finishedTurnId: string | null = null;
+
+  if (input.action === 'CANCEL_UNSERVED') {
+    for (const turn of target.turns.filter(
+      (item) => item.status === TurnStatus.ASSIGNED || item.status === TurnStatus.ACCEPTED,
+    )) {
+      await tx.turn.update({
+        where: { id: turn.id },
+        data: {
+          status: transitionTurn(turn.status, TurnStatus.SKIPPED),
+          reason,
+          endedAt: now,
+        },
+      });
+      await recordTurnEvent(tx, {
+        appointmentId: appointment.id,
+        appointmentServiceId: target.id,
+        turnId: turn.id,
+        eventType: TurnEventType.CANCELLED,
+        assignedStaffId: turn.assignedStaffId,
+        assignedStaffName: target.primaryStaff?.name ?? null,
+        actorType: ActorType.ADMIN,
+        actorId: input.adminId,
+        reason,
+      });
+    }
+    await tx.appointmentService.update({
+      where: { id: target.id },
+      data: {
+        status: transitionAppointment(target.status, AppointmentStatus.CANCELLED),
+        primaryStaffId: null,
+        cancelledAt: now,
+        cancelledReason: reason,
+        cancelledByType: ActorType.ADMIN,
+        cancelledById: input.adminId,
+      },
+    });
+    nextTarget.status = AppointmentStatus.CANCELLED;
+    nextTarget.primaryStaffId = null;
+  } else {
+    const resolvedStaffId = input.staffId ?? target.primaryStaffId;
+    if (!resolvedStaffId) throw new Error('Choose the specialist who completed the service');
+    const resolvedStaff = await tx.staff.findUnique({
+      where: { id: resolvedStaffId },
+      select: { id: true, name: true },
+    });
+    if (!resolvedStaff) throw new Error('The selected specialist no longer exists');
+    const activeTurn = [...target.turns]
+      .reverse()
+      .find((turn) => turn.status === TurnStatus.ASSIGNED || turn.status === TurnStatus.ACCEPTED);
+    finishedTurnId = activeTurn?.id ?? null;
+    if (activeTurn) {
+      await tx.turn.update({
+        where: { id: activeTurn.id },
+        data: {
+          status: transitionTurn(activeTurn.status, TurnStatus.FINISHED),
+          assignedStaffId: resolvedStaff.id,
+          endedAt: now,
+        },
+      });
+    } else {
+      const finishedTurn = await tx.turn.create({
+        data: {
+          id: randomId(),
+          appointmentId: appointment.id,
+          appointmentServiceId: target.id,
+          assignedStaffId: resolvedStaff.id,
+          status: TurnStatus.FINISHED,
+          reason: 'Historical manager reconciliation',
+          createdAt: now,
+          endedAt: now,
+        },
+      });
+      finishedTurnId = finishedTurn.id;
+    }
+    await recordTurnEvent(tx, {
+      appointmentId: appointment.id,
+      appointmentServiceId: target.id,
+      turnId: finishedTurnId,
+      eventType: TurnEventType.FINISHED,
+      assignedStaffId: resolvedStaff.id,
+      assignedStaffName: resolvedStaff.name,
+      actorType: ActorType.ADMIN,
+      actorId: input.adminId,
+      reason,
+    });
+    await tx.appointmentService.update({
+      where: { id: target.id },
+      data: {
+        status: AppointmentStatus.COMPLETED,
+        primaryStaffId: resolvedStaff.id,
+        completedAt: now,
+      },
+    });
+    nextTarget.status = AppointmentStatus.COMPLETED;
+    nextTarget.primaryStaffId = resolvedStaff.id;
+    nextTarget.completedAt = now;
+  }
+
+  const allServicesResolved = nextServices.every((service) =>
+    ([AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED] as AppointmentStatus[]).includes(
+      service.status,
+    ),
+  );
+  if (allServicesResolved) {
+    await tx.appointmentSupportingStaff.updateMany({
+      where: { appointmentId: appointment.id, releasedAt: null },
+      data: { releasedAt: now },
+    });
+    if (input.action === 'MARK_COMPLETED' && finishedTurnId) {
+      for (const support of appointment.supportingStaff.filter((member) => !member.releasedAt)) {
+        await recordTurnEvent(tx, {
+          appointmentId: appointment.id,
+          appointmentServiceId: target.id,
+          turnId: finishedTurnId,
+          eventType: TurnEventType.SUPPORT_RELEASED,
+          assignedStaffId: support.staffId,
+          actorType: ActorType.ADMIN,
+          actorId: input.adminId,
+          reason: 'Support released after historical reconciliation',
+        });
+      }
+    }
+  }
+
+  const allCancelled = nextServices.every(
+    (service) => service.status === AppointmentStatus.CANCELLED,
+  );
+  const totalAmount = nextServices
+    .filter((service) => service.status !== AppointmentStatus.CANCELLED)
+    .reduce((total, service) => total + toMinorUnits(service.amount), 0);
+  await syncAppointmentAggregate(tx, appointment.id);
+  const updated = await tx.appointment.update({
+    where: { id: appointment.id },
+    data: {
+      amount: moneyFromMinorUnits(totalAmount),
+      ...(allCancelled
+        ? {
+            cancelledAt: now,
+            cancelledReason: reason,
+            cancelledByType: ActorType.ADMIN,
+            cancelledById: input.adminId,
+          }
+        : {}),
+    },
+    include: appointmentInclude,
+  });
+  await tx.auditEvent.create({
+    data: {
+      actorType: ActorType.ADMIN,
+      actorId: input.adminId,
+      action: 'appointment.past_resolution',
+      entity: 'AppointmentService',
+      entityId: target.id,
+      metadata: {
+        action: input.action,
+        reason,
+        businessDate: formatBusinessDate(appointment.businessDate),
+        previousStatus: target.status,
+        nextStatus: input.action === 'MARK_COMPLETED' ? AppointmentStatus.COMPLETED : AppointmentStatus.CANCELLED,
+        staffId: input.staffId ?? target.primaryStaffId,
+      },
+    },
+  });
+  await bumpBoardVersion(tx);
+  const response = {
+    ok: true,
+    appointment: mapAppointment(updated),
+    message: pastAppointmentResolutionMessage(input.action, appointment.code),
+    idempotent: false,
+  };
+  if (input.idempotencyKey) {
+    await tx.commandReceipt.create({
+      data: {
+        scope,
+        key: input.idempotencyKey,
+        requestHash: normalizedRequestHash,
+        response: { ok: true, appointmentId: appointment.id, action: input.action },
+      },
+    });
+  }
+  return response;
+}
+
+async function resolvePastAppointmentD1(
+  input: PastAppointmentResolutionInput,
+  currentBusinessDate: Date,
+) {
+  return withD1Lease(async (database) => {
+    const scope = `past-resolve:${input.appointmentId}:${input.appointmentServiceId ?? 'auto'}`;
+    const normalizedRequestHash = await requestHash({
+      appointmentId: input.appointmentId,
+      appointmentServiceId: input.appointmentServiceId ?? null,
+      action: input.action,
+      staffId: input.staffId ?? null,
+      reason: input.reason.trim(),
+      confirmed: input.confirmed === true,
+    });
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: input.appointmentId },
+      include: appointmentInclude,
+    });
+    if (!appointment) throw new Error('Appointment not found');
+    if (input.idempotencyKey) {
+      const prior = await prisma.commandReceipt.findUnique({
+        where: { scope_key: { scope, key: input.idempotencyKey } },
+      });
+      if (prior) {
+        if (prior.requestHash && prior.requestHash !== normalizedRequestHash)
+          throw new Error('This historical resolution key was already used for different details');
+        return {
+          ok: true,
+          appointment: mapAppointment(appointment),
+          message: pastAppointmentResolutionMessage(input.action, appointment.code),
+          idempotent: true,
+        };
+      }
+    }
+    if (appointment.businessDate.getTime() >= currentBusinessDate.getTime())
+      throw new Error('Only appointments from a previous business date can be resolved here');
+    if (!isPastUnresolvedStatus(appointment.status))
+      throw new Error('This appointment is already resolved');
+    if (appointment.payment) throw new Error('Payment-confirmed history cannot be changed');
+
+    const actionableServices = appointment.services.filter((service) =>
+      isPastAppointmentActionableStatus(service.status),
+    );
+    const target = input.appointmentServiceId
+      ? appointment.services.find((service) => service.id === input.appointmentServiceId)
+      : actionableServices.length === 1
+        ? actionableServices[0]
+        : undefined;
+    if (!target) {
+      throw new Error(
+        actionableServices.length > 1
+          ? 'Choose the service to resolve; this visit has more than one unfinished service'
+          : 'Appointment service not found',
+      );
+    }
+    if (!isPastAppointmentActionableStatus(target.status))
+      throw new Error('Only unfinished services can be resolved from past appointments');
+    if (
+      input.action === 'CANCEL_UNSERVED' &&
+      target.status === AppointmentStatus.IN_SERVICE &&
+      input.confirmed !== true
+    )
+      throw new Error('Confirm that the in-service record should be marked unserved');
+
+    const reason = input.reason.trim();
+    const now = new Date();
+    const nowIso = d1DateTimeValue(now);
+    const nextServices = appointment.services.map((service) => ({ ...service }));
+    const nextTarget = nextServices.find((service) => service.id === target.id);
+    if (!nextTarget) throw new Error('Appointment service not found');
+    const statements = [] as ReturnType<typeof d1Statement>[];
+    const activeTurns = target.turns.filter(
+      (turn) => turn.status === TurnStatus.ASSIGNED || turn.status === TurnStatus.ACCEPTED,
+    );
+    let finishedTurnId = [...activeTurns].reverse()[0]?.id ?? null;
+    let serviceStatementIndex = -1;
+
+    if (input.action === 'CANCEL_UNSERVED') {
+      for (const turn of activeTurns) {
+        statements.push(
+          d1Statement(
+            database,
+            `UPDATE turns SET status = ?, reason = ?, ended_at = ? WHERE id = ? AND status IN (?, ?)`,
+            TurnStatus.SKIPPED,
+            reason,
+            nowIso,
+            turn.id,
+            TurnStatus.ASSIGNED,
+            TurnStatus.ACCEPTED,
+          ),
+        );
+        statements.push(
+          d1TurnEvent(
+            database,
+            {
+              appointmentId: appointment.id,
+              appointmentServiceId: target.id,
+              turnId: turn.id,
+              eventType: TurnEventType.CANCELLED,
+              assignedStaffId: turn.assignedStaffId,
+              assignedStaffName: target.primaryStaff?.name ?? null,
+              actorType: ActorType.ADMIN,
+              actorId: input.adminId,
+              reason,
+            },
+            nowIso,
+          ),
+        );
+      }
+      serviceStatementIndex = statements.length;
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE appointment_services SET status = ?, primary_staff_id = NULL, cancelled_at = ?, cancelled_reason = ?, cancelled_by_type = ?, cancelled_by_id = ? WHERE id = ? AND status = ?`,
+          AppointmentStatus.CANCELLED,
+          nowIso,
+          reason,
+          ActorType.ADMIN,
+          input.adminId,
+          target.id,
+          target.status,
+        ),
+      );
+      nextTarget.status = AppointmentStatus.CANCELLED;
+      nextTarget.primaryStaffId = null;
+      nextTarget.cancelledAt = now;
+      nextTarget.cancelledReason = reason;
+      nextTarget.cancelledByType = ActorType.ADMIN;
+      nextTarget.cancelledById = input.adminId;
+    } else {
+      const resolvedStaffId = input.staffId ?? target.primaryStaffId;
+      if (!resolvedStaffId) throw new Error('Choose the specialist who completed the service');
+      const resolvedStaff = await prisma.staff.findUnique({
+        where: { id: resolvedStaffId },
+        select: { id: true, name: true },
+      });
+      if (!resolvedStaff) throw new Error('The selected specialist no longer exists');
+      const activeTurn = [...target.turns]
+        .reverse()
+        .find((turn) => turn.status === TurnStatus.ASSIGNED || turn.status === TurnStatus.ACCEPTED);
+      if (activeTurn) {
+        statements.push(
+          d1Statement(
+            database,
+            `UPDATE turns SET status = ?, assigned_staff_id = ?, ended_at = ? WHERE id = ? AND status IN (?, ?)`,
+            TurnStatus.FINISHED,
+            resolvedStaff.id,
+            nowIso,
+            activeTurn.id,
+            TurnStatus.ASSIGNED,
+            TurnStatus.ACCEPTED,
+          ),
+        );
+        finishedTurnId = activeTurn.id;
+      } else {
+        finishedTurnId = randomId();
+        statements.push(
+          d1Statement(
+            database,
+            `INSERT INTO turns (id, appointment_id, appointment_service_id, assigned_staff_id, status, reason, created_at, ended_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            finishedTurnId,
+            appointment.id,
+            target.id,
+            resolvedStaff.id,
+            TurnStatus.FINISHED,
+            'Historical manager reconciliation',
+            nowIso,
+            nowIso,
+          ),
+        );
+      }
+      statements.push(
+        d1TurnEvent(
+          database,
+          {
+            appointmentId: appointment.id,
+            appointmentServiceId: target.id,
+            turnId: finishedTurnId,
+            eventType: TurnEventType.FINISHED,
+            assignedStaffId: resolvedStaff.id,
+            assignedStaffName: resolvedStaff.name,
+            actorType: ActorType.ADMIN,
+            actorId: input.adminId,
+            reason,
+          },
+          nowIso,
+        ),
+      );
+      serviceStatementIndex = statements.length;
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE appointment_services SET status = ?, primary_staff_id = ?, completed_at = ? WHERE id = ? AND status = ?`,
+          AppointmentStatus.COMPLETED,
+          resolvedStaff.id,
+          nowIso,
+          target.id,
+          target.status,
+        ),
+      );
+      nextTarget.status = AppointmentStatus.COMPLETED;
+      nextTarget.primaryStaffId = resolvedStaff.id;
+      nextTarget.completedAt = now;
+    }
+
+    const allServicesResolved = nextServices.every((service) =>
+      ([AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED] as AppointmentStatus[]).includes(
+        service.status,
+      ),
+    );
+    if (allServicesResolved) {
+      statements.push(
+        d1Statement(
+          database,
+          `UPDATE appointment_supporting_staff SET released_at = ? WHERE appointment_id = ? AND released_at IS NULL`,
+          nowIso,
+          appointment.id,
+        ),
+      );
+      if (input.action === 'MARK_COMPLETED' && finishedTurnId) {
+        for (const support of appointment.supportingStaff.filter((member) => !member.releasedAt)) {
+          statements.push(
+            d1TurnEvent(
+              database,
+              {
+                appointmentId: appointment.id,
+                appointmentServiceId: target.id,
+                turnId: finishedTurnId,
+                eventType: TurnEventType.SUPPORT_RELEASED,
+                assignedStaffId: support.staffId,
+                actorType: ActorType.ADMIN,
+                actorId: input.adminId,
+                reason: 'Support released after historical reconciliation',
+              },
+              nowIso,
+            ),
+          );
+        }
+      }
+    }
+
+    const allCancelled = nextServices.every(
+      (service) => service.status === AppointmentStatus.CANCELLED,
+    );
+    const totalAmount = nextServices
+      .filter((service) => service.status !== AppointmentStatus.CANCELLED)
+      .reduce((total, service) => total + toMinorUnits(service.amount), 0);
+    const aggregate = d1AppointmentAggregate(appointment, nextServices);
+    const appointmentStatementIndex = statements.length;
+    statements.push(
+      d1Statement(
+        database,
+        `UPDATE appointments SET amount = ?, status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ?, ${allCancelled ? 'cancelled_at = ?, cancelled_reason = ?, cancelled_by_type = ?, cancelled_by_id = ?,' : ''} completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END WHERE id = ? AND status = ?`,
+        moneyFromMinorUnits(totalAmount),
+        aggregate.status,
+        aggregate.serviceId,
+        aggregate.serviceNameSnapshot,
+        aggregate.durationMinSnapshot,
+        aggregate.primaryStaffId,
+        ...(allCancelled ? [nowIso, reason, ActorType.ADMIN, input.adminId] : []),
+        aggregate.status,
+        AppointmentStatus.PAYMENT_PENDING,
+        appointment.id,
+        appointment.status,
+      ),
+    );
+    statements.push(
+      d1AuditEvent(
+        database,
+        {
+          action: 'appointment.past_resolution',
+          entity: 'AppointmentService',
+          entityId: target.id,
+          actorId: input.adminId,
+          actorType: ActorType.ADMIN,
+          metadata: {
+            action: input.action,
+            reason,
+            businessDate: formatBusinessDate(appointment.businessDate),
+            previousStatus: target.status,
+            nextStatus: input.action === 'MARK_COMPLETED' ? AppointmentStatus.COMPLETED : AppointmentStatus.CANCELLED,
+            staffId: input.staffId ?? target.primaryStaffId,
+          },
+        },
+        nowIso,
+      ),
+    );
+    statements.push(d1BumpBoardVersion(database, nowIso));
+    if (input.idempotencyKey) {
+      statements.push(
+        d1Statement(
+          database,
+          `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          randomId(),
+          scope,
+          input.idempotencyKey,
+          JSON.stringify({ ok: true, appointmentId: appointment.id, action: input.action }),
+          normalizedRequestHash,
+          nowIso,
+        ),
+      );
+    }
+    const results = (await database.batch(statements)) as D1BatchResult[];
+    if (
+      serviceStatementIndex < 0 ||
+      d1BatchChanges(results[serviceStatementIndex]) !== 1 ||
+      d1BatchChanges(results[appointmentStatementIndex]) !== 1
+    )
+      throw new Error('Appointment changed before historical resolution could be recorded; retry the command');
+    const updated = await prisma.appointment.findUnique({
+      where: { id: appointment.id },
+      include: appointmentInclude,
+    });
+    return {
+      ok: true,
+      appointment: updated ? mapAppointment(updated) : null,
+      message: pastAppointmentResolutionMessage(input.action, appointment.code),
+      idempotent: false,
+    };
+  });
+}
+
+export async function resolveDbPastAppointment(input: PastAppointmentResolutionInput) {
+  const currentBusinessDate = await currentDbBusinessDate();
+  if (await isD1Runtime()) return resolvePastAppointmentD1(input, currentBusinessDate);
+  return prisma.$transaction((tx) =>
+    resolvePastAppointmentTx(tx, input, currentBusinessDate),
+  );
 }
 
 async function reassignDbAppointmentServiceD1(input: {

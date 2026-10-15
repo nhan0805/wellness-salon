@@ -231,6 +231,26 @@ export const adminAppointmentServiceChangeSchema = z.object({
   idempotencyKey: z.string().min(8).max(120),
 });
 
+export const adminPastAppointmentResolutionSchema = z
+  .object({
+    appointmentId: z.string().min(1),
+    appointmentServiceId: z.string().min(1).optional(),
+    action: z.enum(['CANCEL_UNSERVED', 'MARK_COMPLETED']),
+    staffId: z.string().min(1).optional(),
+    reason: z.string().trim().min(2, 'Enter a reason for the historical resolution').max(200),
+    confirmed: z.boolean().default(false),
+    idempotencyKey: z.string().min(8).max(120),
+  })
+  .superRefine((value, context) => {
+    if (value.action === 'MARK_COMPLETED' && !value.staffId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['staffId'],
+        message: 'Choose the specialist who completed the service',
+      });
+    }
+  });
+
 const shopTime = z
   .string()
   .regex(/^\d{2}:\d{2}$/)

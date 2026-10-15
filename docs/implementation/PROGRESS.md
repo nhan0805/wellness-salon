@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-14
+Last updated: 2026-10-15
 
 ## Active target
 
@@ -14,16 +14,17 @@ Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test tar
 - Worker-compatible PBKDF2 credential verification and HS256 sessions.
 - Repeatable local bootstrap and Worker E2E harness through `scripts/seed-d1-bootstrap.ts` and `scripts/run-d1-e2e.mjs`.
 - Tablet/PWA layout, SSE reconnect, bounded polling, public redaction, service categories/icons, multi-skill routing, payment history, and audited corrections/refunds.
+- Admin loading resilience: 10/15-second client deadlines, superseded-request cancellation, stale-response protection, partial Dashboard refreshes, and a direct D1 Attendance read.
 
 ## Verification evidence
 
 | Check | Result |
 | --- | --- |
 | `npm run lint` | PASS in the recorded local gate |
-| `npm run typecheck` | PASS on 2026-10-14 after D1 client generation |
-| `npm test -- --run` | 51/51 PASS, no database skips |
+| `npm run typecheck` | PASS on 2026-10-15 after D1 client generation |
+| `npm test` | 54/54 PASS |
 | `npm run build:vinext` | PASS in the recorded Worker gate |
-| `npm run test:e2e:d1` | 25/26 PASS; one intentional desktop-project skip |
+| `npm run test:e2e:d1` | 31 passed; one intentional skip |
 | Local D1 migrations/bootstrap | PASS; two migrations and 101 bootstrap statements |
 | Local Worker route/command smoke | PASS for health, auth, kiosk, board, admin, payments, closing, retention, and resilience scope |
 | `npx cf deploy --dry-run` | PASS in the recorded deployment gate |
@@ -33,6 +34,7 @@ Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test tar
 
 - D1 crash/interruption and broader concurrent mutation assertions.
 - Deployed Worker auth/mutation/SSE/scheduler smoke and Free-tier CPU/latency observation.
+- Investigate Workers-runtime request-cancellation warnings still emitted by some long-lived board/reconnect E2E flows.
 - Physical iPad/WebKit, real Wi-Fi interruption, offline submission, Dynamic Type, and VoiceOver review.
 - D1 export/restore rehearsal, scheduler alerting, production secrets/domain/TLS, and owner approval.
 

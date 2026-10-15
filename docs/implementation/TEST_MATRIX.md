@@ -23,6 +23,7 @@ The active database-backed gate is `npm run test:e2e:d1`. It builds the Worker a
 | Same idempotency key replay | PASS |
 | Conflicting request hash rejection | PASS in local command smoke |
 | SSE reconnect and bounded polling fallback | PASS in browser resilience coverage |
+| Admin request deadlines, cancellation, stale-response protection | PASS for Attendance smoke and static paths; delayed/fault-injection coverage remains open |
 | Public board/customer redaction | PASS |
 | Generic credential errors and trusted-origin checks | PASS |
 | Session-version revalidation and D1 lockout state | PASS in unit/local auth smoke |
@@ -45,9 +46,9 @@ The active database-backed gate is `npm run test:e2e:d1`. It builds the Worker a
 | --- | --- |
 | `npm run lint` | PASS in the recorded local gate |
 | `npm run typecheck` | PASS on 2026-10-14 |
-| `npm test -- --run` | PASS: 51/51, no database skips |
+| `npm test` | PASS: 54/54 |
 | `npm run build:vinext` | PASS in the recorded Worker gate |
-| `npm run test:e2e:d1` | PASS: 25 passed, 1 intentional desktop-project skip across 26 cases |
+| `npm run test:e2e:d1` | PASS: 31 passed, 1 intentional skip |
 | `npx cf deploy --dry-run` | PASS in the recorded deployment gate |
 
 The matrix is local evidence, not production approval. Keep tests on disposable D1 and record remote evidence separately in `docs/cloudflare/`.

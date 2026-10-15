@@ -1,6 +1,6 @@
 # Implementation final report
 
-Last updated: 2026-10-14
+Last updated: 2026-10-15
 
 ## Decision
 
@@ -14,16 +14,17 @@ Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development
 - D1 batch/guard/lease/receipt orchestration for kiosk check-in, routing, staff actions, payments, appointment changes, reconciliation, closing, retention, and admin management.
 - Kiosk, public board, staff attendance/actions, admin queue, customers, staff, services/categories/icons/skills, accounts, payments, reports, appointment history, SSE/polling recovery, and tablet/PWA UI.
 - Audit-backed idempotency, payment correction/refund records, public data redaction, and Worker cron timezone handling.
+- Admin loading resilience with bounded client deadlines, cancellation/stale-response guards, partial Dashboard refreshes, direct D1 Attendance reads, and an Attendance Worker/D1 E2E smoke.
 
 ## Evidence
 
 | Check | Result |
 | --- | --- |
 | `npm run lint` | PASS in the recorded local gate |
-| `npm run typecheck` | PASS on 2026-10-14 after D1 client generation |
-| `npm test -- --run` | 51/51 PASS, no database skips |
+| `npm run typecheck` | PASS on 2026-10-15 after D1 client generation |
+| `npm test` | 54/54 PASS |
 | `npm run build:vinext` | PASS in the recorded Worker gate |
-| `npm run test:e2e:d1` | 25/26 PASS; one intentional desktop-project skip |
+| `npm run test:e2e:d1` | 31 passed; one intentional skip |
 | Local D1 migrations/bootstrap | PASS; two migrations and 101 bootstrap statements |
 | Local Worker/D1 smoke | PASS for public routes, auth, kiosk, board, admin, payments, jobs, and resilience scope |
 | `npx cf deploy --dry-run` | PASS in the recorded deployment gate |
@@ -35,6 +36,7 @@ Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development
 - Remote authenticated mutation, SSE recovery, scheduler-event, CPU/latency, and Free-tier capacity evidence is incomplete.
 - Physical iPad/WebKit, real Wi-Fi interruption, offline submission, Dynamic Type, VoiceOver, and full modal interaction review remain open.
 - D1 export/restore rehearsal, scheduler alerting, production secrets/domain/TLS, and owner approval remain open.
+- The local E2E gate still prints Workers-runtime cancellation warnings for some long-lived board/reconnect requests. The new Admin deadline prevents indefinite UI loading, but deployed-runtime cancellation/latency still needs root-cause evidence.
 
 ## Next actions
 

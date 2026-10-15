@@ -1,6 +1,6 @@
 # Project state
 
-Last updated: 2026-10-14
+Last updated: 2026-10-15
 
 ## Cloudflare migration gate — current status
 
@@ -30,6 +30,7 @@ Verify the canonical Worker/D1 runtime without weakening BR-01–BR-06, keep the
 - Added session-version revalidation, database-backed PIN lockout, verified-session revocation, request-hash conflict detection, lease/request/sync/job telemetry, and explicit manager queue repair.
 - Added board SSE reconnect/backoff and version-aware polling, dynamic ShopConfig presentation, server-side appointment history pagination/summary projection, and repeatable local Worker/D1 verification tooling.
 - Completed the canonical local Worker/D1 migration/bootstrap and E2E verification, protected tablet workflows, kiosk returning-guest flow, resilience recovery, and Chromium viewport review; remote D1 data and deployment infrastructure were not changed by local tests.
+- Fixed indefinite Admin loading states: bounded reads/mutations with client cancellation, stale-response guards, Retry/error states, partial Dashboard refresh handling, and a direct D1 Attendance read; added the authenticated Attendance Worker/D1 smoke.
 - Restored the service-category taxonomy with ordered/archivable categories, migration backfill, Admin CRUD/filtering, grouped kiosk presentation, and searchable service-icon selection.
 - Added append-only `TurnEvent` history for assignment, accept/skip/finish, cancellation, reassignment, continuation, and support lifecycle events, with an Admin appointment history view.
 - Added Admin payment history plus audited amount/method/tip adjustment, bookkeeping correction, and full/partial refund recording with retry-safe command scopes.
@@ -87,7 +88,7 @@ Verify the canonical Worker/D1 runtime without weakening BR-01–BR-06, keep the
 
 ## Build and test status
 
-Latest local static verification on 2026-10-14: `npm run typecheck` passes after D1 client generation. The previously recorded lint, unit, Worker build, Cloudflare dry-run, and `npm run test:e2e:d1` gates remain the reference evidence: 51/51 unit tests, and 25/26 Worker/D1 cases with one intentional desktop-project skip. The E2E gate applies two migrations and the 101-statement disposable bootstrap. Local scheduler authorization, realtime recovery, and responsive queue checks pass. Worker version `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` was deployed to workers.dev and read-only health/catalog/page smoke passed; Cloudflare CPU/quota metrics and full remote auth/mutation/scheduler evidence remain open. The owner confirmed `Asia/Ho_Chi_Minh`; changing the timezone in Admin remains supported. Local tests do not mutate remote D1.
+Latest local verification on 2026-10-15: lint and typecheck pass, `npm test` passes 54/54, and `npm run test:e2e:d1` passes 31 tests with one intentional skip after building the Worker and applying the disposable D1 migrations/bootstrap. The new Attendance loading smoke passes. Local scheduler authorization, realtime recovery, and responsive queue checks pass. The recorded Worker version `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` remains the deployed workers.dev baseline; Cloudflare CPU/quota metrics, full remote auth/mutation/scheduler evidence, and the new loading fix's deployed latency evidence remain open. Local tests do not mutate remote D1.
 
 Detailed evidence and scenario-level gaps are maintained in [`docs/implementation/FINAL_REPORT.md`](implementation/FINAL_REPORT.md), [`docs/implementation/RELEASE_CHECKLIST.md`](implementation/RELEASE_CHECKLIST.md), and [`docs/implementation/TEST_MATRIX.md`](implementation/TEST_MATRIX.md).
 
@@ -97,10 +98,10 @@ Verification evidence from the baseline and the 2026-10-10 hardening run:
 | --- | --- | --- |
 | `npm run lint` | PASS | No lint errors or warnings in the final run. |
 | `npm run typecheck` | PASS | Must be run after `next build`; a concurrent build can replace `.next/types` while TypeScript is reading it. |
-| `npm test -- --run` | PASS | 51 tests passed; no database-backed tests are skipped. |
+| `npm test` | PASS | 54 tests passed. |
 | `npm run test:coverage` | PASS | Current tree: 14.21% statements/lines, 69.29% branches, 22.95% functions; broad report, not a release threshold. |
 | `npm run build` | PASS | Next.js 16.4.0 Turbopack production build completed and compiled the current route inventory. |
-| `npm run test:e2e:d1` | PASS | Worker artifact + local D1 migrations/bootstrap; 25 passed, 1 intentional project-specific skip across 26 cases. |
+| `npm run test:e2e:d1` | PASS | Worker artifact + local D1 migrations/bootstrap; 31 passed, 1 intentional skip. |
 | Playwright/viewport evidence | PASS with limitations | Protected tablet 7/7, returning kiosk 2/2, resilience 3/3, and Chromium portrait/landscape review; physical iPad/WebKit and real Wi-Fi remain. |
 
 ## Runtime
@@ -113,7 +114,8 @@ Verification evidence from the baseline and the 2026-10-10 hardening run:
 - A future restricted shell may not bind/probe a local web server; use the in-app browser or a Worker-compatible local process for runtime checks.
 - `POST /api/jobs/closing` requires `CRON_SECRET` or an admin session in every runtime.
 - `scripts/trigger-closing.sh` fails when `CRON_SECRET` is missing.
-- The workspace still has no `.git` directory; this snapshot is tracked through the attached external Git metadata at `/private/tmp/wellness-salon-git` and pushed to `origin/main`.
+- The D1 E2E run still logs Workers-runtime request-cancellation warnings in some long-lived board/reconnect flows; isolate these separately from the resolved indefinite Admin spinner path.
+- The workspace still has no `.git` directory; this snapshot is tracked through the attached external Git metadata at `/private/tmp/wellness-salon-git`. The metadata currently has no configured remote URL, so push/deploy remains pending repository remote and authentication recovery.
 
 ## Technical debt
 

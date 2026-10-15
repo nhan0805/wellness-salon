@@ -329,3 +329,15 @@ The repository now contains only the Cloudflare Worker + local D1 (SQLite) runti
 - Alternatives considered: Keep two local runtimes; keep the old path as a hidden rollback option; point local development at remote D1.
 - Reason: Local behavior must match the deployed Worker boundary while protecting remote D1 from accidental test writes.
 - Consequences: `npm run dev` uses the Worker-compatible local app on port 3001; missing D1 binding fails fast; production rollback uses Cloudflare Worker versions and D1 backup/restore procedures.
+
+## ADR-028 — Bound Admin loads and preserve partial live state
+
+- ID: ADR-028
+- Date: 2026-10-15
+- Status: Accepted for supervised pilot
+- Context: Admin screens can otherwise leave an operator-facing spinner indefinitely when one Worker/D1 request is delayed or cancelled. Dashboard `Promise.all` also made one slow section block unrelated sections.
+- Decision: Use a shared client fetch deadline (10 seconds for reads, 15 seconds for mutations), abort superseded requests, reject stale responses, expose Retry/error state, and apply Dashboard sections independently with `Promise.allSettled` and an in-flight refresh guard. Keep Attendance on a direct D1 read path to avoid unrelated queued Prisma work.
+- Alternatives considered: Increase the spinner duration without cancellation; let every screen implement its own timeout; hide the failure and silently keep retrying; make local tests use the remote D1.
+- Reason: Operators get a bounded and recoverable UI failure while the underlying server latency remains visible for diagnosis. Local verification stays disposable and cannot mutate production data.
+- Tradeoffs: A client timeout can report failure before a slow but valid request finishes, so idempotent mutations and Retry semantics remain important. Long-lived SSE/reconnect cancellation needs separate runtime evidence.
+- Consequences: Admin loading behavior is documented in `docs/handoff.md`, and the Attendance loading-to-rendered transition is covered by `tests/e2e/admin-attendance.spec.ts`.

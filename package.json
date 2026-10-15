@@ -29,7 +29,7 @@
     "predev:vinext": "npm run db:generate",
     "dev:vinext": "vite dev --port 3001",
     "prebuild:vinext": "npm run db:generate",
-    "build:vinext": "CLOUDFLARE_VITE_FORCE_BUILD_OUTPUT=true vite build && node scripts/prepare-vinext-cloudflare-output.mjs",
+    "build:vinext": "NODE_ENV=production CLOUDFLARE_VITE_FORCE_BUILD_OUTPUT=true vite build && node scripts/prepare-vinext-cloudflare-output.mjs",
     "start:vinext": "vite preview",
     "deploy:vinext": "npm run build:vinext && wrangler deploy --config wrangler.production.jsonc"
   },

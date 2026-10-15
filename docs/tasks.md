@@ -1,6 +1,6 @@
 # Tasks
 
-Last updated: 2026-10-13
+Last updated: 2026-10-15
 
 ## Backlog
 
@@ -12,7 +12,8 @@ Last updated: 2026-10-13
 - Add remaining Worker/D1 coverage for service-category lifecycle, payment adjustment/correction/refund history, and appointment turn history.
 - Complete D1 rollback/interruption tests and settle the final exact money representation; the critical command branches already use explicit `batch()`/guard/receipt semantics.
 - Broaden tests for the custom Worker account/session boundary, Worker cron authorization, realtime recovery, timezone/DST behavior, and deployed Free-tier capacity.
-- Reintroduce or attach repository Git metadata so branch, diff, and release history can be audited.
+- Restore the remote URL and authentication for the attached Git metadata so branch, diff, and release history can be pushed and audited.
+- Investigate the remaining Workers-runtime request-cancellation warnings emitted by long-lived board/reconnect flows.
 
 ## Planned
 
@@ -32,6 +33,7 @@ Last updated: 2026-10-13
 - D1 production cutover remains blocked on transaction/rollback, money, auth, full concurrency, and deployed Worker evidence; the local lease smoke and scoped workers.dev smoke are not release approval.
 
 ## Completed
+- [x] Bounded Admin loading: 10/15-second client deadlines, superseded-request cancellation, stale-response guards, Retry/error states, partial Dashboard refreshes, direct D1 Attendance reads, and an authenticated Attendance E2E smoke.
 - [x] Completed the approved BR-01 through BR-06 hardening scope: exact-service skip exclusions/override, attendance safety, idempotent same-day visits, cancellation, audited service changes, and atomic support release.
 - [x] Added session-version revalidation, database-backed PIN lockout, verified-session revocation, request-hash conflict detection, board version/reconnect/polling recovery, explicit queue repair, and critical-path telemetry.
 - [x] Added server-side appointment history pagination/projection and repeatable local Worker/D1 verification tooling.

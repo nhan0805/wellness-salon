@@ -9,6 +9,7 @@ The only active database-backed release path is Cloudflare Worker + D1. Local ve
 - [x] Critical writes use D1 batches, guarded predicates, leases, command receipts, and audit records.
 - [x] Worker-compatible PBKDF2/HS256 auth, session-version revalidation, and D1 lockouts are implemented.
 - [x] Kiosk, board, staff, admin, payments, reports, closing, retention, and public-redaction paths are covered by unit/HTTP/Worker tests.
+- [x] Admin reads and mutations have bounded client deadlines, cancellation/stale-response guards, visible Retry/error states, and partial Dashboard refresh handling.
 - [x] `npm run test:e2e:d1` is the repeatable local gate and does not target remote D1.
 - [x] No production D1 reset, custom domain, or remote data import was performed during local verification.
 

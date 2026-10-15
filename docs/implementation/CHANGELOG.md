@@ -1,5 +1,45 @@
 # Implementation changelog
 
+## 2026-10-15 — Admin loading timeout hardening
+
+- Bounded Admin data requests with a shared `fetchWithTimeout` helper: reads fail fast after 10 seconds and mutations after 15 seconds instead of leaving an indefinite spinner.
+- Abort the previous section load before starting a newer one, ignore stale responses, and surface timeout/error states with a visible Retry action.
+- Changed Dashboard refresh aggregation to `Promise.allSettled` with an in-flight guard so one slow endpoint cannot block healthy sections or create overlapping background refreshes.
+- Moved the Attendance read to a direct D1 query path so it does not wait behind unrelated Prisma work in the shared request queue.
+- Added an authenticated Worker/D1 Attendance E2E smoke that asserts the loading state resolves and the table is rendered.
+
+Verification for this follow-up: `npm run lint`, `npm run typecheck`, `npm test` (54 passed), and `npm run test:e2e:d1` (31 passed, 1 intentional skip). The E2E output still includes Workers-runtime cancellation warnings in some long-lived board/reconnect flows; those warnings are tracked separately and are not treated as proof that all server-side hangs are resolved.
+
+## 2026-10-15 — Mobile appointment filter surfaces
+
+- Removed the extra tinted surface from mobile appointment cards and filter panels while keeping borders and state badges intact.
+- Stacked appointment filters into one readable phone column and moved date-loading feedback onto its own row.
+- Added responsive E2E coverage for mobile filter balance, neutral surfaces, and the existing past-review cards.
+
+## 2026-10-15 — Historical review table rhythm
+
+- Fixed desktop/iPad column widths and action alignment; Review and History now share a stable row with equal touch targets.
+- Made Status badges size to their labels and prevented Issue chips from stretching across the mobile value column.
+- Extended responsive E2E checks for action-row alignment, status text containment, and mobile Issue-chip sizing.
+
+## 2026-10-15 — Historical review action polish
+
+- Refined the past-appointment resolution dialog with a step-based hierarchy, outcome icons, clearer selection states, audit summary chips, character count, and a mobile-safe action footer.
+- Added icons and compact styling to Review/History actions, kept both actions on one row on phones, and balanced the final summary card at narrow widths.
+
+## 2026-10-15 — Responsive historical reconciliation inbox
+
+- Converted the past-appointment review table to stacked, touch-friendly cards on phones and a compact contained table on iPad/tablet widths so the document viewport no longer overflows horizontally.
+- Added responsive E2E coverage for 375px phone, iPad portrait, and iPad landscape viewports.
+
+## 2026-10-14 — Historical appointment reconciliation
+
+- Added the Admin “Past appointments needing review” inbox for prior-business-date appointments that remain unresolved.
+- Added explicit manager actions for cancel-as-unserved and mark-service-completed, including multi-service selection, specialist attribution, confirmation for cancelling an `IN_SERVICE` record, audit reasons, and retry-safe idempotency.
+- Kept old `PAYMENT_PENDING` visits payable through the existing payment flow without mutating current-day staff availability.
+- Added classifier/unit coverage and disposable local D1 smoke coverage for cancel, complete, and collect-payment paths.
+- Forced the vinext/Cloudflare production build to use `NODE_ENV=production`, preventing server-rendered client pages from loading the development-only `jsxDEV` runtime in the Worker artifact.
+
 ## 2026-10-13 — Canonical Worker/D1 handoff gate
 
 - Made Cloudflare Worker + D1 the active runtime and database-backed test target; PostgreSQL/Docker is retained for compatibility/rollback only.

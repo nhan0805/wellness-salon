@@ -1,6 +1,6 @@
 # Handoff
 
-Last updated: 2026-10-14
+Last updated: 2026-10-15
 
 ## Runtime
 
@@ -15,6 +15,7 @@ The deployed Worker is `https://wellness.n8l.workers.dev`. The recorded version 
 - Critical mutation paths use D1 batches, predicates, leases, command receipts, and audit rows. D1 is not treated as a rollback transaction boundary; interruption and concurrency evidence remain release gates.
 - The canonical database-backed gate is `npm run test:e2e:d1`: build Worker artifact, apply D1 migrations, generate the 101-statement disposable bootstrap, and run the Worker Playwright suite.
 - Previously recorded evidence includes 51/51 unit tests and 25/26 Worker/D1 cases, with one intentional desktop-project skip. Re-run the commands below after meaningful changes.
+- The Admin loading reliability follow-up adds bounded client deadlines, cancellation of superseded loads, stale-response guards, Retry/error states, and partial Dashboard refresh results. The latest follow-up verification is 54 unit tests plus 31 passed and one intentional skip in the Worker/D1 E2E gate.
 
 ## Local workflow
 
@@ -42,9 +43,21 @@ The local D1 configuration is `wrangler.local.jsonc`. Schema and migrations live
 - `src/server/auth.ts` and `src/server/security.ts` — Worker-compatible sessions, PBKDF2 verification, and D1 lockouts.
 - `src/server/services/prisma-operations.ts` — D1 reads and guarded mutation orchestration.
 - `src/server/services/admin-operations.ts` — D1-backed catalog, account, customer, staff, and configuration operations.
+- `src/client/fetch-with-timeout.ts` — shared client deadline and cancellation helper for Admin data requests.
 - `prisma/d1/schema.prisma` and `prisma/d1/migrations/` — the only schema/migration source of truth.
 - `scripts/run-d1-e2e.mjs` and `playwright.d1.config.ts` — local Worker/D1 E2E harness.
+- `tests/e2e/admin-attendance.spec.ts` — authenticated Attendance loading smoke.
 - `wrangler.local.jsonc` and `wrangler.production.jsonc` — local/remote binding and deployment configuration.
+
+## Loading and timeout guardrails
+
+Admin reads have a 10-second client deadline and mutations have a 15-second deadline. A deadline prevents an indefinite spinner; it does not make a slow Worker healthy. On timeout, the UI keeps the current data where possible, marks the section stale, and exposes Retry. Starting a newer load aborts the older one, and stale responses cannot overwrite the current section.
+
+Attendance uses a direct D1 read path to avoid waiting behind unrelated queued Prisma work. Dashboard refreshes use `Promise.allSettled` and an in-flight guard so partial success is rendered and refresh storms do not stack requests. Long-lived board/reconnect cancellation warnings still need separate deployed-runtime investigation.
+
+## Git and deployment handoff
+
+`.github/workflows/ci.yml` runs verification for every push and deploys the Worker only after a successful push to `main`. This workspace has no in-tree `.git`; the attached metadata lives at `/private/tmp/wellness-salon-git`. Before the next deployment, configure a valid `origin` URL and GitHub authentication for that metadata, then push the prepared commit to `main`. Do not point local E2E at remote D1 and do not print `.env` while repairing the Git/CI connection.
 
 ## Environment and safety
 

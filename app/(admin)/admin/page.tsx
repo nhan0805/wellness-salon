@@ -11,6 +11,8 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
+  CircleX,
+  ClipboardCheck,
   ClipboardList,
   CreditCard,
   Hand,
@@ -42,6 +44,11 @@ import { AdminShopConfig, AdminSkipReasons } from '@/src/components/admin-operat
 import { AdminAppointmentAction } from '@/src/components/admin-appointment-actions';
 import { AmountKeypad } from '@/src/components/amount-keypad';
 import { useDialogFocus } from '@/src/components/use-dialog-focus';
+import {
+  fetchWithTimeout,
+  isAbortError,
+  RequestTimeoutError,
+} from '@/src/client/fetch-with-timeout';
 import { makeAccountViewer, type AccountViewer } from '@/src/domain/viewer';
 import { DEFAULT_TIMEZONE } from '@/src/domain/locale-options';
 import { ADMIN_REFRESH_INTERVAL_MS } from '@/src/domain/realtime';
@@ -217,7 +224,7 @@ const emptyReport: Report = {
   reconciliation: { recordedTotal: 0, difference: 0, isBalanced: true },
 };
 
-const ADMIN_DASHBOARD_REQUEST_TIMEOUT_MS = 15_000;
+const ADMIN_DASHBOARD_REQUEST_TIMEOUT_MS = 10_000;
 
 function getAdminApiError(payload: unknown) {
   if (!payload || typeof payload !== 'object' || !('error' in payload)) return '';
@@ -230,22 +237,12 @@ async function fetchAdminDashboardJson<T>(
   label: string,
   parentSignal: AbortSignal,
 ): Promise<T> {
-  const requestController = new AbortController();
-  let timedOut = false;
-  const timeoutId = window.setTimeout(() => {
-    timedOut = true;
-    requestController.abort();
-  }, ADMIN_DASHBOARD_REQUEST_TIMEOUT_MS);
-  const abortRequest = () => requestController.abort();
-
-  if (parentSignal.aborted) requestController.abort();
-  else parentSignal.addEventListener('abort', abortRequest, { once: true });
-
   try {
-    const response = await fetch(path, {
-      cache: 'no-store',
-      signal: requestController.signal,
-    });
+    const response = await fetchWithTimeout(
+      path,
+      { cache: 'no-store', signal: parentSignal },
+      ADMIN_DASHBOARD_REQUEST_TIMEOUT_MS,
+    );
     const payload = await response.json();
     if (!response.ok) {
       const detail = getAdminApiError(payload);
@@ -253,15 +250,12 @@ async function fetchAdminDashboardJson<T>(
     }
     return payload as T;
   } catch (error) {
-    if (timedOut) {
+    if (error instanceof RequestTimeoutError) {
       throw new Error(
         `${label} timed out after ${ADMIN_DASHBOARD_REQUEST_TIMEOUT_MS / 1000} seconds.`,
       );
     }
     throw error;
-  } finally {
-    window.clearTimeout(timeoutId);
-    parentSignal.removeEventListener('abort', abortRequest);
   }
 }
 
@@ -303,6 +297,7 @@ export default function AdminPage() {
   const [staleSince, setStaleSince] = useState<Date | null>(null);
   const refreshControllerRef = useRef<AbortController | null>(null);
   const refreshRevisionRef = useRef(0);
+  const refreshInFlightRef = useRef(false);
   const reportPeriodRef = useRef(reportPeriod);
   const reportDateRef = useRef(reportDate);
   const reportMonthRef = useRef(reportMonth);
@@ -343,6 +338,8 @@ export default function AdminPage() {
     month = reportMonth,
     background = false,
   ) {
+    if (background && refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
     const revision = ++refreshRevisionRef.current;
     refreshControllerRef.current?.abort();
     const controller = new AbortController();
@@ -366,57 +363,117 @@ export default function AdminPage() {
         section === 'overview' || section === 'queue' || section === 'payments';
       const shouldLoadReports = section === 'overview' || section === 'appointments';
       const shouldLoadConfig = section === 'overview';
-      const [liveAppointmentsPayload, reportAppointmentsPayload, reportPayload, configPayload] =
-        await Promise.all([
-          shouldLoadLive
-            ? fetchAdminDashboardJson<{
-                appointments?: Appointment[];
-              }>('/api/admin/appointments', 'Live appointments', controller.signal)
+      const requests: Array<{ label: string; enabled: boolean; promise: Promise<unknown> }> = [
+        {
+          label: 'Live appointments',
+          enabled: shouldLoadLive,
+          promise: shouldLoadLive
+            ? fetchAdminDashboardJson<{ appointments?: Appointment[] }>(
+                '/api/admin/appointments',
+                'Live appointments',
+                controller.signal,
+              )
             : Promise.resolve(null),
-          shouldLoadReports
-            ? fetchAdminDashboardJson<{
-                appointments?: Appointment[];
-              }>(
+        },
+        {
+          label: 'Report appointments',
+          enabled: shouldLoadReports,
+          promise: shouldLoadReports
+            ? fetchAdminDashboardJson<{ appointments?: Appointment[] }>(
                 '/api/admin/appointments' + appointmentsQuery,
                 'Report appointments',
                 controller.signal,
               )
             : Promise.resolve(null),
-          shouldLoadReports
+        },
+        {
+          label: 'Reports',
+          enabled: shouldLoadReports,
+          promise: shouldLoadReports
             ? fetchAdminDashboardJson<Report>(
                 '/api/admin/reports' + reportQuery,
                 'Reports',
                 controller.signal,
               )
             : Promise.resolve(null),
-          shouldLoadConfig
-            ? fetchAdminDashboardJson<{
-                shop?: ShopSnapshot;
-              }>('/api/admin/config', 'Shop config', controller.signal)
+        },
+        {
+          label: 'Shop config',
+          enabled: shouldLoadConfig,
+          promise: shouldLoadConfig
+            ? fetchAdminDashboardJson<{ shop?: ShopSnapshot }>(
+                '/api/admin/config',
+                'Shop config',
+                controller.signal,
+              )
             : Promise.resolve(null),
-        ]);
+        },
+      ];
+      const results = await Promise.allSettled(requests.map((request) => request.promise));
       if (revision !== refreshRevisionRef.current) return;
+
+      const [liveResult, reportAppointmentsResult, reportResult, configResult] = results;
+      const liveAppointmentsPayload =
+        liveResult.status === 'fulfilled'
+          ? (liveResult.value as { appointments?: Appointment[] } | null)
+          : null;
+      const reportAppointmentsPayload =
+        reportAppointmentsResult.status === 'fulfilled'
+          ? (reportAppointmentsResult.value as { appointments?: Appointment[] } | null)
+          : null;
+      const reportPayload =
+        reportResult.status === 'fulfilled' ? (reportResult.value as Report | null) : null;
+      const configPayload =
+        configResult.status === 'fulfilled'
+          ? (configResult.value as { shop?: ShopSnapshot } | null)
+          : null;
       if (liveAppointmentsPayload) setAppointments(liveAppointmentsPayload.appointments ?? []);
       if (reportAppointmentsPayload)
         setReportAppointments(reportAppointmentsPayload.appointments ?? []);
       if (reportPayload) setReport(reportPayload);
       if (configPayload?.shop) setShop(configPayload.shop);
-      setLastUpdatedAt(new Date());
-      setStaleSince(null);
-      setDataRevision((revision) => revision + 1);
+
+      const failures = results.flatMap((result, index) => {
+        if (!requests[index].enabled || result.status !== 'rejected') return [];
+        return [{ label: requests[index].label, reason: result.reason }];
+      });
+      const actionableFailures = failures.filter(({ reason }) => !isAbortError(reason));
+      const successfulRequestCount = results.filter(
+        (result, index) => requests[index].enabled && result.status === 'fulfilled',
+      ).length;
+
+      if (actionableFailures.length) {
+        const firstFailure = actionableFailures[0].reason;
+        const detail =
+          firstFailure instanceof Error ? firstFailure.message : 'Unable to load dashboard data';
+        setLoadError(
+          actionableFailures.length === 1
+            ? detail
+            : `${detail} Some dashboard data may be out of date.`,
+        );
+        setStaleSince((current) => current ?? new Date());
+      } else if (failures.length) {
+        return;
+      } else {
+        setLoadError('');
+        setStaleSince(null);
+      }
+
+      if (successfulRequestCount > 0) {
+        setLastUpdatedAt(new Date());
+        setDataRevision((revision) => revision + 1);
+      }
       if (reportPayload) {
         setReportPeriod(reportPayload.period ?? period);
         if (reportPayload.period === 'month') setReportMonth(reportPayload.businessMonth ?? month);
         else setReportDate(reportPayload.businessDate ?? date);
       }
-    } catch (error) {
-      if (revision !== refreshRevisionRef.current) return;
-      if (error instanceof DOMException && error.name === 'AbortError') return;
-      controller.abort();
-      setLoadError(error instanceof Error ? error.message : 'Unable to load dashboard data');
-      setStaleSince((current) => current ?? new Date());
     } finally {
-      if (revision === refreshRevisionRef.current && !background) setLoading(false);
+      if (revision === refreshRevisionRef.current) {
+        if (!background) setLoading(false);
+        refreshInFlightRef.current = false;
+        if (refreshControllerRef.current === controller) refreshControllerRef.current = null;
+      }
     }
   }
 
@@ -435,16 +492,20 @@ export default function AdminPage() {
     // the newly visible snapshot immediately.
     void refresh(reportPeriodRef.current, reportDateRef.current, reportMonthRef.current);
     const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void refresh(reportPeriodRef.current, reportDateRef.current, reportMonthRef.current, true);
+      if (document.visibilityState === 'visible')
+        void refresh(reportPeriodRef.current, reportDateRef.current, reportMonthRef.current, true);
     }, ADMIN_REFRESH_INTERVAL_MS);
     const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') void refresh(reportPeriodRef.current, reportDateRef.current, reportMonthRef.current, true);
+      if (document.visibilityState === 'visible')
+        void refresh(reportPeriodRef.current, reportDateRef.current, reportMonthRef.current, true);
     };
     document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
+      refreshRevisionRef.current += 1;
       refreshControllerRef.current?.abort();
+      refreshInFlightRef.current = false;
     };
     // refresh is intentionally kept out of the dependency list because it is
     // recreated on render; the selected report scope is the meaningful input.
@@ -1156,6 +1217,10 @@ export default function AdminPage() {
           onFilterChange={setAppointmentFilter}
           onPayment={openPayment}
           onAction={openAppointmentAction}
+          onChanged={(message) => {
+            if (message) setToast(message);
+            void refresh();
+          }}
         />
       );
     if (section === 'payments')
@@ -1285,7 +1350,11 @@ export default function AdminPage() {
                 : ''}
               .
             </span>
-            <button type="button" className="button button-quiet button-sm" onClick={() => void refresh()}>
+            <button
+              type="button"
+              className="button button-quiet button-sm"
+              onClick={() => void refresh()}
+            >
               Retry
             </button>
           </div>
@@ -2204,6 +2273,7 @@ function AppointmentsView({
   onFilterChange,
   onPayment,
   onAction,
+  onChanged,
 }: {
   appointments: Appointment[];
   currency: string;
@@ -2219,6 +2289,7 @@ function AppointmentsView({
     appointment: Appointment,
     mode: 'CANCEL' | 'CHANGE_SERVICE' | 'REASSIGN' | 'OVERRIDE_EXCLUSION',
   ) => void;
+  onChanged: (message?: string) => void;
 }) {
   const [rows, setRows] = useState(appointments);
   const [status, setStatus] = useState<AppointmentStatusFilter>(
@@ -2430,6 +2501,13 @@ function AppointmentsView({
 
   return (
     <>
+      <PastUnresolvedPanel
+        currency={currency}
+        refreshToken={refreshToken}
+        onPayment={onPayment}
+        onHistory={setHistoryAppointment}
+        onChanged={onChanged}
+      />
       <SectionHeader
         eyebrow="History"
         title="Appointments"
@@ -2856,6 +2934,642 @@ function AppointmentsView({
     </>
   );
 }
+type PastResolutionKind = 'UNSERVED' | 'ASSIGNMENT_GAP' | 'SERVICE_INTERRUPTED' | 'PAYMENT_REVIEW';
+type PastUnresolvedItem = {
+  appointment: Appointment;
+  businessDate: string;
+  daysOverdue: number;
+  resolutionKind: PastResolutionKind;
+  guidance: { label: string; description: string; actionLabel: string };
+};
+type PastUnresolvedPayload = {
+  appointments: PastUnresolvedItem[];
+  currentBusinessDate: string;
+  hasMore: boolean;
+  summary: {
+    total: number;
+    unserved: number;
+    assignmentGap: number;
+    serviceInterrupted: number;
+    paymentReview: number;
+  };
+};
+type HistoricalStaff = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  status: string;
+  availability: string;
+};
+
+function PastUnresolvedPanel({
+  currency,
+  refreshToken,
+  onPayment,
+  onHistory,
+  onChanged,
+}: {
+  currency: string;
+  refreshToken: number;
+  onPayment: (appointment: Appointment) => void;
+  onHistory: (appointment: Appointment) => void;
+  onChanged: (message?: string) => void;
+}) {
+  const [payload, setPayload] = useState<PastUnresolvedPayload | null>(null);
+  const [resolutionItem, setResolutionItem] = useState<PastUnresolvedItem | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let disposed = false;
+    const controller = new AbortController();
+    void fetch('/api/admin/appointments/past-unresolved', {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const nextPayload = await response.json();
+        if (!response.ok) throw new Error(nextPayload.error ?? 'Unable to load past appointments');
+        return nextPayload as PastUnresolvedPayload;
+      })
+      .then((nextPayload) => {
+        if (!disposed) {
+          setPayload(nextPayload);
+          setError('');
+        }
+      })
+      .catch((nextError: unknown) => {
+        if (!disposed && !(nextError instanceof DOMException && nextError.name === 'AbortError'))
+          setError(
+            nextError instanceof Error ? nextError.message : 'Unable to load past appointments',
+          );
+      })
+      .finally(() => {
+        if (!disposed) setLoading(false);
+      });
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  }, [refreshToken, reloadKey]);
+
+  const summary = payload?.summary;
+  return (
+    <section
+      className="card card-pad past-unresolved-card"
+      aria-labelledby="past-unresolved-title"
+      aria-busy={loading}
+    >
+      <div className="past-unresolved-header">
+        <div className="past-unresolved-heading">
+          <span className={`past-unresolved-icon ${summary?.total ? 'has-alert' : 'is-clear'}`}>
+            {summary?.total ? (
+              <AlertCircle size={18} aria-hidden="true" />
+            ) : (
+              <CheckCircle2 size={18} aria-hidden="true" />
+            )}
+          </span>
+          <div>
+            <div className="eyebrow">Manager reconciliation</div>
+            <h3 id="past-unresolved-title" className="card-title">
+              Past appointments needing review
+            </h3>
+            <p>
+              Historical records stay visible until a manager records what happened. Nothing is
+              auto-cancelled or auto-completed.
+            </p>
+          </div>
+        </div>
+        <div className={`past-unresolved-total ${summary?.total ? 'has-alert' : 'is-clear'}`}>
+          {loading && !payload ? 'Loading…' : `${summary?.total ?? 0} open`}
+        </div>
+      </div>
+
+      {error ? (
+        <div className="management-error past-unresolved-error" role="alert">
+          <span>{error}</span>
+          <button
+            type="button"
+            className="button button-quiet button-sm"
+            onClick={() => setReloadKey((current) => current + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
+
+      {summary?.total ? (
+        <>
+          <div className="past-unresolved-summary-grid" aria-label="Past appointment summary">
+            <div className="past-unresolved-stat">
+              <strong>{summary.total}</strong>
+              <span>Total open</span>
+            </div>
+            <div className="past-unresolved-stat">
+              <strong>{summary.unserved}</strong>
+              <span>Unserved / waiting</span>
+            </div>
+            <div className="past-unresolved-stat">
+              <strong>{summary.assignmentGap}</strong>
+              <span>Assigned, not started</span>
+            </div>
+            <div className="past-unresolved-stat">
+              <strong>{summary.serviceInterrupted}</strong>
+              <span>Service interrupted</span>
+            </div>
+            <div className="past-unresolved-stat">
+              <strong>{summary.paymentReview}</strong>
+              <span>Payment pending</span>
+            </div>
+          </div>
+          <div className="admin-table-wrap past-unresolved-table-wrap">
+            <table className="admin-table past-unresolved-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Appointment</th>
+                  <th>Issue</th>
+                  <th>Assigned</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payload?.appointments.map((item) => {
+                  const appointment = item.appointment;
+                  const canCollectPayment = item.resolutionKind === 'PAYMENT_REVIEW';
+                  return (
+                    <tr key={appointment.id}>
+                      <td data-label="Date">
+                        <strong>{item.businessDate}</strong>
+                        <span className="table-note">
+                          {item.daysOverdue} day{item.daysOverdue === 1 ? '' : 's'} overdue
+                        </span>
+                      </td>
+                      <td data-label="Appointment">
+                        <strong>{appointment.code}</strong>
+                        <span className="table-note">
+                          {appointment.customerName} · {appointment.serviceName}
+                          {appointment.services.length > 1
+                            ? ` + ${appointment.services.length - 1} more`
+                            : ''}
+                        </span>
+                      </td>
+                      <td data-label="Issue">
+                        <span
+                          className={`past-unresolved-kind ${item.resolutionKind.toLowerCase()}`}
+                        >
+                          {item.guidance.label}
+                        </span>
+                        <span className="table-note">{item.guidance.description}</span>
+                      </td>
+                      <td data-label="Assigned">
+                        {appointment.primaryStaff ? (
+                          <span>{appointment.primaryStaff.name}</span>
+                        ) : (
+                          <span className="subtle">Unassigned</span>
+                        )}
+                      </td>
+                      <td data-label="Status">
+                        <StatusBadge
+                          label={appointment.status.replace('_', ' ')}
+                          tone={appointment.status === 'PAYMENT_PENDING' ? 'warning' : 'neutral'}
+                        />
+                      </td>
+                      <td data-label="Actions">
+                        <div className="past-unresolved-actions">
+                          <button
+                            type="button"
+                            className={`button button-sm past-unresolved-review-button ${canCollectPayment ? 'button-primary' : 'button-quiet'}`}
+                            onClick={() =>
+                              canCollectPayment ? onPayment(appointment) : setResolutionItem(item)
+                            }
+                          >
+                            {canCollectPayment ? (
+                              <WalletCards size={15} aria-hidden="true" />
+                            ) : (
+                              <ClipboardCheck size={15} aria-hidden="true" />
+                            )}
+                            {canCollectPayment ? 'Collect payment' : 'Review'}
+                          </button>
+                          <button
+                            type="button"
+                            className="button button-quiet button-sm past-unresolved-history-button"
+                            onClick={() => onHistory(appointment)}
+                          >
+                            <History size={15} aria-hidden="true" />
+                            History
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {payload?.hasMore ? (
+            <p className="field-hint past-unresolved-more">
+              Showing the oldest 100 records. Resolve these first to reveal the next batch.
+            </p>
+          ) : null}
+        </>
+      ) : loading ? (
+        <div className="empty-state past-unresolved-empty" role="status">
+          Loading historical exceptions…
+        </div>
+      ) : (
+        <div className="empty-state past-unresolved-empty">
+          <CheckCircle2 size={28} aria-hidden="true" />
+          <div>
+            <strong>Everything is reconciled</strong>
+            <br />
+            <span>No past appointment needs a manager decision.</span>
+          </div>
+        </div>
+      )}
+
+      {resolutionItem ? (
+        <PastAppointmentResolutionDialog
+          item={resolutionItem}
+          currency={currency}
+          onClose={() => setResolutionItem(null)}
+          onComplete={(message) => {
+            setResolutionItem(null);
+            onChanged(message);
+          }}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function PastAppointmentResolutionDialog({
+  item,
+  currency,
+  onClose,
+  onComplete,
+}: {
+  item: PastUnresolvedItem;
+  currency: string;
+  onClose: () => void;
+  onComplete: (message: string) => void;
+}) {
+  const serviceRows = item.appointment.services.length
+    ? item.appointment.services
+    : [
+        {
+          id: `${item.appointment.id}-service`,
+          serviceId: item.appointment.serviceId,
+          sequence: 1,
+          serviceName: item.appointment.serviceName,
+          durationMin: item.appointment.durationMin,
+          amount: item.appointment.amount,
+          status: item.appointment.status,
+          primaryStaff: item.appointment.primaryStaff,
+          turnExclusions: [],
+        },
+      ];
+  const unfinishedServices = serviceRows.filter(
+    (service) => !['COMPLETED', 'CANCELLED', 'PAYMENT_PENDING'].includes(service.status),
+  );
+  const [action, setAction] = useState<'CANCEL_UNSERVED' | 'MARK_COMPLETED'>('CANCEL_UNSERVED');
+  const [serviceId, setServiceId] = useState(
+    unfinishedServices.find((service) => service.status === item.appointment.status)?.id ??
+      unfinishedServices[0]?.id ??
+      serviceRows[0]?.id ??
+      '',
+  );
+  const [staff, setStaff] = useState<HistoricalStaff[]>([]);
+  const [staffId, setStaffId] = useState(item.appointment.primaryStaffId ?? '');
+  const [reason, setReason] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const [loadingStaff, setLoadingStaff] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const close = useCallback(() => {
+    if (!saving) onClose();
+  }, [onClose, saving]);
+  const dialogRef = useDialogFocus(true, close);
+  const selectedService = serviceRows.find((service) => service.id === serviceId) ?? serviceRows[0];
+  const isInService = selectedService?.status === 'IN_SERVICE';
+  const selectedStaff = staff.find((member) => member.id === staffId);
+
+  useEffect(() => {
+    let disposed = false;
+    void fetch('/api/admin/staff', { cache: 'no-store' })
+      .then(async (response) => {
+        const nextPayload = await response.json();
+        if (!response.ok) throw new Error(nextPayload.error ?? 'Unable to load specialists');
+        return nextPayload as { staff?: HistoricalStaff[] };
+      })
+      .then((nextPayload) => {
+        if (disposed) return;
+        const nextStaff = nextPayload.staff ?? [];
+        setStaff(nextStaff);
+        setStaffId(
+          (item.appointment.primaryStaffId &&
+          nextStaff.some((member) => member.id === item.appointment.primaryStaffId)
+            ? item.appointment.primaryStaffId
+            : nextStaff.find((member) => member.isActive)?.id) ??
+            nextStaff[0]?.id ??
+            '',
+        );
+      })
+      .catch((nextError: unknown) => {
+        if (!disposed)
+          setError(nextError instanceof Error ? nextError.message : 'Unable to load specialists');
+      })
+      .finally(() => {
+        if (!disposed) setLoadingStaff(false);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [item.appointment.primaryStaffId]);
+
+  async function submit() {
+    if (!selectedService) {
+      setError('Choose a service to resolve.');
+      return;
+    }
+    if (!reason.trim()) {
+      setError('Add a reason to continue.');
+      return;
+    }
+    if (action === 'MARK_COMPLETED' && !staffId) {
+      setError('Choose the specialist who completed the service.');
+      return;
+    }
+    if (action === 'CANCEL_UNSERVED' && isInService && !confirmed) {
+      setError('Confirm that this in-service record should be marked unserved.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const response = await fetch('/api/admin/appointments/past-unresolved', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: item.appointment.id,
+          appointmentServiceId: item.appointment.services.length ? selectedService.id : undefined,
+          action,
+          staffId: action === 'MARK_COMPLETED' ? staffId : undefined,
+          reason: reason.trim(),
+          confirmed,
+          idempotencyKey: `past-resolution-${item.appointment.id}-${selectedService.id}-${action}-${Date.now()}`,
+        }),
+      });
+      const responsePayload = await response.json();
+      if (!response.ok)
+        throw new Error(responsePayload.error ?? 'Historical resolution could not be recorded');
+      onComplete(
+        responsePayload.message ??
+          `${item.appointment.code} ${action === 'MARK_COMPLETED' ? 'marked completed' : 'marked unserved'}.`,
+      );
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Historical resolution failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div
+        ref={dialogRef}
+        className="modal past-resolution-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="past-resolution-title"
+        aria-busy={saving}
+      >
+        <div className="modal-header past-resolution-modal-header">
+          <div className="past-resolution-heading-copy">
+            <div className="past-resolution-kicker">
+              <div className="eyebrow">Historical reconciliation</div>
+              <span className="past-resolution-header-status">
+                <AlertCircle size={13} aria-hidden="true" />
+                Manager action
+              </span>
+            </div>
+            <h2 id="past-resolution-title">Resolve past appointment</h2>
+            <div className="past-resolution-context" aria-label="Appointment details">
+              <span className="past-resolution-context-code">{item.appointment.code}</span>
+              <span>{item.appointment.customerName}</span>
+              <span>{item.businessDate}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="modal-close"
+            aria-label="Close historical resolution"
+            onClick={close}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="past-resolution-notice">
+          <span className="past-resolution-notice-icon">
+            <AlertCircle size={17} aria-hidden="true" />
+          </span>
+          <span className="past-resolution-notice-copy">
+            <strong>Review the historical record carefully.</strong>
+            <span>
+              This writes a manager decision to the audit trail. It does not change today’s staff
+              availability.
+            </span>
+          </span>
+        </div>
+
+        <div className="field past-resolution-field">
+          <div className="past-resolution-field-heading">
+            <div>
+              <span className="past-resolution-step">01</span>
+              <label htmlFor="past-resolution-service">Service to resolve</label>
+            </div>
+            <span className="past-resolution-field-kicker">Required</span>
+          </div>
+          <select
+            id="past-resolution-service"
+            value={serviceId}
+            onChange={(event) => {
+              setServiceId(event.target.value);
+              setConfirmed(false);
+            }}
+            disabled={saving}
+          >
+            {unfinishedServices.map((service) => (
+              <option key={service.id} value={service.id}>
+                {service.sequence}. {service.serviceName} · {service.status.replace('_', ' ')}
+              </option>
+            ))}
+          </select>
+          <span className="field-hint">
+            {unfinishedServices.length > 1
+              ? 'This visit has multiple unfinished services; resolve them one at a time.'
+              : 'Choose the unfinished service represented by this historical record.'}
+          </span>
+        </div>
+
+        <div className="past-resolution-section-heading">
+          <span className="past-resolution-step">02</span>
+          <div>
+            <h3>Choose an outcome</h3>
+            <p>Tell us what actually happened during this visit.</p>
+          </div>
+        </div>
+
+        <div className="past-resolution-choice-grid" role="group" aria-label="Resolution type">
+          <button
+            type="button"
+            className={`past-resolution-choice ${action === 'CANCEL_UNSERVED' ? 'active' : ''}`}
+            aria-pressed={action === 'CANCEL_UNSERVED'}
+            onClick={() => {
+              setAction('CANCEL_UNSERVED');
+              setConfirmed(false);
+            }}
+            disabled={saving}
+          >
+            <span className="past-resolution-choice-top">
+              <span className="past-resolution-choice-icon is-danger">
+                <CircleX size={18} aria-hidden="true" />
+              </span>
+              <span className="past-resolution-choice-indicator" aria-hidden="true" />
+            </span>
+            <strong>Cancel as unserved</strong>
+            <span>No service was delivered; close the record as unserved.</span>
+          </button>
+          <button
+            type="button"
+            className={`past-resolution-choice ${action === 'MARK_COMPLETED' ? 'active' : ''}`}
+            aria-pressed={action === 'MARK_COMPLETED'}
+            onClick={() => setAction('MARK_COMPLETED')}
+            disabled={saving}
+          >
+            <span className="past-resolution-choice-top">
+              <span className="past-resolution-choice-icon is-success">
+                <CheckCircle2 size={18} aria-hidden="true" />
+              </span>
+              <span className="past-resolution-choice-indicator" aria-hidden="true" />
+            </span>
+            <strong>Mark service completed</strong>
+            <span>Use when the guest was served but the final event was missed.</span>
+          </button>
+        </div>
+
+        {action === 'MARK_COMPLETED' ? (
+          <div className="field past-resolution-field">
+            <div className="past-resolution-field-heading">
+              <div>
+                <span className="past-resolution-step">02A</span>
+                <label htmlFor="past-resolution-staff">Specialist who completed the service</label>
+              </div>
+              <span className="past-resolution-field-kicker">Required</span>
+            </div>
+            <select
+              id="past-resolution-staff"
+              value={staffId}
+              onChange={(event) => setStaffId(event.target.value)}
+              disabled={saving || loadingStaff}
+            >
+              <option value="">Choose a specialist</option>
+              {staff.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                  {!member.isActive ? ' · inactive' : ''}
+                </option>
+              ))}
+            </select>
+            <span className="field-hint">
+              {selectedStaff
+                ? `Recorded against ${selectedStaff.name}; historical resolution does not assign a new live turn.`
+                : loadingStaff
+                  ? 'Loading the staff list…'
+                  : 'Select the staff member to preserve accurate service attribution.'}
+            </span>
+          </div>
+        ) : null}
+
+        {action === 'CANCEL_UNSERVED' && isInService ? (
+          <label className="past-resolution-confirm">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(event) => setConfirmed(event.target.checked)}
+              disabled={saving}
+            />
+            <span>
+              <strong>Confirm active service cancellation</strong>
+              <small>I confirm that no service should remain recorded as delivered.</small>
+            </span>
+          </label>
+        ) : null}
+
+        <div className="field past-resolution-field">
+          <div className="past-resolution-field-heading">
+            <div>
+              <span className="past-resolution-step">03</span>
+              <label htmlFor="past-resolution-reason">Reason</label>
+            </div>
+            <span className="past-resolution-character-count">{reason.length}/200</span>
+          </div>
+          <textarea
+            id="past-resolution-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            maxLength={200}
+            rows={3}
+            placeholder="Example: Guest left before service started"
+            disabled={saving}
+          />
+          <span className="field-hint">Required. Saved to the appointment audit trail.</span>
+        </div>
+
+        {error ? (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <div className="past-resolution-actions-footer">
+          <div className="past-resolution-audit-summary" aria-label="Appointment audit summary">
+            <span>{formatAdminMoney(item.appointment.amount, currency)}</span>
+            <span>
+              {item.daysOverdue} day{item.daysOverdue === 1 ? '' : 's'} overdue
+            </span>
+          </div>
+          <div className="past-resolution-footer-actions">
+            <button type="button" className="button button-quiet" onClick={close} disabled={saving}>
+              <X size={15} aria-hidden="true" />
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={() => void submit()}
+              disabled={saving || !selectedService}
+            >
+              {action === 'MARK_COMPLETED' ? (
+                <CheckCircle2 size={15} aria-hidden="true" />
+              ) : (
+                <CircleX size={15} aria-hidden="true" />
+              )}
+              {saving
+                ? 'Saving…'
+                : action === 'MARK_COMPLETED'
+                  ? 'Mark completed'
+                  : 'Mark unserved'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type TurnHistoryEvent = {
   id: string;
   appointmentServiceId: string | null;

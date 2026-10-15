@@ -1,10 +1,15 @@
 # Implementation decisions
 
-Last updated: 2026-10-14
+Last updated: 2026-10-15
 
 ## 2026-10-13 handoff decision
 
 - Cloudflare Worker + D1 is the only active runtime and test target. Active CI uses disposable local D1 and does not require a separate database service.
+
+## 2026-10-15 reliability follow-up
+
+- Admin reads use a shared client deadline, abort superseded requests, and reject stale responses. Dashboard refreshes use partial-result handling rather than waiting for every endpoint to settle successfully.
+- The client deadline is a bounded UX failure path, not a substitute for server diagnosis: a timeout must leave a Retry/stale-data affordance visible and the underlying Worker/D1 latency or cancellation still requires investigation.
 
 ## 2026-10-11 follow-up decisions
 
@@ -64,3 +69,11 @@ Supporting technicians finish with the primary technician. There is no independe
 - Retention cleanup is exposed as a protected job endpoint and is not automatically scheduled by the application. The deployment operator must schedule it with the configured job secret.
 - The active database-backed gate uses disposable local D1 through `npm run test:e2e:d1`; it must never target production state.
 - Public kiosk returning-customer lookup uses the approved full-name behavior: a matching phone may display the stored full name on the shared kiosk so the guest can confirm it. The lookup response is limited to `found`, `name`, and readiness/error fields, is marked `no-store`, and does not expose the phone or customer record. Rate limiting remains an infrastructure/operator concern because the shared kiosk is a trusted-origin surface.
+
+## 2026-10-14 — Historical appointment reconciliation
+
+- The manager inbox is derived from appointments whose `businessDate` is before the current configured business date and whose lifecycle remains `CREATED`, `WAITING`, `ASSIGNED`, `IN_SERVICE`, or `PAYMENT_PENDING`. Resolved appointments are not duplicated into a second workflow table.
+- Historical records are never auto-cancelled or auto-completed. A manager must choose a specific unfinished service, record a reason, and explicitly either cancel it as unserved or mark it completed with the specialist who delivered it.
+- Cancelling an unfinished historical service closes its active turn as skipped and preserves the audit trail. Marking it completed finishes the active turn or creates a historical finished turn, then leaves the appointment `PAYMENT_PENDING` until payment is confirmed.
+- Historical payment confirmation is allowed for `PAYMENT_PENDING` appointments, but it does not change today’s staff availability. This prevents back-office cleanup from occupying or releasing the live board incorrectly.
+- Historical resolution commands require an idempotency key and are guarded by status checks, so retries are safe and concurrent changes are rejected for review.
