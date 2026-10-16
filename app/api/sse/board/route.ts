@@ -1,14 +1,26 @@
 import { auth } from '@/src/server/auth';
 import { getDbBoardState } from '@/src/server/services/prisma-operations';
 import { observeApiRequest } from '@/src/server/observability';
+import { makeAccountViewer } from '@/src/domain/viewer';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET(request: Request) {
   return observeApiRequest(request, 'GET /api/sse/board', async () => {
-    const role = (await auth())?.user?.role;
-    const initialBoard = await getDbBoardState({ publicView: !['STATION', 'ADMIN'].includes(role ?? '') });
+    const session = await auth();
+    const role = session?.user?.role;
+    const isStaffViewer = ['STATION', 'ADMIN'].includes(role ?? '');
+    const board = await getDbBoardState({ publicView: !isStaffViewer });
+    const initialBoard = {
+      ...board,
+      viewerRole: isStaffViewer ? role : null,
+      viewer: makeAccountViewer({
+        email: session?.user?.email,
+        displayName: (session?.user as { name?: string | null } | undefined)?.name,
+        role: isStaffViewer ? role : null,
+      }),
+    };
     const encoder = new TextEncoder();
     let keepAlive: ReturnType<typeof setInterval> | undefined;
     const stream = new ReadableStream({

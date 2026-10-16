@@ -222,6 +222,7 @@ model Appointment {
 
   @@unique([businessDate, code])
   @@index([businessDate, status])
+  @@index([businessDate, createdAt])
   @@index([customerId, createdAt])
   @@map("appointments")
 }

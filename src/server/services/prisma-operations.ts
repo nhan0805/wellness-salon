@@ -41,7 +41,15 @@ import {
   isWithinOperatingHours,
   minutesInTimezone,
 } from '@/src/domain/operating-hours';
-import { getD1Database, isD1Runtime, prisma, withD1Lease, type D1DatabaseLike } from '@/src/server/db';
+import {
+  getD1Database,
+  isD1Runtime,
+  prisma,
+  withD1Lease,
+  withPrismaRuntime,
+  type D1DatabaseLike,
+  type D1PrismaRuntime,
+} from '@/src/server/db';
 import { sha256Hex } from '@/src/server/web-crypto';
 import { randomId } from '@/src/server/web-crypto';
 import { getBuildTimeValue } from '@/src/server/runtime-config';
@@ -67,8 +75,8 @@ export function currentBusinessDate(now = new Date(), timeZone = SHOP_TIMEZONE) 
   return new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)));
 }
 
-export async function currentDbBusinessDate(now = new Date()) {
-  const config = await getDbShopConfig();
+export async function currentDbBusinessDate(now = new Date(), client?: D1PrismaRuntime) {
+  const config = await getDbShopConfig(client);
   return currentBusinessDate(now, config.timezone);
 }
 
@@ -395,6 +403,73 @@ const appointmentInclude = {
   payment: true,
 };
 
+// The live Dashboard snapshot does not need catalog descriptions, required
+// skill graphs, or payment audit fields. Keep this projection narrow because
+// it is polled by every shared tablet and refreshes much more often than the
+// management screens.
+const dashboardAppointmentInclude = {
+  customer: { select: { name: true, phone: true } },
+  service: { select: { id: true, name: true, durationMin: true } },
+  primaryStaff: { select: { id: true, name: true, initials: true } },
+  turns: {
+    orderBy: { createdAt: 'asc' as const },
+    select: {
+      id: true,
+      appointmentId: true,
+      appointmentServiceId: true,
+      assignedStaffId: true,
+      status: true,
+      reason: true,
+      skipReasonId: true,
+      skipReasonNameSnapshot: true,
+      createdAt: true,
+      endedAt: true,
+    },
+  },
+  services: {
+    orderBy: { sequence: 'asc' as const },
+    select: {
+      id: true,
+      serviceId: true,
+      sequence: true,
+      serviceNameSnapshot: true,
+      durationMinSnapshot: true,
+      amount: true,
+      status: true,
+      primaryStaffId: true,
+      completedAt: true,
+      primaryStaff: { select: { id: true, name: true, initials: true } },
+      turns: {
+        orderBy: { createdAt: 'asc' as const },
+        select: {
+          id: true,
+          appointmentId: true,
+          appointmentServiceId: true,
+          assignedStaffId: true,
+          status: true,
+          reason: true,
+          skipReasonId: true,
+          skipReasonNameSnapshot: true,
+          createdAt: true,
+          endedAt: true,
+        },
+      },
+      turnExclusions: {
+        where: { overriddenAt: null },
+        orderBy: { createdAt: 'asc' as const },
+        select: {
+          staffId: true,
+          reason: true,
+          createdAt: true,
+          staff: { select: { id: true, name: true } },
+        },
+      },
+    },
+  },
+  supportingStaff: { select: { staffId: true } },
+  payment: { select: { amount: true, tip: true, method: true, confirmedAt: true } },
+};
+
 // The board polls frequently from every shared tablet. Keep its read payload
 // limited to fields that mapAppointment and the board UI actually consume.
 const boardAppointmentInclude = {
@@ -531,7 +606,7 @@ const manualCheckoutBlockingAppointmentStatuses: AppointmentStatus[] = [
   AppointmentStatus.PAYMENT_PENDING,
 ];
 
-async function staffForBusinessDate(tx: typeof prisma | Prisma.TransactionClient, date: Date) {
+async function staffForBusinessDate(tx: D1PrismaRuntime | Prisma.TransactionClient, date: Date) {
   return tx.staff.findMany({
     where: { isActive: true },
     include: {
@@ -698,8 +773,8 @@ async function recordTurnEvent(
   });
 }
 
-export async function getDbServices(): Promise<ServiceCandidate[]> {
-  const rows = await prisma.service.findMany({
+async function getDbServicesWithClient(client: D1PrismaRuntime): Promise<ServiceCandidate[]> {
+  const rows = await client.service.findMany({
     where: { isActive: true, category: { isActive: true } },
     include: {
       category: { select: { id: true, name: true, slug: true, sortOrder: true } },
@@ -720,6 +795,13 @@ export async function getDbServices(): Promise<ServiceCandidate[]> {
   }));
 }
 
+export async function getDbServices(client?: D1PrismaRuntime): Promise<ServiceCandidate[]> {
+  if (client) return getDbServicesWithClient(client);
+  return withPrismaRuntime('catalog.read', ({ client: runtimeClient }) =>
+    getDbServicesWithClient(runtimeClient),
+  );
+}
+
 function activeCatalogServiceWhere(serviceIds: string[]) {
   return { id: { in: serviceIds }, isActive: true, category: { isActive: true } } as const;
 }
@@ -734,7 +816,22 @@ export type ShopOperationalConfig = {
   stateVersion: number;
 };
 
-export async function getDbShopConfig(): Promise<ShopOperationalConfig> {
+async function getDbShopConfigWithClient(client: D1PrismaRuntime): Promise<ShopOperationalConfig> {
+  const row = await client.shopConfig.findUnique({ where: { id: 1 } });
+  return {
+    timezone: row?.timezone ?? SHOP_TIMEZONE,
+    openingTime: row?.openingTime ?? '09:00',
+    closingTime: row?.closingTime ?? '21:00',
+    currency: row?.currency ?? 'USD',
+    verifiedSessionTtlMin: row?.verifiedSessionTtlMin ?? 3,
+    roundRobinEnabled: row?.roundRobinEnabled ?? true,
+    stateVersion: row?.stateVersion ?? 0,
+  };
+}
+
+export async function getDbShopConfig(client?: D1PrismaRuntime): Promise<ShopOperationalConfig> {
+  if (client) return getDbShopConfigWithClient(client);
+
   if (await isD1Runtime()) {
     const database = await getD1Database();
     const row = await database
@@ -772,11 +869,21 @@ export async function lookupDbCustomerByPhone(phone: string) {
   return { found: Boolean(customer), name: customer?.name ?? null };
 }
 
-export async function getDbBoardState({ publicView = false }: { publicView?: boolean } = {}) {
-  const config = await getDbShopConfig();
+async function getDbBoardStateWithClient(
+  { publicView = false }: { publicView?: boolean },
+  client: D1PrismaRuntime,
+) {
+  const config = await getDbShopConfigWithClient(client);
   const businessDate = currentBusinessDate(new Date(), config.timezone);
+  const skipReasonsPromise = publicView
+    ? Promise.resolve([] as Array<{ id: string; name: string }>)
+    : client.skipReason.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        select: { id: true, name: true },
+      });
   const [currentRows, upNextRows, staffRows, skipReasons] = await Promise.all([
-    prisma.appointment.findMany({
+    client.appointment.findMany({
       where: {
         businessDate,
         status: {
@@ -786,7 +893,7 @@ export async function getDbBoardState({ publicView = false }: { publicView?: boo
       include: boardAppointmentInclude,
       orderBy: { createdAt: 'asc' },
     }),
-    prisma.appointment.findMany({
+    client.appointment.findMany({
       where: {
         businessDate,
         status: { in: [AppointmentStatus.ASSIGNED, AppointmentStatus.WAITING] },
@@ -795,12 +902,8 @@ export async function getDbBoardState({ publicView = false }: { publicView?: boo
       orderBy: { createdAt: 'asc' },
       take: 4,
     }),
-    staffForBusinessDate(prisma, businessDate),
-    prisma.skipReason.findMany({
-      where: { isActive: true },
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      select: { id: true, name: true },
-    }),
+    staffForBusinessDate(client, businessDate),
+    skipReasonsPromise,
   ]);
   const staff = staffRows.map(mapStaff);
   const mapBoardAppointment = (row: (typeof currentRows)[number]) => {
@@ -854,6 +957,35 @@ export async function getDbBoardState({ publicView = false }: { publicView?: boo
   };
 }
 
+export async function getDbBoardState({ publicView = false }: { publicView?: boolean } = {}) {
+  return withPrismaRuntime('board.read', ({ client }) =>
+    getDbBoardStateWithClient({ publicView }, client),
+  );
+}
+
+/**
+ * Read only the monotonic board version. Polling clients use this cheap path
+ * to avoid rebuilding the full relation graph when no queue action occurred.
+ */
+export async function getDbBoardVersion(): Promise<number> {
+  if (await isD1Runtime()) {
+    const database = await getD1Database();
+    const row = await database
+      .prepare('SELECT state_version FROM shop_config WHERE id = ?')
+      .bind(1)
+      .first<{ state_version: number }>();
+    return Number(row?.state_version ?? 0);
+  }
+
+  return withPrismaRuntime('board.version.read', async ({ client }) => {
+    const row = await client.shopConfig.findUnique({
+      where: { id: 1 },
+      select: { stateVersion: true },
+    });
+    return row?.stateVersion ?? 0;
+  });
+}
+
 function serviceSkillNames(service: { requiredSkills: Array<{ skill: { name: string } }> }) {
   return service.requiredSkills.map((item) => item.skill.name);
 }
@@ -887,9 +1019,12 @@ export async function getDbAppointments(businessDate?: Date) {
   return rows.map(mapAppointment);
 }
 
-export async function getDbLiveAppointments(businessDate?: Date) {
-  const date = businessDate ?? (await currentDbBusinessDate());
-  const rows = await prisma.appointment.findMany({
+async function getDbLiveAppointmentsWithClient(
+  businessDate: Date | undefined,
+  client: D1PrismaRuntime,
+) {
+  const date = businessDate ?? (await currentDbBusinessDate(new Date(), client));
+  const rows = await client.appointment.findMany({
     where: {
       businessDate: date,
       status: {
@@ -902,10 +1037,20 @@ export async function getDbLiveAppointments(businessDate?: Date) {
         ],
       },
     },
-    include: appointmentInclude,
+    include: dashboardAppointmentInclude,
     orderBy: { createdAt: 'asc' },
   });
   return rows.map(mapAppointment);
+}
+
+export async function getDbLiveAppointments(
+  businessDate?: Date,
+  client?: D1PrismaRuntime,
+) {
+  if (client) return getDbLiveAppointmentsWithClient(businessDate, client);
+  return withPrismaRuntime('dashboard.live.read', ({ client: runtimeClient }) =>
+    getDbLiveAppointmentsWithClient(businessDate, runtimeClient),
+  );
 }
 
 export async function getDbAppointmentsInRange(start: Date, end: Date) {
@@ -1001,24 +1146,29 @@ function buildAdminAppointmentWhere(
 async function addServiceCountConstraint(
   where: Prisma.AppointmentWhereInput,
   serviceCount: AdminAppointmentFilters['serviceCount'],
+  client: D1PrismaRuntime | Prisma.TransactionClient = prisma,
 ) {
   if (!serviceCount || serviceCount === 'ALL') return where;
   const rows =
     serviceCount === 'SINGLE'
-      ? await prisma.$queryRaw<
+      ? await client.$queryRaw<
           Array<{ id: string }>
         >`SELECT appointment_id AS id FROM appointment_services GROUP BY appointment_id HAVING COUNT(*) = 1`
-      : await prisma.$queryRaw<
+      : await client.$queryRaw<
           Array<{ id: string }>
         >`SELECT appointment_id AS id FROM appointment_services GROUP BY appointment_id HAVING COUNT(*) > 1`;
   return { ...where, id: { in: rows.map((row) => row.id) } };
 }
 
-async function buildAdminAppointmentQuery(filters: AdminAppointmentFilters) {
+async function buildAdminAppointmentQuery(
+  filters: AdminAppointmentFilters,
+  client: D1PrismaRuntime | Prisma.TransactionClient = prisma,
+) {
   const isD1 = await isD1Runtime();
   return addServiceCountConstraint(
     buildAdminAppointmentWhere(filters, { supportsInsensitiveMode: !isD1 }),
     filters.serviceCount,
+    client,
   );
 }
 
@@ -1033,9 +1183,12 @@ function paymentConfirmedAtValue(appointment: AppointmentSnapshot) {
   return new Date(appointment.payment?.confirmedAt ?? appointment.createdAt).getTime();
 }
 
-export async function getDbAppointmentsFiltered(filters: AdminAppointmentFilters) {
-  const where = await buildAdminAppointmentQuery(filters);
-  const rows = await prisma.appointment.findMany({
+async function getDbAppointmentsFilteredWithClient(
+  filters: AdminAppointmentFilters,
+  client: D1PrismaRuntime,
+) {
+  const where = await buildAdminAppointmentQuery(filters, client);
+  const rows = await client.appointment.findMany({
     where,
     include: appointmentInclude,
     orderBy: { createdAt: 'desc' },
@@ -1129,6 +1282,16 @@ export async function getDbAppointmentsFiltered(filters: AdminAppointmentFilters
   });
 }
 
+export async function getDbAppointmentsFiltered(
+  filters: AdminAppointmentFilters,
+  client?: D1PrismaRuntime,
+) {
+  if (client) return getDbAppointmentsFilteredWithClient(filters, client);
+  return withPrismaRuntime('admin.appointments.filtered.read', ({ client: runtimeClient }) =>
+    getDbAppointmentsFilteredWithClient(filters, runtimeClient),
+  );
+}
+
 export async function getDbAppointmentTurnHistory(appointmentId: string) {
   const appointment = await prisma.appointment.findUnique({
     where: { id: appointmentId },
@@ -1210,17 +1373,19 @@ export async function getDbAppointmentsPage(
   filters: AdminAppointmentFilters,
   requestedPage = 1,
   requestedPageSize = 25,
+  client?: D1PrismaRuntime,
 ): Promise<AdminAppointmentPage> {
   const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const pageSize = Math.min(
     50,
     Math.max(1, Number.isInteger(requestedPageSize) ? requestedPageSize : 25),
   );
-  const where = await buildAdminAppointmentQuery(filters);
+  const db = client ?? prisma;
+  const where = await buildAdminAppointmentQuery(filters, db);
   const [total, revenue, duration] = await Promise.all([
-    prisma.appointment.count({ where }),
-    prisma.appointment.aggregate({ where, _sum: { amount: true } }),
-    prisma.appointmentService.aggregate({
+    db.appointment.count({ where }),
+    db.appointment.aggregate({ where, _sum: { amount: true } }),
+    db.appointmentService.aggregate({
       where: { appointment: where },
       _sum: { durationMinSnapshot: true },
     }),
@@ -1232,7 +1397,7 @@ export async function getDbAppointmentsPage(
   let appointments: AppointmentSnapshot[];
 
   if (sort === 'DURATION_DESC') {
-    const durationRows = await prisma.appointment.findMany({
+    const durationRows = await db.appointment.findMany({
       where,
       select: {
         id: true,
@@ -1256,7 +1421,7 @@ export async function getDbAppointmentsPage(
     });
     const pageIds = durationRows.slice(skip, skip + pageSize).map((row) => row.id);
     const rows = pageIds.length
-      ? await prisma.appointment.findMany({
+      ? await db.appointment.findMany({
           where: { id: { in: pageIds } },
           include: historyAppointmentInclude,
         })
@@ -1267,7 +1432,7 @@ export async function getDbAppointmentsPage(
       .filter((row): row is (typeof rows)[number] => Boolean(row))
       .map(mapAppointment);
   } else if (sort === 'PAYMENT_NEWEST' || sort === 'PAYMENT_OLDEST') {
-    const paymentRows = await prisma.appointment.findMany({
+    const paymentRows = await db.appointment.findMany({
       where,
       select: { id: true, createdAt: true, payment: { select: { confirmedAt: true } } },
     });
@@ -1288,7 +1453,7 @@ export async function getDbAppointmentsPage(
     });
     const pageIds = paymentRows.slice(skip, skip + pageSize).map((row) => row.id);
     const rows = pageIds.length
-      ? await prisma.appointment.findMany({
+      ? await db.appointment.findMany({
           where: { id: { in: pageIds } },
           include: historyAppointmentInclude,
         })
@@ -1299,7 +1464,7 @@ export async function getDbAppointmentsPage(
       .filter((row): row is (typeof rows)[number] => Boolean(row))
       .map(mapAppointment);
   } else {
-    const rows = await prisma.appointment.findMany({
+    const rows = await db.appointment.findMany({
       where,
       include: historyAppointmentInclude,
       orderBy: appointmentOrderBy(sort),
@@ -1320,10 +1485,11 @@ export async function getDbAppointmentsPage(
   };
 }
 
-export async function getDbAppointmentFilterOptions() {
+export async function getDbAppointmentFilterOptions(client?: D1PrismaRuntime) {
+  const db = client ?? prisma;
   const [staff, services] = await Promise.all([
-    prisma.staff.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
-    prisma.service.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    db.staff.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    db.service.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
   ]);
   return { staff, services };
 }
@@ -1344,26 +1510,28 @@ export type PastUnresolvedSummary = {
   paymentReview: number;
 };
 
-export async function getDbPastUnresolvedAppointments(): Promise<{
+async function getDbPastUnresolvedAppointmentsWithClient(
+  client: D1PrismaRuntime,
+): Promise<{
   currentBusinessDate: string;
   appointments: PastUnresolvedAppointment[];
   summary: PastUnresolvedSummary;
   hasMore: boolean;
 }> {
-  const currentDate = await currentDbBusinessDate();
+  const currentDate = await currentDbBusinessDate(new Date(), client);
   const where: Prisma.AppointmentWhereInput = {
     businessDate: { lt: currentDate },
     status: { in: PAST_UNRESOLVED_STATUSES as AppointmentStatus[] },
   };
   const [total, statusCounts, rows] = await Promise.all([
-    prisma.appointment.count({ where }),
+    client.appointment.count({ where }),
     Promise.all(
       PAST_UNRESOLVED_STATUSES.map(async (status) => ({
         status,
-        count: await prisma.appointment.count({ where: { ...where, status } }),
+        count: await client.appointment.count({ where: { ...where, status } }),
       })),
     ),
-    prisma.appointment.findMany({
+    client.appointment.findMany({
       where,
       include: historyAppointmentInclude,
       orderBy: [{ businessDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
@@ -1397,6 +1565,13 @@ export async function getDbPastUnresolvedAppointments(): Promise<{
     summary,
     hasMore: total > appointments.length,
   };
+}
+
+export async function getDbPastUnresolvedAppointments(client?: D1PrismaRuntime) {
+  if (client) return getDbPastUnresolvedAppointmentsWithClient(client);
+  return withPrismaRuntime('admin.past-unresolved.read', ({ client: runtimeClient }) =>
+    getDbPastUnresolvedAppointmentsWithClient(runtimeClient),
+  );
 }
 
 function d1Statement(database: D1DatabaseLike, query: string, ...values: unknown[]) {
@@ -4908,14 +5083,16 @@ async function getDbReportForRange({
   end,
   period,
   periodLabel,
+  client,
 }: {
   start: Date;
   end: Date;
   period: 'day' | 'month';
   periodLabel: string;
+  client: D1PrismaRuntime;
 }): Promise<DailyReport | MonthlyReport> {
   const [payments, appointments] = await Promise.all([
-    prisma.payment.findMany({
+    client.payment.findMany({
       where: { confirmedAt: { not: null }, appointment: { businessDate: { gte: start, lt: end } } },
       include: {
         items: {
@@ -4933,13 +5110,13 @@ async function getDbReportForRange({
         },
       },
     }),
-    prisma.appointment.findMany({
+    client.appointment.findMany({
       where: { businessDate: { gte: start, lt: end } },
       select: { businessDate: true, status: true },
     }),
   ]);
   const refundEvents = payments.length
-    ? await prisma.auditEvent.findMany({
+    ? await client.auditEvent.findMany({
         where: {
           entity: 'Payment',
           entityId: { in: payments.map((payment) => payment.id) },
@@ -5076,27 +5253,35 @@ async function getDbReportForRange({
   return { period, businessDate: formatBusinessDate(start), ...common };
 }
 
-export async function getDbReport(date?: Date): Promise<DailyReport> {
-  const start = date ?? (await currentDbBusinessDate());
-  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-  return (await getDbReportForRange({
-    start,
-    end,
-    period: 'day',
-    periodLabel: formatBusinessDate(start),
-  })) as DailyReport;
+export async function getDbReport(date?: Date, client?: D1PrismaRuntime): Promise<DailyReport> {
+  const read = async (runtimeClient: D1PrismaRuntime) => {
+    const start = date ?? (await currentDbBusinessDate(new Date(), runtimeClient));
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    return (await getDbReportForRange({
+      start,
+      end,
+      period: 'day',
+      periodLabel: formatBusinessDate(start),
+      client: runtimeClient,
+    })) as DailyReport;
+  };
+  return client ? read(client) : withPrismaRuntime('dashboard.report.read', ({ client: runtimeClient }) => read(runtimeClient));
 }
 
-export async function getDbMonthlyReport(monthStart?: Date): Promise<MonthlyReport> {
-  const current =
-    monthStart ?? parseBusinessMonth(formatBusinessMonth(await currentDbBusinessDate()))!;
-  const { start, end } = businessMonthRange(current);
-  return (await getDbReportForRange({
-    start,
-    end,
-    period: 'month',
-    periodLabel: formatBusinessMonth(start),
-  })) as MonthlyReport;
+export async function getDbMonthlyReport(monthStart?: Date, client?: D1PrismaRuntime): Promise<MonthlyReport> {
+  const read = async (runtimeClient: D1PrismaRuntime) => {
+    const current =
+      monthStart ?? parseBusinessMonth(formatBusinessMonth(await currentDbBusinessDate(new Date(), runtimeClient)))!;
+    const { start, end } = businessMonthRange(current);
+    return (await getDbReportForRange({
+      start,
+      end,
+      period: 'month',
+      periodLabel: formatBusinessMonth(start),
+      client: runtimeClient,
+    })) as MonthlyReport;
+  };
+  return client ? read(client) : withPrismaRuntime('dashboard.monthly-report.read', ({ client: runtimeClient }) => read(runtimeClient));
 }
 
 async function autoCloseDbAttendanceD1(businessDate: Date) {

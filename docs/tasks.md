@@ -13,7 +13,6 @@ Last updated: 2026-10-15
 - Complete D1 rollback/interruption tests and settle the final exact money representation; the critical command branches already use explicit `batch()`/guard/receipt semantics.
 - Broaden tests for the custom Worker account/session boundary, Worker cron authorization, realtime recovery, timezone/DST behavior, and deployed Free-tier capacity.
 - Restore the remote URL and authentication for the attached Git metadata so branch, diff, and release history can be pushed and audited.
-- Investigate the remaining Workers-runtime request-cancellation warnings emitted by long-lived board/reconnect flows.
 
 ## Planned
 

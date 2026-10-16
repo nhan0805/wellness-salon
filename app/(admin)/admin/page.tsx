@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -38,11 +39,6 @@ import {
 } from 'lucide-react';
 import { InitialsAvatar, SectionHeader, StatusBadge } from '@/src/components/ui';
 import { AccountMenu } from '@/src/components/account-menu';
-import { AdminManagement } from '@/src/components/admin-management';
-import { AdminAccessManagement } from '@/src/components/admin-access';
-import { AdminShopConfig, AdminSkipReasons } from '@/src/components/admin-operations';
-import { AdminAppointmentAction } from '@/src/components/admin-appointment-actions';
-import { AmountKeypad } from '@/src/components/amount-keypad';
 import { useDialogFocus } from '@/src/components/use-dialog-focus';
 import {
   fetchWithTimeout,
@@ -52,6 +48,37 @@ import {
 import { makeAccountViewer, type AccountViewer } from '@/src/domain/viewer';
 import { DEFAULT_TIMEZONE } from '@/src/domain/locale-options';
 import { ADMIN_REFRESH_INTERVAL_MS } from '@/src/domain/realtime';
+
+// Settings, master-data management, and modal workflows are not needed for the
+// initial dashboard. Keep them in on-demand client chunks so a manager reaches
+// the live overview without downloading every form, keypad, and table editor.
+const AdminManagement = dynamic(
+  () => import('@/src/components/admin-management').then((module) => module.AdminManagement),
+  { loading: () => <div className="card management-loading" role="status">Loading management…</div> },
+);
+const AdminAccessManagement = dynamic(
+  () => import('@/src/components/admin-access').then((module) => module.AdminAccessManagement),
+  { loading: () => <div className="card management-loading" role="status">Loading access…</div> },
+);
+const AdminShopConfig = dynamic(
+  () => import('@/src/components/admin-operations').then((module) => module.AdminShopConfig),
+  { loading: () => <div className="card management-loading" role="status">Loading settings…</div> },
+);
+const AdminSkipReasons = dynamic(
+  () => import('@/src/components/admin-operations').then((module) => module.AdminSkipReasons),
+  { loading: () => <div className="card management-loading" role="status">Loading skip reasons…</div> },
+);
+const AdminAppointmentAction = dynamic(
+  () =>
+    import('@/src/components/admin-appointment-actions').then(
+      (module) => module.AdminAppointmentAction,
+    ),
+  { loading: () => <div className="card management-loading" role="status">Loading action…</div> },
+);
+const AmountKeypad = dynamic(
+  () => import('@/src/components/amount-keypad').then((module) => module.AmountKeypad),
+  { loading: () => <div className="card management-loading" role="status">Loading keypad…</div> },
+);
 
 type Section =
   | 'overview'
@@ -179,6 +206,20 @@ type ShopSnapshot = {
   openingTime: string;
   closingTime: string;
   currency: string;
+};
+type AdminDashboardPayload = {
+  live?: { appointments?: Appointment[] };
+  appointments?: {
+    businessDate?: string;
+    businessMonth?: string;
+    appointments?: Appointment[];
+    pagination?: AppointmentPageMeta;
+    summary?: AppointmentSummary;
+    filterOptions?: AppointmentFilterOptions;
+  };
+  reports?: Report;
+  config?: { shop?: ShopSnapshot };
+  errors?: Array<{ section: 'live' | 'appointments' | 'reports' | 'config'; message: string }>;
 };
 
 const navItems: Array<{ id: Section; label: string; icon: typeof LayoutDashboard }> = [
@@ -347,100 +388,77 @@ export default function AdminPage() {
     if (!background) setLoading(true);
     setLoadError('');
     try {
-      const reportQuery =
-        period === 'month'
-          ? `?period=month${month ? `&month=${encodeURIComponent(month)}` : ''}`
-          : date
-            ? `?date=${encodeURIComponent(date)}`
-            : '';
-      const appointmentsQuery =
-        period === 'month'
-          ? `?month=${month ? encodeURIComponent(month) : ''}&page=1&pageSize=3`
-          : date
-            ? `?date=${encodeURIComponent(date)}&page=1&pageSize=3`
-            : '?page=1&pageSize=3';
       const shouldLoadLive =
         section === 'overview' || section === 'queue' || section === 'payments';
-      const shouldLoadReports = section === 'overview' || section === 'appointments';
-      const shouldLoadConfig = section === 'overview';
+      // Reports and settings are snapshots. Refresh them on initial load,
+      // section changes, and explicit retries; background polling only needs
+      // the live queue to avoid re-running the heaviest report queries every
+      // 15 seconds.
+      const shouldLoadReports =
+        !background && (section === 'overview' || section === 'appointments');
+      const shouldLoadConfig = !background && section === 'overview';
+      const include = [
+        shouldLoadLive ? 'live' : '',
+        shouldLoadReports ? 'reports' : '',
+        shouldLoadConfig ? 'config' : '',
+      ].filter(Boolean);
+      if (!include.length) return;
+      const dashboardQuery = new URLSearchParams({ include: include.join(',') });
+      if (period === 'month') {
+        dashboardQuery.set('period', 'month');
+        if (month) dashboardQuery.set('month', month);
+      } else if (date) {
+        dashboardQuery.set('date', date);
+      }
+      dashboardQuery.set('page', '1');
+      dashboardQuery.set('pageSize', '3');
       const requests: Array<{ label: string; enabled: boolean; promise: Promise<unknown> }> = [
         {
-          label: 'Live appointments',
-          enabled: shouldLoadLive,
-          promise: shouldLoadLive
-            ? fetchAdminDashboardJson<{ appointments?: Appointment[] }>(
-                '/api/admin/appointments',
-                'Live appointments',
-                controller.signal,
-              )
-            : Promise.resolve(null),
-        },
-        {
-          label: 'Report appointments',
-          enabled: shouldLoadReports,
-          promise: shouldLoadReports
-            ? fetchAdminDashboardJson<{ appointments?: Appointment[] }>(
-                '/api/admin/appointments' + appointmentsQuery,
-                'Report appointments',
-                controller.signal,
-              )
-            : Promise.resolve(null),
-        },
-        {
-          label: 'Reports',
-          enabled: shouldLoadReports,
-          promise: shouldLoadReports
-            ? fetchAdminDashboardJson<Report>(
-                '/api/admin/reports' + reportQuery,
-                'Reports',
-                controller.signal,
-              )
-            : Promise.resolve(null),
-        },
-        {
-          label: 'Shop config',
-          enabled: shouldLoadConfig,
-          promise: shouldLoadConfig
-            ? fetchAdminDashboardJson<{ shop?: ShopSnapshot }>(
-                '/api/admin/config',
-                'Shop config',
-                controller.signal,
-              )
-            : Promise.resolve(null),
+          label: 'Dashboard snapshot',
+          enabled: include.length > 0,
+          promise: fetchAdminDashboardJson<AdminDashboardPayload>(
+            `/api/admin/dashboard?${dashboardQuery.toString()}`,
+            'Dashboard snapshot',
+            controller.signal,
+          ),
         },
       ];
       const results = await Promise.allSettled(requests.map((request) => request.promise));
       if (revision !== refreshRevisionRef.current) return;
 
-      const [liveResult, reportAppointmentsResult, reportResult, configResult] = results;
-      const liveAppointmentsPayload =
-        liveResult.status === 'fulfilled'
-          ? (liveResult.value as { appointments?: Appointment[] } | null)
+      const dashboardResult = results[0];
+      const dashboardPayload =
+        dashboardResult.status === 'fulfilled'
+          ? (dashboardResult.value as AdminDashboardPayload)
           : null;
-      const reportAppointmentsPayload =
-        reportAppointmentsResult.status === 'fulfilled'
-          ? (reportAppointmentsResult.value as { appointments?: Appointment[] } | null)
-          : null;
-      const reportPayload =
-        reportResult.status === 'fulfilled' ? (reportResult.value as Report | null) : null;
-      const configPayload =
-        configResult.status === 'fulfilled'
-          ? (configResult.value as { shop?: ShopSnapshot } | null)
-          : null;
-      if (liveAppointmentsPayload) setAppointments(liveAppointmentsPayload.appointments ?? []);
-      if (reportAppointmentsPayload)
-        setReportAppointments(reportAppointmentsPayload.appointments ?? []);
-      if (reportPayload) setReport(reportPayload);
-      if (configPayload?.shop) setShop(configPayload.shop);
+      if (dashboardPayload?.live) setAppointments(dashboardPayload.live.appointments ?? []);
+      if (dashboardPayload?.appointments)
+        setReportAppointments(dashboardPayload.appointments.appointments ?? []);
+      if (dashboardPayload?.reports) setReport(dashboardPayload.reports);
+      if (dashboardPayload?.config?.shop) setShop(dashboardPayload.config.shop);
 
-      const failures = results.flatMap((result, index) => {
-        if (!requests[index].enabled || result.status !== 'rejected') return [];
-        return [{ label: requests[index].label, reason: result.reason }];
-      });
+      const sectionLabels: Record<string, string> = {
+        live: 'Live appointments',
+        appointments: 'Report appointments',
+        reports: 'Reports',
+        config: 'Shop config',
+      };
+      const failures =
+        dashboardResult.status === 'fulfilled'
+          ? (dashboardPayload?.errors ?? []).map((failure) => ({
+              label: sectionLabels[failure.section] ?? failure.section,
+              reason: new Error(failure.message),
+            }))
+          : [{ label: requests[0].label, reason: dashboardResult.reason }];
       const actionableFailures = failures.filter(({ reason }) => !isAbortError(reason));
-      const successfulRequestCount = results.filter(
-        (result, index) => requests[index].enabled && result.status === 'fulfilled',
-      ).length;
+      const successfulRequestCount = dashboardPayload
+        ? [
+            dashboardPayload.live,
+            dashboardPayload.appointments,
+            dashboardPayload.reports,
+            dashboardPayload.config,
+          ].filter(Boolean).length
+        : 0;
 
       if (actionableFailures.length) {
         const firstFailure = actionableFailures[0].reason;
@@ -463,10 +481,11 @@ export default function AdminPage() {
         setLastUpdatedAt(new Date());
         setDataRevision((revision) => revision + 1);
       }
-      if (reportPayload) {
-        setReportPeriod(reportPayload.period ?? period);
-        if (reportPayload.period === 'month') setReportMonth(reportPayload.businessMonth ?? month);
-        else setReportDate(reportPayload.businessDate ?? date);
+      if (dashboardPayload?.reports) {
+        setReportPeriod(dashboardPayload.reports.period ?? period);
+        if (dashboardPayload.reports.period === 'month')
+          setReportMonth(dashboardPayload.reports.businessMonth ?? month);
+        else setReportDate(dashboardPayload.reports.businessDate ?? date);
       }
     } finally {
       if (revision === refreshRevisionRef.current) {
@@ -1304,7 +1323,6 @@ export default function AdminPage() {
               <Menu size={20} aria-hidden="true" />
             </button>
             <h1>{navItems.find((item) => item.id === section)?.label}</h1>
-            <span>· Live</span>
           </div>
           <div className="topbar-actions">
             <span className="admin-live-status" role="status" aria-live="polite">
@@ -1327,14 +1345,14 @@ export default function AdminPage() {
               <RefreshCcw size={17} aria-hidden="true" className={loading ? 'spin' : undefined} />
               <span>Refresh</span>
             </button>
-            <Link className="button button-board-nav" href="/board">
+            <Link className="button button-board-nav" href="/board" aria-label="Open queue board">
               <span className="nav-action-icon">
                 <ClipboardList size={18} aria-hidden="true" />
               </span>
               <span>Queue board</span>
             </Link>
-            <AccountMenu viewer={accountViewer} callbackUrl="/admin/sign-in" />
           </div>
+          <AccountMenu viewer={accountViewer} callbackUrl="/admin/sign-in" />
         </header>
         {staleSince ? (
           <div className="admin-data-health-banner" role="alert">
@@ -2732,7 +2750,7 @@ function AppointmentsView({
                   <th>Created</th>
                   <th>Status</th>
                   <th>Amount</th>
-                  <th>Actions</th>
+                  <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -3089,7 +3107,6 @@ function PastUnresolvedPanel({
                 <tr>
                   <th>Date</th>
                   <th>Appointment</th>
-                  <th>Issue</th>
                   <th>Assigned</th>
                   <th>Status</th>
                   <th>Actions</th>
@@ -3115,14 +3132,6 @@ function PastUnresolvedPanel({
                             ? ` + ${appointment.services.length - 1} more`
                             : ''}
                         </span>
-                      </td>
-                      <td data-label="Issue">
-                        <span
-                          className={`past-unresolved-kind ${item.resolutionKind.toLowerCase()}`}
-                        >
-                          {item.guidance.label}
-                        </span>
-                        <span className="table-note">{item.guidance.description}</span>
                       </td>
                       <td data-label="Assigned">
                         {appointment.primaryStaff ? (
@@ -3370,6 +3379,23 @@ function PastAppointmentResolutionDialog({
           >
             <X size={18} aria-hidden="true" />
           </button>
+        </div>
+
+        <div
+          className="past-resolution-issue"
+          role="note"
+          aria-label="Reason this appointment needs review"
+        >
+          <div className="past-resolution-issue-heading">
+            <div className="past-resolution-issue-title">
+              <span className="past-resolution-step">WHY</span>
+              <h3>Why this needs review</h3>
+            </div>
+            <span className={`past-unresolved-kind ${item.resolutionKind.toLowerCase()}`}>
+              {item.guidance.label}
+            </span>
+          </div>
+          <p>{item.guidance.description}</p>
         </div>
 
         <div className="past-resolution-notice">

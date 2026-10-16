@@ -122,6 +122,7 @@ export default function BoardPage() {
   const requestSequenceRef = useRef(0);
   const requestControllerRef = useRef<AbortController | null>(null);
   const latestVersionRef = useRef(0);
+  const hasApiSnapshotRef = useRef(false);
   const lastSuccessAtRef = useRef<number>(0);
 
   const availableStaff = board.staff.filter((member) => member.isPresent && member.availability === 'AVAILABLE');
@@ -160,7 +161,16 @@ export default function BoardPage() {
     let timedOut = false;
     let timeoutId: number | undefined;
     try {
-      const request = fetch('/api/board', { cache: 'no-store', ...(controller ? { signal: controller.signal } : {}) });
+      // The SSE bootstrap can arrive before this request and its payload may
+      // already have the same version. Keep the first API response full so
+      // auth-specific viewer metadata can never be skipped by a 304.
+      const since = hasApiSnapshotRef.current && latestVersionRef.current > 0
+        ? `?since=${latestVersionRef.current}`
+        : '';
+      const request = fetch(`/api/board${since}`, {
+        cache: 'no-store',
+        ...(controller ? { signal: controller.signal } : {}),
+      });
       const timeout = new Promise<never>((_, reject) => {
         timeoutId = window.setTimeout(() => {
           timedOut = true;
@@ -169,11 +179,19 @@ export default function BoardPage() {
         }, 12_000);
       });
       const response = await Promise.race([request, timeout]);
+      if (response.status === 304) {
+        if (requestSequence !== requestSequenceRef.current) return;
+        setBoardLoaded(true);
+        setBoardError('');
+        lastSuccessAtRef.current = Date.now();
+        return;
+      }
       if (!response.ok) throw new Error('Unable to load the live board');
       const nextBoard = await response.json() as BoardState;
       if (requestSequence !== requestSequenceRef.current) return;
       if (nextBoard.version < latestVersionRef.current) return;
       latestVersionRef.current = nextBoard.version;
+      hasApiSnapshotRef.current = true;
       setBoard(nextBoard);
       setBoardLoaded(true);
       setBoardError('');
@@ -222,6 +240,11 @@ export default function BoardPage() {
       };
     };
     const initialLoad = window.setTimeout(() => { void loadBoard(); }, 0);
+    // A newly checked-in visit can be routed by the same command that created
+    // it. Give the board one short convergence refresh after the initial SSE
+    // snapshot, then stay on the low-frequency fallback below. This preserves
+    // fast queue actions without returning to a 3-second D1 polling loop.
+    const convergenceRefresh = window.setTimeout(() => { void loadBoard(); }, 1_000);
     connect();
     const poll = window.setInterval(() => { void loadBoard(); }, BOARD_POLL_INTERVAL_MS);
     const staleCheck = window.setInterval(() => {
@@ -232,6 +255,7 @@ export default function BoardPage() {
       source?.close();
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       window.clearTimeout(initialLoad);
+      window.clearTimeout(convergenceRefresh);
       window.clearInterval(poll);
       window.clearInterval(staleCheck);
       requestControllerRef.current?.abort();

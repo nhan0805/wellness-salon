@@ -19,7 +19,7 @@ npx vinext check
 npx cf build
 ```
 
-`npm run test:e2e:d1` builds the Worker artifact, applies the two D1 migrations, generates/applies the 101-statement disposable bootstrap, and runs the Worker E2E suite against local D1. `npm run dev` starts the Worker-compatible local app on port `3001`; it needs no separate database service. Admin data loads use bounded client deadlines and show Retry instead of an indefinite spinner; this does not replace server-side latency investigation. Read the [Cloudflare final report](docs/cloudflare/FINAL_REPORT.md), [deployment record](docs/cloudflare/DEPLOYMENT_GUIDE.md), and [compatibility audit](docs/cloudflare/COMPATIBILITY_AUDIT.md) for the current remote status. The deployed URL has only passed the scoped non-destructive smoke so far; do not infer full production readiness from that check.
+`npm run test:e2e:d1` builds the Worker artifact, applies the three D1 migrations, generates/applies the 101-statement disposable bootstrap, and runs the Worker E2E suite against local D1. `npm run dev` starts the Worker-compatible local app on port `3001`; it needs no separate database service. Admin data loads use bounded client deadlines and show Retry instead of an indefinite spinner; this does not replace server-side latency investigation. Read the [Cloudflare performance plan](docs/cloudflare/PERFORMANCE.md), [Cloudflare final report](docs/cloudflare/FINAL_REPORT.md), [deployment record](docs/cloudflare/DEPLOYMENT_GUIDE.md), and [compatibility audit](docs/cloudflare/COMPATIBILITY_AUDIT.md) for the current remote status. The deployed URL has only passed the scoped non-destructive smoke so far; do not infer full production readiness from that check.
 
 ## Kiểm chứng đã chạy
 
@@ -34,7 +34,7 @@ npx prisma validate --schema prisma/d1/schema.prisma
 npm run build
 ```
 
-Kết quả kiểm chứng gần nhất ngày 15/10/2026: lint, typecheck và 54/54 unit/contract tests PASS; D1 Worker E2E PASS 31 tests với 1 skip có chủ đích. Local D1 migrations, bootstrap 101 statements, public routes, authentication, kiosk/board/admin workflows, Attendance loading smoke và responsive regressions đều PASS. Một số long-lived board/reconnect flow vẫn in cảnh báo Workers runtime huỷ request; đây là follow-up vận hành riêng. Cloudflare/D1-specific blockers are recorded in `docs/cloudflare/TEST_REPORT.md`.
+Kết quả kiểm chứng gần nhất ngày 16/10/2026: lint, typecheck và 54/54 unit/contract tests PASS; D1 Worker E2E PASS 31 tests với 1 skip có chủ đích. Local D1 migrations (bao gồm index đọc appointment thứ 3), bootstrap 101 statements, public routes, authentication, kiosk/board/admin workflows, Attendance loading smoke và responsive regressions đều PASS. Một số long-lived board/reconnect flow vẫn in cảnh báo Workers runtime huỷ request; đây là follow-up vận hành riêng. Cloudflare/D1-specific blockers are recorded in `docs/cloudflare/TEST_REPORT.md`.
 
 ## Chạy app
 

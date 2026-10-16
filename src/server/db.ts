@@ -1,4 +1,5 @@
 import type { PrismaClient as D1PrismaClient } from '@prisma/d1-client';
+import { logEvent } from '@/src/server/logger';
 
 type PrismaCompilerWasm = {
   getRuntime: () => Promise<unknown>;
@@ -17,43 +18,80 @@ export type D1DatabaseLike = {
   batch: <T = unknown>(statements: D1Statement[]) => Promise<T[]>;
 };
 
-type RuntimePrisma = D1PrismaClient;
+export type D1PrismaRuntime = D1PrismaClient;
+
+type RuntimePrisma = D1PrismaRuntime;
 
 type Runtime = {
   client: RuntimePrisma;
   database: D1DatabaseLike;
 };
 
-let runtimePromise: Promise<Runtime> | undefined;
-let d1PrismaQueue: Promise<void> = Promise.resolve();
-
 /**
- * Prisma's D1 query compiler uses a shared WASM module. Serialize Prisma
- * calls within an isolate so concurrent dashboard fan-out requests cannot
- * leave a compiler continuation attached to a canceled request context.
- * Raw D1 batches keep their existing distributed lock semantics.
+ * A runtime must never outlive the request that supplied its D1 binding.
+ *
+ * Cloudflare D1 objects carry request-local I/O context. Keeping either the
+ * binding or a Prisma client that wraps it in module state lets a later
+ * request resume work in the wrong context. That is the source of the
+ * intermittent Worker cancellations that previously appeared as dashboard
+ * timeouts. Each Prisma operation therefore gets a fresh client and is
+ * disconnected before its request-local work is released.
  */
-function runD1Prisma<T>(operation: () => Promise<T>) {
-  const result = d1PrismaQueue.then(operation, operation);
-  d1PrismaQueue = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  return result;
+async function getRuntime(): Promise<Runtime> {
+  return initializeRuntime();
 }
 
-async function getRuntime(): Promise<Runtime> {
-  if (!runtimePromise) runtimePromise = initializeRuntime();
-  return runtimePromise;
+async function withRuntime<T>(operationName: string, operation: (runtime: Runtime) => Promise<T>): Promise<T> {
+  const runtime = await getRuntime();
+  const startedAt = performance.now();
+  let operationError: unknown;
+  try {
+    return await operation(runtime);
+  } catch (error) {
+    operationError = error;
+    throw error;
+  } finally {
+    try {
+      await runtime.client.$disconnect();
+    } catch (error) {
+      if (!operationError) throw error;
+    }
+    const durationMs = Math.round((performance.now() - startedAt) * 100) / 100;
+    if (durationMs >= 250 || operationError) {
+      logEvent(operationError ? 'error' : 'warn', 'db.prisma.operation', {
+        operation: operationName,
+        durationMs,
+        outcome: operationError ? 'failed' : 'slow',
+        error: operationError instanceof Error ? operationError.message : undefined,
+      });
+    }
+  }
+}
+
+/**
+ * Run a group of related reads/writes with one request-local Prisma runtime.
+ *
+ * The runtime is still created and disposed per request. Sharing it inside a
+ * request avoids recompiling the Prisma query compiler for every individual
+ * read while preserving the D1 binding isolation required by Workers.
+ */
+export async function withPrismaRuntime<T>(
+  operationName: string,
+  operation: (runtime: { client: D1PrismaRuntime; database: D1DatabaseLike }) => Promise<T>,
+): Promise<T> {
+  return withRuntime(operationName, operation);
 }
 
 export async function isD1Runtime() {
-  await getRuntime();
+  const database = await getCloudflareDatabase();
+  if (!database) throw new Error('Cloudflare D1 database binding is not available');
   return true;
 }
 
 export async function getD1Database(): Promise<D1DatabaseLike> {
-  return (await getRuntime()).database;
+  const database = await getCloudflareDatabase();
+  if (!database) throw new Error('Cloudflare D1 database binding is not available');
+  return database;
 }
 
 async function initializeRuntime(): Promise<Runtime> {
@@ -163,10 +201,9 @@ function delegateProxy(model: PropertyKey) {
     {
       get(_target, method) {
         return (...args: unknown[]) =>
-          getRuntime().then((runtime) => {
+          withRuntime(`${String(model)}.${String(method)}`, async (runtime) => {
             const delegate = (runtime.client as unknown as Record<PropertyKey, Record<PropertyKey, (...values: unknown[]) => unknown>>)[model];
-            const operation = () => Promise.resolve(delegate[method](...args));
-            return runD1Prisma(operation);
+            return Promise.resolve(delegate[method](...args));
           });
       },
     },
@@ -177,27 +214,25 @@ export const prisma = new Proxy(proxyTarget, {
   get(_target, property) {
     if (property === 'then') return undefined;
     if (property === '$transaction') {
-      return async (operation: unknown) => {
-        const runtime = await getRuntime();
+      return async (operation: unknown) =>
+        withRuntime('$transaction', async (runtime) =>
+          runD1Transaction(runtime.database, async () => {
+            if (Array.isArray(operation)) {
+              const results = [];
+              for (const query of operation) results.push(await query);
+              return results;
+            }
 
-        return runD1Transaction(runtime.database, async () => {
-          if (Array.isArray(operation)) {
-            const results = [];
-            for (const query of operation) results.push(await query);
-            return results;
-          }
-
-          return (operation as (client: RuntimePrisma) => Promise<unknown>)(runtime.client);
-        });
-      };
+            return (operation as (client: RuntimePrisma) => Promise<unknown>)(runtime.client);
+          }),
+        );
     }
 
     if (typeof property === 'string' && property.startsWith('$')) {
       return (...args: unknown[]) =>
-        getRuntime().then((runtime) => {
+        withRuntime(property, async (runtime) => {
           const method = (runtime.client as unknown as Record<PropertyKey, (...values: unknown[]) => unknown>)[property];
-          const operation = () => Promise.resolve(method.apply(runtime.client, args));
-          return runD1Prisma(operation);
+          return Promise.resolve(method.apply(runtime.client, args));
         });
     }
 

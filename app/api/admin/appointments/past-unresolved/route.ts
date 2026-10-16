@@ -7,12 +7,15 @@ import {
 import { observeApiRequest } from '@/src/server/observability';
 import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
 import { adminPastAppointmentResolutionSchema } from '@/src/server/validation';
+import { withPrismaRuntime } from '@/src/server/db';
 
 export async function GET(request: Request) {
   return observeApiRequest(request, 'GET /api/admin/appointments/past-unresolved', async () => {
     const actor = await getAdminActor();
     if (!actor) return jsonError('Admin authorization required', 403);
-    return NextResponse.json(await getDbPastUnresolvedAppointments());
+    return withPrismaRuntime('admin.past-unresolved.read', async ({ client }) =>
+      NextResponse.json(await getDbPastUnresolvedAppointments(client)),
+    );
   });
 }
 

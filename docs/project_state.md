@@ -1,6 +1,6 @@
 # Project state
 
-Last updated: 2026-10-15
+Last updated: 2026-10-16
 
 ## Cloudflare migration gate — current status
 
@@ -31,6 +31,7 @@ Verify the canonical Worker/D1 runtime without weakening BR-01–BR-06, keep the
 - Added board SSE reconnect/backoff and version-aware polling, dynamic ShopConfig presentation, server-side appointment history pagination/summary projection, and repeatable local Worker/D1 verification tooling.
 - Completed the canonical local Worker/D1 migration/bootstrap and E2E verification, protected tablet workflows, kiosk returning-guest flow, resilience recovery, and Chromium viewport review; remote D1 data and deployment infrastructure were not changed by local tests.
 - Fixed indefinite Admin loading states: bounded reads/mutations with client cancellation, stale-response guards, Retry/error states, partial Dashboard refresh handling, and a direct D1 Attendance read; added the authenticated Attendance Worker/D1 smoke.
+- Completed the first full-app performance pass: lazy Admin client chunks, version-aware board `304` polling, auth-safe SSE bootstrap metadata, shared request-local Prisma reads, narrower board projections, local first-paint fonts, and the date/created-at appointment index migration.
 - Restored the service-category taxonomy with ordered/archivable categories, migration backfill, Admin CRUD/filtering, grouped kiosk presentation, and searchable service-icon selection.
 - Added append-only `TurnEvent` history for assignment, accept/skip/finish, cancellation, reassignment, continuation, and support lifecycle events, with an Admin appointment history view.
 - Added Admin payment history plus audited amount/method/tip adjustment, bookkeeping correction, and full/partial refund recording with retry-safe command scopes.
@@ -88,7 +89,7 @@ Verify the canonical Worker/D1 runtime without weakening BR-01–BR-06, keep the
 
 ## Build and test status
 
-Latest local verification on 2026-10-15: lint and typecheck pass, `npm test` passes 54/54, and `npm run test:e2e:d1` passes 31 tests with one intentional skip after building the Worker and applying the disposable D1 migrations/bootstrap. The new Attendance loading smoke passes. Local scheduler authorization, realtime recovery, and responsive queue checks pass. The recorded Worker version `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` remains the deployed workers.dev baseline; Cloudflare CPU/quota metrics, full remote auth/mutation/scheduler evidence, and the new loading fix's deployed latency evidence remain open. Local tests do not mutate remote D1.
+Latest local verification on 2026-10-16: lint and typecheck pass, `npm test` passes 54/54, and `npm run test:e2e:d1` passes 31 tests with one intentional skip after building the Worker and applying all three disposable D1 migrations/bootstrap. The new Attendance loading smoke and board auth-race regression path pass. Local scheduler authorization, realtime recovery, and responsive queue checks pass. The recorded Worker version `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` remains the deployed workers.dev baseline until the pending GitHub Actions deployment completes; Cloudflare CPU/quota metrics, full remote auth/mutation/scheduler evidence, and deployed latency evidence remain open. Local tests do not mutate remote D1.
 
 Detailed evidence and scenario-level gaps are maintained in [`docs/implementation/FINAL_REPORT.md`](implementation/FINAL_REPORT.md), [`docs/implementation/RELEASE_CHECKLIST.md`](implementation/RELEASE_CHECKLIST.md), and [`docs/implementation/TEST_MATRIX.md`](implementation/TEST_MATRIX.md).
 
@@ -114,8 +115,8 @@ Verification evidence from the baseline and the 2026-10-10 hardening run:
 - A future restricted shell may not bind/probe a local web server; use the in-app browser or a Worker-compatible local process for runtime checks.
 - `POST /api/jobs/closing` requires `CRON_SECRET` or an admin session in every runtime.
 - `scripts/trigger-closing.sh` fails when `CRON_SECRET` is missing.
-- The D1 E2E run still logs Workers-runtime request-cancellation warnings in some long-lived board/reconnect flows; isolate these separately from the resolved indefinite Admin spinner path.
-- The workspace still has no `.git` directory; this snapshot is tracked through the attached external Git metadata at `/private/tmp/wellness-salon-git`. The metadata currently has no configured remote URL, so push/deploy remains pending repository remote and authentication recovery.
+- The D1 E2E gate now fails if Worker request-cancellation or cross-request I/O signatures appear. The request-context fix and Dashboard snapshot changes are covered by the latest 31-pass local gate; deployed latency/capacity evidence remains a separate release gate.
+- The workspace still has no `.git` directory; this snapshot is tracked through the attached external Git metadata at `/private/tmp/wellness-salon-git`, with the `origin` remote configured for `nhan0805/wellness-salon`. Push/deploy remains gated by the verified commit and GitHub Actions production checks.
 
 ## Technical debt
 

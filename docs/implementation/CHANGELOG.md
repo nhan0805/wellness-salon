@@ -1,14 +1,24 @@
 # Implementation changelog
 
+## 2026-10-15 — Worker D1 request-context and Dashboard snapshot fix
+
+- Removed the module-global Prisma runtime, D1 binding, and cross-request Prisma Promise queue. Each Prisma operation now creates and disconnects a client inside the request-local D1 context.
+- Removed `no_handle_cross_request_promise_resolution` from the Worker configurations so Cloudflare's default context handling can surface any future lifecycle regression instead of turning it into an apparent hung request.
+- Added a section-aware `/api/admin/dashboard` snapshot endpoint, reduced the live appointment projection, and stopped background polling from re-running reports and settings every 15 seconds.
+- Added `Server-Timing`/response-duration headers, slow Prisma-operation diagnostics, partial-dashboard warnings, and an E2E log guard that fails on Worker cancellation or cross-request I/O errors.
+- Made the generated Cloudflare output preparation idempotent and pointed the local Wrangler/Playwright server at the same configured Worker entrypoint, preventing stale module artifacts from creating false E2E timeouts.
+
+Verification for this fix: `npm run lint`, `npm run typecheck`, `npm test` (54 passed), and `npm run test:e2e:d1` (31 passed, 1 intentional skip). The E2E guard found no Worker cancellation or cross-request I/O messages.
+
 ## 2026-10-15 — Admin loading timeout hardening
 
 - Bounded Admin data requests with a shared `fetchWithTimeout` helper: reads fail fast after 10 seconds and mutations after 15 seconds instead of leaving an indefinite spinner.
 - Abort the previous section load before starting a newer one, ignore stale responses, and surface timeout/error states with a visible Retry action.
 - Changed Dashboard refresh aggregation to `Promise.allSettled` with an in-flight guard so one slow endpoint cannot block healthy sections or create overlapping background refreshes.
-- Moved the Attendance read to a direct D1 query path so it does not wait behind unrelated Prisma work in the shared request queue.
+- Moved the Attendance read to a direct D1 query path so it avoids unnecessary Prisma/WASM overhead on a frequently opened admin screen.
 - Added an authenticated Worker/D1 Attendance E2E smoke that asserts the loading state resolves and the table is rendered.
 
-Verification for this follow-up: `npm run lint`, `npm run typecheck`, `npm test` (54 passed), and `npm run test:e2e:d1` (31 passed, 1 intentional skip). The E2E output still includes Workers-runtime cancellation warnings in some long-lived board/reconnect flows; those warnings are tracked separately and are not treated as proof that all server-side hangs are resolved.
+Verification for this follow-up: `npm run lint`, `npm run typecheck`, `npm test` (54 passed), and the Worker/D1 E2E gate (31 passed, 1 intentional skip). Runtime cancellation messages are now treated as a failing E2E condition.
 
 ## 2026-10-15 — Mobile appointment filter surfaces
 

@@ -14,7 +14,8 @@ Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development
 - D1 batch/guard/lease/receipt orchestration for kiosk check-in, routing, staff actions, payments, appointment changes, reconciliation, closing, retention, and admin management.
 - Kiosk, public board, staff attendance/actions, admin queue, customers, staff, services/categories/icons/skills, accounts, payments, reports, appointment history, SSE/polling recovery, and tablet/PWA UI.
 - Audit-backed idempotency, payment correction/refund records, public data redaction, and Worker cron timezone handling.
-- Admin loading resilience with bounded client deadlines, cancellation/stale-response guards, partial Dashboard refreshes, direct D1 Attendance reads, and an Attendance Worker/D1 E2E smoke.
+- Admin loading resilience with bounded client deadlines, cancellation/stale-response guards, a section-aware Dashboard snapshot, narrow live projections, direct D1 Attendance reads, response timing diagnostics, and an Attendance Worker/D1 E2E smoke.
+- Request-safe Worker/D1 lifecycle: no module-global Prisma client/binding/Promise queue, default Cloudflare cross-request handling, and an E2E guard for runtime cancellation/cross-request I/O errors.
 
 ## Evidence
 
@@ -36,7 +37,6 @@ Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development
 - Remote authenticated mutation, SSE recovery, scheduler-event, CPU/latency, and Free-tier capacity evidence is incomplete.
 - Physical iPad/WebKit, real Wi-Fi interruption, offline submission, Dynamic Type, VoiceOver, and full modal interaction review remain open.
 - D1 export/restore rehearsal, scheduler alerting, production secrets/domain/TLS, and owner approval remain open.
-- The local E2E gate still prints Workers-runtime cancellation warnings for some long-lived board/reconnect requests. The new Admin deadline prevents indefinite UI loading, but deployed-runtime cancellation/latency still needs root-cause evidence.
 
 ## Next actions
 

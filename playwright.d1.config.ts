@@ -10,7 +10,6 @@ const launchOptions = localChrome ? { executablePath: localChrome } : undefined;
 const port = process.env.PLAYWRIGHT_PORT ?? '3001';
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;
 const useExistingServer = Boolean(process.env.PLAYWRIGHT_BASE_URL);
-const workerEntrypoint = '.cloudflare/output/v0/workers/default/bundle/index.js';
 const persistTo = process.env.D1_TEST_PERSIST_TO ?? '.wrangler/d1-test';
 
 export default defineConfig({
@@ -31,7 +30,9 @@ export default defineConfig({
   webServer: useExistingServer
     ? undefined
     : {
-        command: `./node_modules/.bin/wrangler dev ${workerEntrypoint} --local --persist-to="${persistTo}" --config=wrangler.local.jsonc --assets .cloudflare/output/v0/workers/default/assets --ip 127.0.0.1 --port ${port}`,
+        // Keep the entrypoint in the Wrangler config so its bundler can resolve
+        // the generated vinext module manifest consistently between runs.
+        command: `./node_modules/.bin/wrangler dev --local --persist-to="${persistTo}" --config=wrangler.local.jsonc --assets .cloudflare/output/v0/workers/default/assets --ip 127.0.0.1 --port ${port}`,
         url: `http://127.0.0.1:${port}/api/health`,
         reuseExistingServer: false,
         timeout: 120_000,

@@ -15,12 +15,19 @@ export async function observeApiRequest(request: Request, route: string, handler
     const response = await handler();
     response.headers.set('x-request-id', requestId);
     const durationMs = Math.round((performance.now() - startedAt) * 100) / 100;
+    const existingServerTiming = response.headers.get('server-timing');
+    response.headers.set(
+      'server-timing',
+      `${existingServerTiming ? `${existingServerTiming}, ` : ''}api;dur=${durationMs}`,
+    );
+    response.headers.set('x-response-time-ms', String(durationMs));
     logEvent(response.status >= 500 ? 'error' : response.status >= 400 ? 'warn' : 'info', 'api.request.completed', {
       requestId,
       method: request.method,
       route,
       status: response.status,
       durationMs,
+      slow: durationMs >= 1000,
       outcome: response.status >= 400 ? 'rejected' : 'success',
     });
     if (response.status >= 400 && request.method !== 'GET') {

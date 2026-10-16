@@ -1,6 +1,6 @@
 # Handoff
 
-Last updated: 2026-10-15
+Last updated: 2026-10-16
 
 ## Runtime
 
@@ -13,9 +13,9 @@ The deployed Worker is `https://wellness.n8l.workers.dev`. The recorded version 
 - Kiosk, public turn board, protected staff actions, admin queue/payment/reports, customer/staff/service/account management, appointment history, and audited payment correction/refund records are implemented.
 - The Worker auth boundary uses Web Crypto PBKDF2/HS256 and D1-backed session/lockout state. Bootstrap credentials remain environment-only.
 - Critical mutation paths use D1 batches, predicates, leases, command receipts, and audit rows. D1 is not treated as a rollback transaction boundary; interruption and concurrency evidence remain release gates.
-- The canonical database-backed gate is `npm run test:e2e:d1`: build Worker artifact, apply D1 migrations, generate the 101-statement disposable bootstrap, and run the Worker Playwright suite.
+- The canonical database-backed gate is `npm run test:e2e:d1`: build Worker artifact, apply all three D1 migrations, generate the 101-statement disposable bootstrap, and run the Worker Playwright suite.
 - Previously recorded evidence includes 51/51 unit tests and 25/26 Worker/D1 cases, with one intentional desktop-project skip. Re-run the commands below after meaningful changes.
-- The Admin loading reliability follow-up adds bounded client deadlines, cancellation of superseded loads, stale-response guards, Retry/error states, and partial Dashboard refresh results. The latest follow-up verification is 54 unit tests plus 31 passed and one intentional skip in the Worker/D1 E2E gate.
+- The Admin loading reliability follow-up adds bounded client deadlines, cancellation of superseded loads, stale-response guards, Retry/error states, and a section-aware Dashboard snapshot. Prisma/D1 work is request-scoped, the former cross-request Promise queue and compatibility workaround are removed, and the E2E harness fails on runtime cancellation/cross-request I/O logs. The latest verification is 54 unit tests plus 31 passed and one intentional skip in the Worker/D1 E2E gate.
 
 ## Local workflow
 
@@ -53,11 +53,11 @@ The local D1 configuration is `wrangler.local.jsonc`. Schema and migrations live
 
 Admin reads have a 10-second client deadline and mutations have a 15-second deadline. A deadline prevents an indefinite spinner; it does not make a slow Worker healthy. On timeout, the UI keeps the current data where possible, marks the section stale, and exposes Retry. Starting a newer load aborts the older one, and stale responses cannot overwrite the current section.
 
-Attendance uses a direct D1 read path to avoid waiting behind unrelated queued Prisma work. Dashboard refreshes use `Promise.allSettled` and an in-flight guard so partial success is rendered and refresh storms do not stack requests. Long-lived board/reconnect cancellation warnings still need separate deployed-runtime investigation.
+Attendance uses a direct D1 read path for a small, predictable read. Dashboard refreshes use a section-aware snapshot endpoint, `Promise.allSettled`, an in-flight guard, and a narrow live projection; background polling does not rerun reports/settings. Prisma clients and D1 bindings never cross request boundaries, and the E2E gate rejects the previous Worker cancellation/cross-request I/O signatures.
 
 ## Git and deployment handoff
 
-`.github/workflows/ci.yml` runs verification for every push and deploys the Worker only after a successful push to `main`. This workspace has no in-tree `.git`; the attached metadata lives at `/private/tmp/wellness-salon-git`. Before the next deployment, configure a valid `origin` URL and GitHub authentication for that metadata, then push the prepared commit to `main`. Do not point local E2E at remote D1 and do not print `.env` while repairing the Git/CI connection.
+`.github/workflows/ci.yml` runs verification for every push and deploys the Worker only after a successful push to `main`. This workspace has no in-tree `.git`; the attached metadata lives at `/private/tmp/wellness-salon-git`, with `origin` configured for `nhan0805/wellness-salon`. Push the verified commit to `main` to trigger CI and the production Worker job. Do not point local E2E at remote D1 and do not print `.env`.
 
 ## Environment and safety
 

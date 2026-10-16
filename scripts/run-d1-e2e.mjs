@@ -19,6 +19,8 @@ const testCredentials = {
   STATION_PASSWORD: process.env.D1_TEST_STATION_PASSWORD ?? 'd1-ci-station-password',
   STAFF_DEFAULT_PIN: process.env.D1_TEST_STAFF_PIN ?? '1234',
   SHOP_TIMEZONE: process.env.D1_TEST_TIMEZONE ?? 'Asia/Ho_Chi_Minh',
+  D1_TEST_OPENING_TIME: process.env.D1_TEST_OPENING_TIME ?? '00:00',
+  D1_TEST_CLOSING_TIME: process.env.D1_TEST_CLOSING_TIME ?? '23:59',
 };
 
 const env = {
@@ -47,6 +49,27 @@ function run(command, args, options = {}) {
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(' ')} exited with status ${result.status ?? 1}`);
   }
+}
+
+function runPlaywrightWithRuntimeGuard(args) {
+  const result = spawnSync(playwright, args, {
+    cwd: root,
+    env,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  process.stdout.write(result.stdout ?? '');
+  process.stderr.write(result.stderr ?? '');
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  const runtimeErrors = [
+    /The Workers runtime canceled this request because it detected that your Worker's code had hung/i,
+    /Cannot perform I\/O on behalf of a different request/i,
+  ].filter((pattern) => pattern.test(output));
+  if (runtimeErrors.length) {
+    throw new Error('Worker runtime cancellation or cross-request I/O was detected in the E2E logs.');
+  }
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`${playwright} ${args.join(' ')} exited with status ${result.status ?? 1}`);
 }
 
 try {
@@ -82,7 +105,10 @@ try {
     `--file=${bootstrapPath}`,
   ]);
 
-  run(playwright, ['test', '--config=playwright.d1.config.ts']);
+  runPlaywrightWithRuntimeGuard([
+    'test',
+    '--config=playwright.d1.config.ts',
+  ]);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;

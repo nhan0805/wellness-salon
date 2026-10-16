@@ -14,7 +14,8 @@ Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test tar
 - Worker-compatible PBKDF2 credential verification and HS256 sessions.
 - Repeatable local bootstrap and Worker E2E harness through `scripts/seed-d1-bootstrap.ts` and `scripts/run-d1-e2e.mjs`.
 - Tablet/PWA layout, SSE reconnect, bounded polling, public redaction, service categories/icons, multi-skill routing, payment history, and audited corrections/refunds.
-- Admin loading resilience: 10/15-second client deadlines, superseded-request cancellation, stale-response protection, partial Dashboard refreshes, and a direct D1 Attendance read.
+- Admin loading resilience: 10/15-second client deadlines, superseded-request cancellation, stale-response protection, a section-aware Dashboard snapshot, narrow live projections, direct D1 Attendance reads, and response timing diagnostics.
+- Worker/D1 lifecycle hardening: Prisma clients and D1 bindings are request-scoped, the cross-request Prisma Promise queue and compatibility workaround are removed, and the E2E harness rejects runtime cancellation/cross-request I/O signatures.
 
 ## Verification evidence
 
@@ -34,7 +35,6 @@ Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test tar
 
 - D1 crash/interruption and broader concurrent mutation assertions.
 - Deployed Worker auth/mutation/SSE/scheduler smoke and Free-tier CPU/latency observation.
-- Investigate Workers-runtime request-cancellation warnings still emitted by some long-lived board/reconnect E2E flows.
 - Physical iPad/WebKit, real Wi-Fi interruption, offline submission, Dynamic Type, and VoiceOver review.
 - D1 export/restore rehearsal, scheduler alerting, production secrets/domain/TLS, and owner approval.
 

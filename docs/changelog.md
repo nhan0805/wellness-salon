@@ -2,13 +2,30 @@
 
 Release-style history of meaningful repository changes. Dates use the project timezone context and are based on the artifacts currently present in the workspace.
 
+## Unreleased — 2026-10-16
+
+### Performance and board synchronization
+
+- Split the Admin dashboard's settings, management, access, appointment-action, and payment-keypad modules into on-demand client chunks; the initial Admin page chunk is now about 118 KB raw instead of about 209 KB.
+- Removed the remote Google Fonts CSS import and switched the first paint to a local system font stack.
+- Added version-aware board polling with cheap `304` responses for unchanged state, while keeping the first API snapshot full and carrying authenticated viewer metadata through SSE.
+- Reused one request-local Prisma runtime for catalog, appointment, report, and past-unresolved read groups; skipped public board skip-reason reads and added migration `0003_appointment_read_indexes.sql`.
+- Documented the remaining in-memory appointment-sort and broad-history scan follow-ups in `docs/cloudflare/PERFORMANCE.md`.
+
+### Verification
+
+- `npm run lint`, `npm run typecheck`, and `npm test -- --reporter=dot` pass (54 tests).
+- `npm run test:e2e:d1` passes 31 tests with one intentional skip after applying all three disposable D1 migrations.
+
 ## Unreleased — 2026-10-15
 
 ### Admin loading resilience
 
 - Added bounded client-side request deadlines for Admin reads and mutations, with cancellation of superseded requests, stale-response guards, and Retry/error states.
-- Changed Dashboard refreshes to apply successful sections independently and to skip overlapping background refreshes, so one slow endpoint no longer holds the entire page in a loading state.
-- Changed the Attendance read to use direct D1 SQL instead of waiting behind the shared Prisma request queue.
+- Changed Dashboard refreshes to use a section-aware snapshot endpoint, apply successful sections independently, narrow the live projection, and skip overlapping/heavy background refreshes.
+- Changed the Attendance read to use direct D1 SQL for a small, predictable read.
+- Removed the module-global Prisma/D1 runtime and cross-request Promise queue; every Prisma operation now uses a request-local client and the E2E harness rejects cross-request I/O/cancellation signatures.
+- Added `Server-Timing`, response-duration diagnostics, slow Prisma-operation logs, and a partial-dashboard warning event.
 - Added an authenticated Worker/D1 Attendance E2E smoke covering the loading-to-rendered transition.
 
 ### Verification
@@ -16,7 +33,7 @@ Release-style history of meaningful repository changes. Dates use the project ti
 - `npm run lint` and `npm run typecheck` pass.
 - `npm test` passes 54 tests.
 - `npm run test:e2e:d1` passes 31 tests with one intentional skip.
-- Some long-lived board/reconnect E2E flows still print Workers-runtime request-cancellation warnings; this remains an operational follow-up rather than a reason to hide errors behind an unbounded spinner.
+- The final Worker/D1 gate passes 31 tests with one intentional skip and no Worker cancellation/cross-request I/O signatures.
 
 ## Unreleased — 2026-10-13
 

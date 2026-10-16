@@ -1,7 +1,25 @@
 # Cloudflare Performance Plan
 
-**Date:** 2026-10-13
-**Status:** Worker/D1 functional E2E measured locally; production performance not established.
+**Date:** 2026-10-16
+**Status:** Worker/D1 functional E2E measured locally; production performance is still not established.
+
+## Implemented performance pass (2026-10-16)
+
+The following changes are now in the Worker/D1 code path:
+
+- Split the Admin client into on-demand chunks for settings, master data, appointment actions, access management, and payment keypad. The main Admin page chunk is about 118 KB raw (down from about 209 KB before the split); deferred modules load only when their surfaces are opened.
+- Removed the blocking remote Google Fonts import and use a local system font stack for first paint. If exact brand typography is required later, self-host the selected WOFF2 files instead of restoring a third-party CSS import.
+- Added board version-aware polling. Once a client has a full API snapshot, unchanged `/api/board` reads return `304` after a cheap `state_version` lookup instead of rebuilding the relation-heavy board payload. The SSE bootstrap now carries the same viewer metadata, and the first API load remains full so an auth race cannot hide protected actions.
+- Reused one request-local Prisma runtime across catalog, admin appointments, reports, and past-unresolved reads. This avoids repeatedly initializing the Worker query compiler for parallel reads while preserving request isolation.
+- Narrowed board/dashboard projections, skipped skip-reason reads for public viewers, and added the date/created-at appointment index in migration `0003_appointment_read_indexes.sql`.
+
+The local production build reports a 244.86 KB raw / 37.13 KB gzip global CSS asset and a 219.27 KB raw / 68.40 KB gzip shared framework chunk; these remain the next client-side measurement targets rather than assumed regressions.
+
+## Remaining scale follow-ups
+
+- `DURATION_DESC` and payment-date appointment sorts still load matching IDs and sort in memory. Move these to indexed SQL/denormalized sort keys when appointment history grows materially.
+- Customer history and some service-count/search filters still have broad result scans. Keep the existing page limits and add query-level pagination/indexes before high-volume rollout.
+- Measure deployed Worker CPU, D1 latency, response sizes, and 15-second board fallback behavior on representative data. Local loopback E2E proves correctness, not production capacity.
 
 ## Build evidence
 

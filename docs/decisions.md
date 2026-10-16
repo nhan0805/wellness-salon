@@ -336,8 +336,19 @@ The repository now contains only the Cloudflare Worker + local D1 (SQLite) runti
 - Date: 2026-10-15
 - Status: Accepted for supervised pilot
 - Context: Admin screens can otherwise leave an operator-facing spinner indefinitely when one Worker/D1 request is delayed or cancelled. Dashboard `Promise.all` also made one slow section block unrelated sections.
-- Decision: Use a shared client fetch deadline (10 seconds for reads, 15 seconds for mutations), abort superseded requests, reject stale responses, expose Retry/error state, and apply Dashboard sections independently with `Promise.allSettled` and an in-flight refresh guard. Keep Attendance on a direct D1 read path to avoid unrelated queued Prisma work.
+- Decision: Use a shared client fetch deadline (10 seconds for reads, 15 seconds for mutations), abort superseded requests, reject stale responses, expose Retry/error state, and apply Dashboard sections independently with a request-scoped snapshot, `Promise.allSettled`, and an in-flight refresh guard. Keep Attendance on a direct D1 read path for a small, predictable read.
 - Alternatives considered: Increase the spinner duration without cancellation; let every screen implement its own timeout; hide the failure and silently keep retrying; make local tests use the remote D1.
 - Reason: Operators get a bounded and recoverable UI failure while the underlying server latency remains visible for diagnosis. Local verification stays disposable and cannot mutate production data.
 - Tradeoffs: A client timeout can report failure before a slow but valid request finishes, so idempotent mutations and Retry semantics remain important. Long-lived SSE/reconnect cancellation needs separate runtime evidence.
 - Consequences: Admin loading behavior is documented in `docs/handoff.md`, and the Attendance loading-to-rendered transition is covered by `tests/e2e/admin-attendance.spec.ts`.
+
+## ADR-029 — Keep D1/Prisma work inside the Worker request context
+
+- ID: ADR-029
+- Date: 2026-10-15
+- Status: Accepted
+- Context: A module-global D1 binding, Prisma client, and Promise queue allowed continuations from one Worker request to resume in another request's I/O context. Cloudflare then cancelled the request, which surfaced in the Admin UI as a 10-second timeout even with a tiny database.
+- Decision: Create and disconnect the Prisma client for each operation using the current request's D1 binding. Remove the cross-request Promise queue and the `no_handle_cross_request_promise_resolution` compatibility flag. Consolidate Admin snapshot reads and keep background polling limited to live data.
+- Alternatives considered: Keep the global queue and increase the client timeout; remove the compatibility flag without refactoring; add retries around the affected routes.
+- Reason: Request-local I/O ownership is the only safe boundary for Cloudflare D1. Retries or longer deadlines would amplify or hide a lifecycle bug.
+- Consequences: The E2E harness scans Worker output for cancellation/cross-request I/O signatures, API responses expose timing headers, and deployed latency/capacity measurement remains a separate release gate.

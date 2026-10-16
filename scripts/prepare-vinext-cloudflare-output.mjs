@@ -90,8 +90,11 @@ async function main() {
 
   const workerEntry = await readFile(workerEntryPath, 'utf8');
   const legacySsrImport = '../../../../../../dist/server/ssr/index.js';
-  if (!workerEntry.includes(legacySsrImport)) throw new Error(`Expected vinext SSR import was not found in ${path.relative(root, workerEntryPath)}`);
-  await writeFile(workerEntryPath, workerEntry.replaceAll(legacySsrImport, './ssr/index.js'));
+  if (workerEntry.includes(legacySsrImport)) {
+    await writeFile(workerEntryPath, workerEntry.replaceAll(legacySsrImport, './ssr/index.js'));
+  } else if (!workerEntry.includes('./ssr/index.js')) {
+    throw new Error(`Expected vinext SSR import was not found in ${path.relative(root, workerEntryPath)}`);
+  }
 
   const ssrEntryPath = path.join(ssrBundleRoot, 'index.js');
   const ssrEntry = await readFile(ssrEntryPath, 'utf8');

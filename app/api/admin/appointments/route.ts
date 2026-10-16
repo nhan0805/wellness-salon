@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/src/server/auth';
 import { currentDbBusinessDate, formatBusinessDate, formatBusinessMonth, getDbAppointmentFilterOptions, getDbAppointmentsFiltered, getDbAppointmentsPage, getDbLiveAppointments, parseBusinessDate, parseBusinessMonth } from '@/src/server/services/prisma-operations';
+import { withPrismaRuntime, type D1PrismaRuntime } from '@/src/server/db';
 import { jsonError } from '@/src/server/request-security';
 import { observeApiRequest } from '@/src/server/observability';
 
@@ -11,6 +12,12 @@ export async function GET(request: Request) {
 
 async function handleGet(request: Request) {
   if ((await auth())?.user?.role !== 'ADMIN') return jsonError('Admin authorization required', 403);
+  return withPrismaRuntime('admin.appointments.read', ({ client }) =>
+    handleGetWithClient(request, client),
+  );
+}
+
+async function handleGetWithClient(request: Request, client: D1PrismaRuntime) {
   const searchParams = new URL(request.url).searchParams;
   const month = searchParams.get('month');
   const from = searchParams.get('from');
@@ -19,7 +26,7 @@ async function handleGet(request: Request) {
   let end;
   let period: 'day' | 'month' | 'range' = 'day';
   if (month !== null) {
-    const currentDate = await currentDbBusinessDate();
+    const currentDate = await currentDbBusinessDate(new Date(), client);
     const monthStart = parseBusinessMonth(month ?? currentDate.toISOString().slice(0, 7));
     if (!monthStart) return jsonError('Invalid business month. Use YYYY-MM.', 400);
     start = monthStart;
@@ -35,7 +42,9 @@ async function handleGet(request: Request) {
     period = 'range';
   } else {
     const dateParam = searchParams.get('date');
-    const businessDate = dateParam ? parseBusinessDate(dateParam) : await currentDbBusinessDate();
+    const businessDate = dateParam
+      ? parseBusinessDate(dateParam)
+      : await currentDbBusinessDate(new Date(), client);
     if (!businessDate) return jsonError('Invalid business date. Use YYYY-MM-DD.', 400);
     start = businessDate;
     end = new Date(businessDate.getTime() + 24 * 60 * 60 * 1000);
@@ -64,7 +73,10 @@ async function handleGet(request: Request) {
   if (isPaginated) {
     const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const pageSize = Number.isInteger(requestedPageSize) && requestedPageSize > 0 ? Math.min(requestedPageSize, 50) : 25;
-    const [result, filterOptions] = await Promise.all([getDbAppointmentsPage(filters, page, pageSize), getDbAppointmentFilterOptions()]);
+    const [result, filterOptions] = await Promise.all([
+      getDbAppointmentsPage(filters, page, pageSize, client),
+      getDbAppointmentFilterOptions(client),
+    ]);
     return NextResponse.json({
       ...(period === 'month' ? { businessMonth: formatBusinessMonth(start) } : {}),
       ...(period === 'day' ? { businessDate: formatBusinessDate(start) } : {}),
@@ -86,8 +98,8 @@ async function handleGet(request: Request) {
     !filters.serviceStatus &&
     !filters.serviceCount;
   const appointments = isLiveSnapshot
-    ? await getDbLiveAppointments(start)
-    : await getDbAppointmentsFiltered(filters);
+    ? await getDbLiveAppointments(start, client)
+    : await getDbAppointmentsFiltered(filters, client);
   return NextResponse.json({
     ...(period === 'month' ? { businessMonth: formatBusinessMonth(start) } : {}),
     ...(period === 'day' ? { businessDate: formatBusinessDate(start) } : {}),

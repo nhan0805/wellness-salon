@@ -102,7 +102,10 @@ async function main() {
   const stationPassword = requiredEnv('STATION_PASSWORD');
   const staffPin = requiredEnv('STAFF_DEFAULT_PIN');
   const timezone = requiredEnv('SHOP_TIMEZONE');
+  const openingTime = process.env.D1_TEST_OPENING_TIME?.trim() || '09:00';
+  const closingTime = process.env.D1_TEST_CLOSING_TIME?.trim() || '21:00';
   if (!/^\d{4}$/.test(staffPin)) throw new Error('STAFF_DEFAULT_PIN must be exactly four digits');
+  if (!/^\d{2}:\d{2}$/.test(openingTime) || !/^\d{2}:\d{2}$/.test(closingTime)) throw new Error('Opening and closing times must use HH:MM');
   validateTimezone(timezone);
 
   const now = new Date().toISOString().replace('Z', '+00:00');
@@ -136,7 +139,7 @@ async function main() {
   add(`INSERT INTO auth_users (id, email, display_name, password_hash, role, is_active, session_version, created_at, updated_at) VALUES ('bootstrap-admin', ${sql(adminEmail)}, 'Salon Admin', ${sql(adminHash)}, 'ADMIN', 1, 0, ${sql(now)}, ${sql(now)}) ON CONFLICT(id) DO UPDATE SET email = excluded.email, display_name = excluded.display_name, password_hash = excluded.password_hash, role = 'ADMIN', is_active = 1, updated_at = excluded.updated_at`);
   add(`INSERT INTO auth_users (id, email, display_name, password_hash, role, is_active, session_version, created_at, updated_at) VALUES ('bootstrap-station', ${sql(stationEmail)}, 'Front Desk', ${sql(stationHash)}, 'STATION', 1, 0, ${sql(now)}, ${sql(now)}) ON CONFLICT(id) DO UPDATE SET email = excluded.email, display_name = excluded.display_name, password_hash = excluded.password_hash, role = 'STATION', is_active = 1, updated_at = excluded.updated_at`);
   add(`DELETE FROM auth_login_lockouts WHERE email IN (${sql(adminEmail)}, ${sql(stationEmail)})`);
-  add(`INSERT INTO shop_config (id, timezone, opening_time, closing_time, verified_session_ttl_min, currency, round_robin_enabled, state_version, created_at, updated_at) VALUES (1, ${sql(timezone)}, '09:00', '21:00', 3, 'USD', 1, 1, ${sql(now)}, ${sql(now)}) ON CONFLICT(id) DO UPDATE SET timezone = excluded.timezone, updated_at = excluded.updated_at`);
+  add(`INSERT INTO shop_config (id, timezone, opening_time, closing_time, verified_session_ttl_min, currency, round_robin_enabled, state_version, created_at, updated_at) VALUES (1, ${sql(timezone)}, ${sql(openingTime)}, ${sql(closingTime)}, 3, 'USD', 1, 1, ${sql(now)}, ${sql(now)}) ON CONFLICT(id) DO UPDATE SET timezone = excluded.timezone, opening_time = excluded.opening_time, closing_time = excluded.closing_time, updated_at = excluded.updated_at`);
 
   // Avoid accidental secret-bearing output in logs while still making the
   // generated artifact auditable by count and content review.

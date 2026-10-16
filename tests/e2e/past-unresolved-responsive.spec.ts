@@ -70,6 +70,7 @@ test('past appointment review stays within mobile and tablet viewports', async (
   await page
     .getByRole('heading', { name: 'Past appointments needing review', exact: true })
     .waitFor();
+  await expect(page.locator('.past-unresolved-table thead th', { hasText: 'Issue' })).toHaveCount(0);
 
   for (const viewport of [
     { width: 375, height: 812 },
@@ -103,18 +104,19 @@ test('past appointment review stays within mobile and tablet viewports', async (
       .evaluate((badge) => ({
         clientWidth: badge.clientWidth,
         scrollWidth: badge.scrollWidth,
+        flexWrap: getComputedStyle(badge).flexWrap,
+        whiteSpace: getComputedStyle(badge).whiteSpace,
       }));
     expect(statusMetrics.scrollWidth).toBeLessThanOrEqual(statusMetrics.clientWidth + 1);
+    expect(statusMetrics.flexWrap).toBe('nowrap');
+    expect(statusMetrics.whiteSpace).toBe('nowrap');
 
-    if (viewport.width === 375) {
-      const issueChipMetrics = await page
-        .locator('.past-unresolved-kind')
-        .first()
-        .evaluate((chip) => ({
-          chipWidth: chip.getBoundingClientRect().width,
-          cellWidth: chip.parentElement?.getBoundingClientRect().width ?? 0,
-        }));
-      expect(issueChipMetrics.chipWidth).toBeLessThan(issueChipMetrics.cellWidth - 8);
-    }
   }
+
+  await page.locator('.past-unresolved-review-button').first().click();
+  await expect(page.getByRole('dialog', { name: 'Resolve past appointment' })).toBeVisible();
+  const issueSummary = page.getByRole('note', { name: 'Reason this appointment needs review' });
+  await expect(issueSummary).toContainText('Assigned, not started');
+  await expect(issueSummary).toContainText('The visit was assigned but never started.');
+  await page.getByRole('button', { name: 'Close historical resolution' }).click();
 });

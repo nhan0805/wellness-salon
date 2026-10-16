@@ -2,7 +2,11 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/src/server/auth';
 import { staffActionSchema } from '@/src/server/validation';
 import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
-import { getDbBoardState, staffActionDb } from '@/src/server/services/prisma-operations';
+import {
+  getDbBoardState,
+  getDbBoardVersion,
+  staffActionDb,
+} from '@/src/server/services/prisma-operations';
 import { observeApiRequest } from '@/src/server/observability';
 import { logEvent } from '@/src/server/logger';
 import { makeAccountViewer } from '@/src/domain/viewer';
@@ -14,6 +18,16 @@ export async function GET(request: Request) {
     const session = await auth();
     const role = session?.user?.role;
     const isStaffViewer = ['STATION', 'ADMIN'].includes(role ?? '');
+    const sinceParam = new URL(request.url).searchParams.get('since');
+    const sinceVersion = sinceParam === null ? null : Number(sinceParam);
+    if (sinceVersion !== null && Number.isInteger(sinceVersion) && sinceVersion >= 0) {
+      const version = await getDbBoardVersion();
+      if (version <= sinceVersion) {
+        const response = new Response(null, { status: 304 });
+        response.headers.set('X-Board-Version', String(version));
+        return response;
+      }
+    }
     const board = await getDbBoardState({ publicView: !isStaffViewer });
     const viewer = makeAccountViewer({
       email: session?.user?.email,
