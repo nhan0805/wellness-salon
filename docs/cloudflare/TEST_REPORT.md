@@ -1,7 +1,7 @@
 # Cloudflare Migration Test Report
 
 **Date:** 2026-10-13  
-**Overall status:** Local Worker/D1 build and the canonical D1 E2E gate are verified. Worker version `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` is deployed to workers.dev, and non-destructive remote health/catalog/page smoke passed; remote auth/mutation/scheduler evidence, failure-injection, capacity, and final production approval remain open.
+**Overall status:** Local Worker/D1 build and the canonical D1 E2E gate are verified. Worker version `b983c5c1-8e94-4150-9356-131bce0f3777` from commit `e0ee1eff` is deployed to workers.dev, and the post-deploy `/api/health` check returned `status: ok`; remote auth/mutation/scheduler evidence, failure-injection, capacity, and final production approval remain open.
 
 ## Checks
 
@@ -35,7 +35,7 @@
 | Free-tier capacity model | PASS (planning gate) | Scenarios for 50/100/200 customers/day remain below current Workers/D1 Free limits with the 15-second polling budget; remote metrics and 10 ms CPU accounting remain unmeasured. |
 | npx cf deploy --dry-run | PASS | Build Output and binding inventory validated; dry-run exited before any upload. |
 | npm audit --omit=dev --omit=optional | PASS (last successful run) | The last successful dependency audit reported 0 vulnerabilities. A repeat on 2026-10-13 could not reach `registry.npmjs.org` (`ENOTFOUND`); no dependency files changed after the successful audit. |
-| Remote deploy / production smoke | PASS with scope limit | Worker `ca6490a9-345d-4a25-b69a-be93ecd6a8ce` deployed at `https://wellness.n8l.workers.dev`; read-only `/api/health`, `/api/services`, `/board`, and `/kiosk` smoke passed. Full remote auth/mutation/scheduler/capacity evidence was not run. |
+| Remote deploy / production smoke | PASS with scope limit | Worker `b983c5c1-8e94-4150-9356-131bce0f3777` deployed at `https://wellness.n8l.workers.dev`; read-only `/api/health` returned `status: ok`. Full remote auth/mutation/scheduler/capacity evidence was not run. |
 
 ## Interpretation
 

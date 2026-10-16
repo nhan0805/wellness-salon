@@ -1,15 +1,16 @@
 # Cloudflare Free Deployment Guide
 
-**Date:** 2026-10-13  
-**Status:** The Worker is deployed to workers.dev and the non-destructive remote health/catalog/page smoke passed. Full remote auth/mutation/scheduler evidence and final production approval remain open.
+**Date:** 2026-10-16  
+**Status:** The performance follow-up is deployed to workers.dev and the post-deploy health check passed. Full remote auth/mutation/scheduler evidence and final production approval remain open.
 
 ## Latest deployment record
 
 - Worker URL: `https://wellness.n8l.workers.dev`
-- Worker version: `ca6490a9-345d-4a25-b69a-be93ecd6a8ce`
+- Worker version: `b983c5c1-8e94-4150-9356-131bce0f3777`
+- Source commit: `e0ee1eff0771d80a205ccc5a2b38d49dce0f670d`
 - Trigger: `*/15 * * * *`
-- Deployed with `npm run deploy:vinext` on 2026-10-13 after the local static and Worker/D1 E2E gates passed.
-- Read-only smoke passed for `/api/health`, `/api/services`, `/board`, and `/kiosk`.
+- Deployed with `npm run deploy:vinext` on 2026-10-16 after GitHub Actions run `38840190873` passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (31 passed, 1 intentional skip).
+- Post-deploy read-only health check passed for `/api/health`.
 - The existing remote D1 schema and data were preserved; this deployment did not delete/reset D1, create a custom domain, or import production data.
 - This is a workers.dev deployment, not a claim that every production sign-off gate is complete.
 
