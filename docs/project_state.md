@@ -4,7 +4,7 @@ Last updated: 2026-10-17
 
 ## Cloudflare migration gate — current status
 
-The Cloudflare Free migration is at **local D1 readiness plus the latest workers.dev deployment and remote migration apply**. The official vinext path builds a Worker artifact; the separate D1 schema/migrations power local health, catalog, board, public pages, authentication, kiosk check-in, staff/appointment/admin/payment workflows, and job smoke. Worker version `f03af3b4-3848-49f4-91a0-eb924f1f4762` from commit `6f379c0` is live at `https://wellness.n8l.workers.dev`; migrations `0003` and `0004` are applied to remote D1 and the post-deploy health check returned `status: ok`. Critical mutation branches now use explicit D1 batches and guards; crash/interruption, full concurrency, remote auth/mutation/SSE/scheduler evidence, and capacity evidence remain open. The owner-confirmed IANA timezone is `Asia/Ho_Chi_Minh`; final production cutover remains owner-gated.
+The Cloudflare Free migration is at **local D1 readiness plus the latest workers.dev deployment and remote migration apply**. The official vinext path builds a Worker artifact; the separate D1 schema/migrations power local health, catalog, board, public pages, authentication, kiosk check-in, staff/appointment/admin/payment workflows, and job smoke. Worker version `da7b9972-2173-4e2a-9f24-49ab9140a3b1` from documentation commit `c6f6771` on application commit `6f379c0` is live at `https://wellness.n8l.workers.dev`; migrations `0003` and `0004` are applied to remote D1 with no pending migrations and the post-deploy health check returned `status: ok`. Critical mutation branches now use explicit D1 batches and guards; crash/interruption, full concurrency, remote auth/mutation/SSE/scheduler evidence, and capacity evidence remain open. The owner-confirmed IANA timezone is `Asia/Ho_Chi_Minh`; final production cutover remains owner-gated.
 
 Closing/retention jobs use one guarded `*/15 * * * *` Worker trigger and read the current Admin-configured D1 timezone/closing time before running. Invalid or missing configuration disables them safely; `UTC` remains only the explicit unconfigured bootstrap sentinel. See [`docs/cloudflare/FINAL_REPORT.md`](cloudflare/FINAL_REPORT.md) and the full [`docs/cloudflare/`](cloudflare/) runbook set.
 
@@ -89,7 +89,7 @@ Verify the canonical Worker/D1 runtime without weakening BR-01–BR-06, keep the
 
 ## Build and test status
 
-Latest local verification on 2026-10-17: lint and typecheck pass, `npm test` passes 63/63, and `npm run test:e2e:d1` passes 37 tests with one intentional skip after building the Worker and applying all four disposable D1 migrations/bootstrap. The new hardening, responsive, and retry paths pass. Local scheduler authorization, realtime recovery, and responsive queue checks pass. GitHub Actions run `38989221666` passed verification and deployed Worker version `f03af3b4-3848-49f4-91a0-eb924f1f4762`; remote D1 migration verification reports no pending migrations. Cloudflare CPU/quota metrics, full remote auth/mutation/scheduler evidence, and deployed latency evidence remain open. Local tests do not mutate remote D1.
+Latest local verification on 2026-10-17: lint and typecheck pass, `npm test` passes 63/63, and `npm run test:e2e:d1` passes 37 tests with one intentional skip after building the Worker and applying all four disposable D1 migrations/bootstrap. The new hardening, responsive, and retry paths pass. Local scheduler authorization, realtime recovery, and responsive queue checks pass. GitHub Actions run `38989593416` passed verification and deployed Worker version `da7b9972-2173-4e2a-9f24-49ab9140a3b1`; remote D1 migration verification reports no pending migrations. Cloudflare CPU/quota metrics, full remote auth/mutation/scheduler evidence, and deployed latency evidence remain open. Local tests do not mutate remote D1.
 
 Detailed evidence and scenario-level gaps are maintained in [`docs/implementation/FINAL_REPORT.md`](implementation/FINAL_REPORT.md), [`docs/implementation/RELEASE_CHECKLIST.md`](implementation/RELEASE_CHECKLIST.md), and [`docs/implementation/TEST_MATRIX.md`](implementation/TEST_MATRIX.md).
 
@@ -99,10 +99,10 @@ Verification evidence from the baseline and the 2026-10-10 hardening run:
 | --- | --- | --- |
 | `npm run lint` | PASS | No lint errors or warnings in the final run. |
 | `npm run typecheck` | PASS | Must be run after `next build`; a concurrent build can replace `.next/types` while TypeScript is reading it. |
-| `npm test` | PASS | 54 tests passed. |
+| `npm test` | PASS | 63 tests passed. |
 | `npm run test:coverage` | PASS | Current tree: 14.21% statements/lines, 69.29% branches, 22.95% functions; broad report, not a release threshold. |
 | `npm run build` | PASS | Next.js 16.4.0 Turbopack production build completed and compiled the current route inventory. |
-| `npm run test:e2e:d1` | PASS | Worker artifact + local D1 migrations/bootstrap; 31 passed, 1 intentional skip. |
+| `npm run test:e2e:d1` | PASS | Worker artifact + local D1 migrations/bootstrap; 37 passed, 1 intentional skip. |
 | Playwright/viewport evidence | PASS with limitations | Protected tablet 7/7, returning kiosk 2/2, resilience 3/3, and Chromium portrait/landscape review; physical iPad/WebKit and real Wi-Fi remain. |
 
 ## Runtime

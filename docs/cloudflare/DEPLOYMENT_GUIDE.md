@@ -6,10 +6,10 @@
 ## Latest deployment record
 
 - Worker URL: `https://wellness.n8l.workers.dev`
-- Worker version: `f03af3b4-3848-49f4-91a0-eb924f1f4762`
-- Source commit: `6f379c0ea0a10238e1d70fd991de9d662d5df85f`
+- Worker version: `da7b9972-2173-4e2a-9f24-49ab9140a3b1`
+- Source commit: `c6f6771b0feb5812ee35158472ac5fb399d7fd9e` (documentation sync on top of application commit `6f379c0`)
 - Trigger: `*/15 * * * *`
-- Deployed with `npm run deploy:vinext` on 2026-10-17 after GitHub Actions run `38989221666` passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (37 passed, 1 intentional skip).
+- Deployed with `npm run deploy:vinext` on 2026-10-17 after GitHub Actions run `38989593416` passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (37 passed, 1 intentional skip).
 - Post-deploy read-only health check passed for `/api/health`.
 - D1 migrations `0003_appointment_read_indexes.sql` and `0004_p0_hardening.sql` were applied remotely at `2026-10-17 01:07:38Z`; migration verification reports no pending migrations.
 - The existing remote D1 schema/data were preserved; this deployment did not delete/reset D1, create a custom domain, or import production data.

@@ -1,7 +1,7 @@
 # D1 Migration Plan
 
 **Date:** 2026-10-17
-**Status:** Separate D1 schema, four local migrations, Worker bridge, explicit critical-mutation branches, and clean bootstrap workflow are present; remote database migration remains an explicit deployment step.
+**Status:** Separate D1 schema, four local migrations, Worker bridge, explicit critical-mutation branches, and clean bootstrap workflow are present. Remote D1 now records migrations `0001` through `0004`; the latest migration check reports no pending migrations.
 
 ## Source of truth and safety
 
