@@ -1,7 +1,7 @@
 # Cloudflare Migration Test Report
 
 **Date:** 2026-10-17
-**Overall status:** Local Worker/D1 build and the canonical D1 E2E gate are verified. Worker version `da7b9972-2173-4e2a-9f24-49ab9140a3b1` from the documented deployment commit `c6f6771` is deployed to workers.dev, migrations `0003` and `0004` are applied to remote D1 with no pending migrations, and the post-deploy `/api/health` check returned `status: ok`; remote auth/mutation/scheduler evidence, failure-injection, capacity, and final production approval remain open.
+**Overall status:** Local Worker/D1 build and the canonical D1 E2E gate are verified. Worker version `1a2b699a-e573-450c-bdd6-b82cda87e81e` from documentation-sync commit `7fb7f55` is deployed to workers.dev, migrations `0003` and `0004` are applied to remote D1 with no pending migrations, and the post-deploy `/api/health` check returned `status: ok`; remote auth/mutation/scheduler evidence, failure-injection, capacity, and final production approval remain open.
 
 ## Checks
 
@@ -35,7 +35,7 @@
 | Free-tier capacity model | PASS (planning gate) | Scenarios for 50/100/200 customers/day remain below current Workers/D1 Free limits with the 15-second polling budget; remote metrics and 10 ms CPU accounting remain unmeasured. |
 | npx cf deploy --dry-run | PASS | Build Output and binding inventory validated; dry-run exited before any upload. |
 | npm audit --omit=dev --omit=optional | PASS (last successful run) | The last successful dependency audit reported 0 vulnerabilities. A repeat on 2026-10-13 could not reach `registry.npmjs.org` (`ENOTFOUND`); no dependency files changed after the successful audit. |
-| Remote migration/deploy / production smoke | PASS with scope limit | Worker `da7b9972-2173-4e2a-9f24-49ab9140a3b1` deployed at `https://wellness.n8l.workers.dev`; remote D1 reports no pending migrations and read-only `/api/health` returned `status: ok`. Full remote auth/mutation/scheduler/capacity evidence was not run. |
+| Remote migration/deploy / production smoke | PASS with scope limit | Worker `1a2b699a-e573-450c-bdd6-b82cda87e81e` deployed at `https://wellness.n8l.workers.dev`; remote D1 reports no pending migrations and read-only `/api/health` returned `status: ok`. Full remote auth/mutation/scheduler/capacity evidence was not run. |
 
 ## Interpretation
 

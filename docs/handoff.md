@@ -6,7 +6,7 @@ Last updated: 2026-10-17
 
 Wellness Salon is a tablet-first operations app for one nail shop. The only supported runtime is a Cloudflare Worker backed by D1 (SQLite). Local development and E2E use a disposable local D1 database; the Worker `DB` binding is required and a missing binding is a startup/health failure.
 
-The deployed Worker is `https://wellness.n8l.workers.dev`. The latest recorded version is `da7b9972-2173-4e2a-9f24-49ab9140a3b1` from documentation commit `c6f6771` on application commit `6f379c0`; migrations `0003` and `0004` are applied to remote D1 with no pending migrations, and the post-deploy `/api/health` check returned `status: ok`. Remote auth, mutation, scheduler, capacity, and final production approval remain explicit gates. Local tests must never mutate remote D1.
+The deployed Worker is `https://wellness.n8l.workers.dev`. The latest recorded version is `1a2b699a-e573-450c-bdd6-b82cda87e81e` from documentation-sync commit `7fb7f55` on application commit `6f379c0`; migrations `0003` and `0004` are applied to remote D1 with no pending migrations, and the post-deploy `/api/health` check returned `status: ok`. Remote auth, mutation, scheduler, capacity, and final production approval remain explicit gates. Local tests must never mutate remote D1.
 
 ## Current status
 
