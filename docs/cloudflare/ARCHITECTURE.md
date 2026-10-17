@@ -1,6 +1,6 @@
 # Cloudflare Target Architecture
 
-**Date:** 2026-10-13  
+**Date:** 2026-10-17
 **Status:** The Worker/D1 artifact and canonical E2E path are verified, and the first workers.dev deployment is live; production traffic rollout remains blocked by interruption, concurrency, scheduler, capacity, and remote evidence.
 
 ## Target runtime
@@ -24,7 +24,7 @@ The intended first public endpoint is the default `workers.dev` hostname. A cust
 ## Current versus target boundary
 
 - `cloudflare.config.ts` defines the Worker name, compatibility date, `nodejs_compat`, assets, D1 binding `DB`/`wellness-salon`, inert scheduler variables, and `src/worker.ts` as the fetch/scheduled entrypoint.
-- The remote `wellness-salon` D1 database exists and was verified read-only before deployment; no remote migration, reset, or data import was run as part of this deployment. Separate local migrations remain the repeatable disposable test state.
+- The remote `wellness-salon` D1 database exists and now records migrations `0001` through `0004`; the 2026-10-17 apply preserved existing data and did not reset or import production data. Separate local migrations remain the repeatable disposable test state.
 - `src/server/db.ts` requires the Cloudflare `DB` binding and initializes the generated D1 client/adapter. The path uses an explicit WASM compiler entrypoint and an application lease for critical write sections.
 - `src/server/auth.ts` provides the Worker-compatible session boundary; it does not load Auth.js or any Node-only authentication package in the Worker bundle.
 - Critical D1 write branches now cover kiosk check-in, staff actions, payment lifecycle, appointment mutations, reconciliation, closing, retention, and admin CRUD with guarded batches and replay receipts. Batch coverage does not replace crash/interruption, full concurrency, remote, or capacity evidence.

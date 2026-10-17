@@ -1,7 +1,7 @@
 # Cloudflare Migration Test Report
 
-**Date:** 2026-10-13  
-**Overall status:** Local Worker/D1 build and the canonical D1 E2E gate are verified. Worker version `b983c5c1-8e94-4150-9356-131bce0f3777` from commit `e0ee1eff` is deployed to workers.dev, and the post-deploy `/api/health` check returned `status: ok`; remote auth/mutation/scheduler evidence, failure-injection, capacity, and final production approval remain open.
+**Date:** 2026-10-17
+**Overall status:** Local Worker/D1 build and the canonical D1 E2E gate are verified. Worker version `f03af3b4-3848-49f4-91a0-eb924f1f4762` from commit `6f379c0` is deployed to workers.dev, migrations `0003` and `0004` are applied to remote D1, and the post-deploy `/api/health` check returned `status: ok`; remote auth/mutation/scheduler evidence, failure-injection, capacity, and final production approval remain open.
 
 ## Checks
 
@@ -9,14 +9,14 @@
 | --- | --- | --- |
 | npm run lint | PASS | Completed with no lint errors after the Worker wrapper and bootstrap script changes. |
 | npm run typecheck | PASS | Completed after generating the D1 Prisma client. |
-| npm test -- --run | PASS | 17 test files passed; 51/51 tests passed with no database skips. |
-| npm run test:e2e:d1 | PASS | Worker artifact + disposable local D1 migrations/bootstrap; 25 passed and 1 intentional project-specific skip across 26 Playwright cases, one worker. |
+| npm test -- --run | PASS | 20 test files passed; 63/63 tests passed with no database skips. |
+| npm run test:e2e:d1 | PASS | Worker artifact + disposable local D1 migrations/bootstrap; 37 passed and 1 intentional project-specific skip across 38 Playwright cases. |
 | Prisma schema validation | PASS | The D1 client generates successfully; Prisma emits its existing package.json configuration deprecation warning. |
 | npm run build | PASS | Final Next.js production build completed successfully; the Prisma query-compiler WASM bundling emitted a non-fatal broad-pattern warning. |
 | npm run build:vinext | PASS | Cloudflare Build Output completed with the D1 query-compiler WASM asset. |
 | npx cf build | PASS | Build Output completed with the Worker wrapper, assets, D1 DB binding, and nodejs_compat. |
 | npx vinext check | PASS WITH PARTIALS | 94% compatible: all imports and detected libraries pass; only the known `typedRoutes` and `reactStrictMode` partial-support notices remain. |
-| Local D1 migrations | PASS | 0001_init.sql and 0002_auth_login_lockouts.sql applied successfully to disposable Wrangler state. |
+| Local D1 migrations | PASS | 0001 through 0004 applied successfully to disposable Wrangler state. |
 | D1 bootstrap generator | PASS | 101 idempotent bootstrap statements generated with disposable credentials and applied successfully to local D1. No demo appointment or payment data was added by the bootstrap; operational smoke rows were removed afterward while the bootstrap catalog/admin/staff rows and two migration records were retained. |
 | Direct vinext page/data smoke | PASS for smoke scope | Public pages, health, catalog, board, and SSE initial snapshot returned successfully on local port 3001. |
 | D1 check-in | PASS for smoke scope | First check-in returned 201, replay returned the same result, conflicting payload was rejected, and three concurrent requests received unique appointment codes. |
@@ -35,7 +35,7 @@
 | Free-tier capacity model | PASS (planning gate) | Scenarios for 50/100/200 customers/day remain below current Workers/D1 Free limits with the 15-second polling budget; remote metrics and 10 ms CPU accounting remain unmeasured. |
 | npx cf deploy --dry-run | PASS | Build Output and binding inventory validated; dry-run exited before any upload. |
 | npm audit --omit=dev --omit=optional | PASS (last successful run) | The last successful dependency audit reported 0 vulnerabilities. A repeat on 2026-10-13 could not reach `registry.npmjs.org` (`ENOTFOUND`); no dependency files changed after the successful audit. |
-| Remote deploy / production smoke | PASS with scope limit | Worker `b983c5c1-8e94-4150-9356-131bce0f3777` deployed at `https://wellness.n8l.workers.dev`; read-only `/api/health` returned `status: ok`. Full remote auth/mutation/scheduler/capacity evidence was not run. |
+| Remote migration/deploy / production smoke | PASS with scope limit | Worker `f03af3b4-3848-49f4-91a0-eb924f1f4762` deployed at `https://wellness.n8l.workers.dev`; remote D1 reports no pending migrations and read-only `/api/health` returned `status: ok`. Full remote auth/mutation/scheduler/capacity evidence was not run. |
 
 ## Interpretation
 

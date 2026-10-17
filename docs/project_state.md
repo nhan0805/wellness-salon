@@ -1,10 +1,10 @@
 # Project state
 
-Last updated: 2026-10-16
+Last updated: 2026-10-17
 
 ## Cloudflare migration gate — current status
 
-The Cloudflare Free migration is at **local D1 readiness plus the latest workers.dev deployment**. The official vinext path builds a Worker artifact; the separate D1 schema/migrations power local health, catalog, board, public pages, authentication, kiosk check-in, staff/appointment/admin/payment workflows, and job smoke. Worker version `b983c5c1-8e94-4150-9356-131bce0f3777` from commit `e0ee1eff` is live at `https://wellness.n8l.workers.dev`; the post-deploy health check returned `status: ok`. Critical mutation branches now use explicit D1 batches and guards; crash/interruption, full concurrency, remote auth/mutation/SSE/scheduler evidence, and capacity evidence remain open. The owner-confirmed IANA timezone is `Asia/Ho_Chi_Minh`; final production cutover remains owner-gated.
+The Cloudflare Free migration is at **local D1 readiness plus the latest workers.dev deployment and remote migration apply**. The official vinext path builds a Worker artifact; the separate D1 schema/migrations power local health, catalog, board, public pages, authentication, kiosk check-in, staff/appointment/admin/payment workflows, and job smoke. Worker version `f03af3b4-3848-49f4-91a0-eb924f1f4762` from commit `6f379c0` is live at `https://wellness.n8l.workers.dev`; migrations `0003` and `0004` are applied to remote D1 and the post-deploy health check returned `status: ok`. Critical mutation branches now use explicit D1 batches and guards; crash/interruption, full concurrency, remote auth/mutation/SSE/scheduler evidence, and capacity evidence remain open. The owner-confirmed IANA timezone is `Asia/Ho_Chi_Minh`; final production cutover remains owner-gated.
 
 Closing/retention jobs use one guarded `*/15 * * * *` Worker trigger and read the current Admin-configured D1 timezone/closing time before running. Invalid or missing configuration disables them safely; `UTC` remains only the explicit unconfigured bootstrap sentinel. See [`docs/cloudflare/FINAL_REPORT.md`](cloudflare/FINAL_REPORT.md) and the full [`docs/cloudflare/`](cloudflare/) runbook set.
 
@@ -89,7 +89,7 @@ Verify the canonical Worker/D1 runtime without weakening BR-01–BR-06, keep the
 
 ## Build and test status
 
-Latest local verification on 2026-10-16: lint and typecheck pass, `npm test` passes 54/54, and `npm run test:e2e:d1` passes 31 tests with one intentional skip after building the Worker and applying all three disposable D1 migrations/bootstrap. The new Attendance loading smoke and board auth-race regression path pass. Local scheduler authorization, realtime recovery, and responsive queue checks pass. GitHub Actions run `38840190873` passed verification and deployed Worker version `b983c5c1-8e94-4150-9356-131bce0f3777`; Cloudflare CPU/quota metrics, full remote auth/mutation/scheduler evidence, and deployed latency evidence remain open. Local tests do not mutate remote D1.
+Latest local verification on 2026-10-17: lint and typecheck pass, `npm test` passes 63/63, and `npm run test:e2e:d1` passes 37 tests with one intentional skip after building the Worker and applying all four disposable D1 migrations/bootstrap. The new hardening, responsive, and retry paths pass. Local scheduler authorization, realtime recovery, and responsive queue checks pass. GitHub Actions run `38989221666` passed verification and deployed Worker version `f03af3b4-3848-49f4-91a0-eb924f1f4762`; remote D1 migration verification reports no pending migrations. Cloudflare CPU/quota metrics, full remote auth/mutation/scheduler evidence, and deployed latency evidence remain open. Local tests do not mutate remote D1.
 
 Detailed evidence and scenario-level gaps are maintained in [`docs/implementation/FINAL_REPORT.md`](implementation/FINAL_REPORT.md), [`docs/implementation/RELEASE_CHECKLIST.md`](implementation/RELEASE_CHECKLIST.md), and [`docs/implementation/TEST_MATRIX.md`](implementation/TEST_MATRIX.md).
 

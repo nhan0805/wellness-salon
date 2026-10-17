@@ -1,12 +1,12 @@
 # Handoff
 
-Last updated: 2026-10-16
+Last updated: 2026-10-17
 
 ## Runtime
 
 Wellness Salon is a tablet-first operations app for one nail shop. The only supported runtime is a Cloudflare Worker backed by D1 (SQLite). Local development and E2E use a disposable local D1 database; the Worker `DB` binding is required and a missing binding is a startup/health failure.
 
-The deployed Worker is `https://wellness.n8l.workers.dev`. The latest recorded version is `b983c5c1-8e94-4150-9356-131bce0f3777` from commit `e0ee1eff`; the post-deploy `/api/health` check returned `status: ok`. Remote auth, mutation, scheduler, capacity, and final production approval remain explicit gates. Local tests must never mutate remote D1.
+The deployed Worker is `https://wellness.n8l.workers.dev`. The latest recorded version is `f03af3b4-3848-49f4-91a0-eb924f1f4762` from commit `6f379c0`; migrations `0003` and `0004` are applied to remote D1 and the post-deploy `/api/health` check returned `status: ok`. Remote auth, mutation, scheduler, capacity, and final production approval remain explicit gates. Local tests must never mutate remote D1.
 
 ## Current status
 
@@ -14,7 +14,7 @@ The deployed Worker is `https://wellness.n8l.workers.dev`. The latest recorded v
 - The Worker auth boundary uses Web Crypto PBKDF2/HS256 and D1-backed session/lockout state. Bootstrap credentials remain environment-only.
 - Critical mutation paths use D1 batches, predicates, leases, command receipts, and audit rows. D1 is not treated as a rollback transaction boundary; interruption and concurrency evidence remain release gates.
 - The canonical database-backed gate is `npm run test:e2e:d1`: build Worker artifact, apply all four D1 migrations, generate the 101-statement disposable bootstrap, and run the Worker Playwright suite.
-- Previously recorded evidence includes 51/51 unit tests and 25/26 Worker/D1 cases, with one intentional desktop-project skip. Re-run the commands below after meaningful changes.
+- The latest evidence includes 63/63 unit tests and 37/38 Worker/D1 cases, with one intentional desktop-project skip. Re-run the commands below after meaningful changes.
 - The Admin loading reliability follow-up adds bounded client deadlines, cancellation of superseded loads, stale-response guards, Retry/error states, and a section-aware Dashboard snapshot. Prisma/D1 work is request-scoped, the former cross-request Promise queue and compatibility workaround are removed, and the E2E harness fails on runtime cancellation/cross-request I/O logs. The latest verification is 54 unit tests plus 31 passed and one intentional skip in the Worker/D1 E2E gate.
 
 ## Local workflow
