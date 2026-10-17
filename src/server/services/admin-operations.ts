@@ -394,6 +394,15 @@ async function updateDbShopConfigD1(input: ShopOperationalConfig & { adminId?: s
   return withD1Lease(async (database) => {
     const nowIso = d1DateTimeValue(new Date());
     const configId = 1;
+    const currentConfig = await prisma.shopConfig.findUnique({ where: { id: configId }, select: { currency: true } });
+    if (currentConfig && currentConfig.currency !== input.currency) {
+      const existingAppointment = await database
+        .prepare('SELECT id FROM appointments LIMIT 1')
+        .first<{ id: string }>();
+      if (existingAppointment) {
+        throw new Error('Currency cannot be changed after visits exist; create a new shop configuration instead.');
+      }
+    }
     await d1Batch(database, [
       d1Statement(
         database,
@@ -1409,6 +1418,13 @@ export async function deleteDbAdminSkipReason(input: { id: string; adminId?: str
 export async function updateDbShopConfig(input: ShopOperationalConfig & { adminId?: string }) {
   if (await isD1Runtime()) return updateDbShopConfigD1(input);
   return prisma.$transaction(async (tx) => {
+    const currentConfig = await tx.shopConfig.findUnique({ where: { id: 1 }, select: { currency: true } });
+    if (currentConfig && currentConfig.currency !== input.currency) {
+      const existingAppointment = await tx.appointment.findFirst({ select: { id: true } });
+      if (existingAppointment) {
+        throw new Error('Currency cannot be changed after visits exist; create a new shop configuration instead.');
+      }
+    }
     const config = await tx.shopConfig.upsert({
       where: { id: 1 },
       update: {

@@ -4,7 +4,6 @@ generator client {
   engineType = "client"
   runtime = "cloudflare"
 }
-
 datasource db {
   provider = "sqlite"
   url      = "file:./local.db"

@@ -13,7 +13,7 @@ The deployed Worker is `https://wellness.n8l.workers.dev`. The latest recorded v
 - Kiosk, public turn board, protected staff actions, admin queue/payment/reports, customer/staff/service/account management, appointment history, and audited payment correction/refund records are implemented.
 - The Worker auth boundary uses Web Crypto PBKDF2/HS256 and D1-backed session/lockout state. Bootstrap credentials remain environment-only.
 - Critical mutation paths use D1 batches, predicates, leases, command receipts, and audit rows. D1 is not treated as a rollback transaction boundary; interruption and concurrency evidence remain release gates.
-- The canonical database-backed gate is `npm run test:e2e:d1`: build Worker artifact, apply all three D1 migrations, generate the 101-statement disposable bootstrap, and run the Worker Playwright suite.
+- The canonical database-backed gate is `npm run test:e2e:d1`: build Worker artifact, apply all four D1 migrations, generate the 101-statement disposable bootstrap, and run the Worker Playwright suite.
 - Previously recorded evidence includes 51/51 unit tests and 25/26 Worker/D1 cases, with one intentional desktop-project skip. Re-run the commands below after meaningful changes.
 - The Admin loading reliability follow-up adds bounded client deadlines, cancellation of superseded loads, stale-response guards, Retry/error states, and a section-aware Dashboard snapshot. Prisma/D1 work is request-scoped, the former cross-request Promise queue and compatibility workaround are removed, and the E2E harness fails on runtime cancellation/cross-request I/O logs. The latest verification is 54 unit tests plus 31 passed and one intentional skip in the Worker/D1 E2E gate.
 

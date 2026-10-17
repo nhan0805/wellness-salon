@@ -30,7 +30,7 @@ type BoardState = { current: Appointment | null; currentTurns: Appointment[]; up
 type Action = 'ACCEPT' | 'SKIP' | 'FINISH' | 'CHECK_IN' | 'CHECK_OUT' | 'ADD_SUPPORT' | 'CONTINUE_WITH_ME';
 type BoardTab = 'turns' | 'staff';
 type AttendanceAction = Extract<Action, 'CHECK_IN' | 'CHECK_OUT'>;
-type SyncStatus = 'LIVE' | 'POLLING' | 'RECONNECTING' | 'STALE';
+type SyncStatus = 'POLLING' | 'RECONNECTING' | 'STALE';
 type StaffVerification = { staffId: string; staffName: string; expiresAt: number };
 
 const emptyBoard: BoardState = { current: null, currentTurns: [], upNext: [], staff: [], skipReasons: [], shop: { timezone: DEFAULT_TIMEZONE, openingTime: '09:00', closingTime: '21:00', currency: 'USD' }, version: 0, at: '', viewerRole: null, viewer: null };
@@ -121,6 +121,7 @@ export default function BoardPage() {
   const actionSequenceRef = useRef(0);
   const requestSequenceRef = useRef(0);
   const requestControllerRef = useRef<AbortController | null>(null);
+  const actionSubmitInFlightRef = useRef(false);
   const latestVersionRef = useRef(0);
   const hasApiSnapshotRef = useRef(false);
   const lastSuccessAtRef = useRef<number>(0);
@@ -157,7 +158,7 @@ export default function BoardPage() {
     requestControllerRef.current?.abort();
     const controller = typeof AbortController === 'undefined' ? null : new AbortController();
     requestControllerRef.current = controller;
-    setSyncStatus((current) => current === 'LIVE' ? current : 'POLLING');
+    setSyncStatus((current) => current === 'RECONNECTING' ? current : 'POLLING');
     let timedOut = false;
     let timeoutId: number | undefined;
     try {
@@ -183,6 +184,7 @@ export default function BoardPage() {
         if (requestSequence !== requestSequenceRef.current) return;
         setBoardLoaded(true);
         setBoardError('');
+        setSyncStatus('POLLING');
         lastSuccessAtRef.current = Date.now();
         return;
       }
@@ -195,6 +197,7 @@ export default function BoardPage() {
       setBoard(nextBoard);
       setBoardLoaded(true);
       setBoardError('');
+      setSyncStatus('POLLING');
       lastSuccessAtRef.current = Date.now();
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return;
@@ -215,7 +218,7 @@ export default function BoardPage() {
       if (disposed) return;
       source?.close();
       source = new EventSource('/api/sse/board');
-      source.onopen = () => { reconnectAttempt = 0; setSyncStatus('LIVE'); };
+      source.onopen = () => { reconnectAttempt = 0; setSyncStatus('POLLING'); };
       source.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data) as { type?: string; payload?: BoardState };
@@ -226,6 +229,7 @@ export default function BoardPage() {
           setBoard(nextBoard);
           setBoardLoaded(true);
           setBoardError('');
+          setSyncStatus('POLLING');
           lastSuccessAtRef.current = Date.now();
         } catch {
           void loadBoard();
@@ -280,9 +284,13 @@ export default function BoardPage() {
     setExpandedQueueItems((current) => ({ ...current, [appointmentId]: !current[appointmentId] }));
   }
 
-  async function submitAction(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!modal || !selectedStaffIsValid || !pinCanSubmit) return;
+  async function submitAction(event?: React.FormEvent<HTMLFormElement>, submittedPin = pin) {
+    event?.preventDefault();
+    const submittedPinCanSubmit = selectedStaffIsVerified
+      ? submittedPin.length === 0 || submittedPin.length === 4
+      : submittedPin.length === 4;
+    if (!modal || !selectedStaffIsValid || !submittedPinCanSubmit || loading || actionSubmitInFlightRef.current) return;
+    actionSubmitInFlightRef.current = true;
     setLoading(true);
     setNotice('');
     try {
@@ -294,7 +302,7 @@ export default function BoardPage() {
           appointmentId: modal.appointmentId,
           appointmentServiceId: modal.appointmentServiceId,
           staffId: selectedStaffId,
-          pin: pin || undefined,
+          pin: submittedPin || undefined,
           reason: reason || undefined,
           skipReasonId: modal.action === 'SKIP' ? skipReasonId : undefined,
           idempotencyKey: modal.idempotencyKey,
@@ -322,6 +330,7 @@ export default function BoardPage() {
       setPin('');
       setNotice(error instanceof Error ? error.message : 'Action failed');
     } finally {
+      actionSubmitInFlightRef.current = false;
       setLoading(false);
     }
   }
@@ -374,7 +383,7 @@ export default function BoardPage() {
             <p>View current appointments and the next guests in line. Sign in to manage queue actions.</p>
           </div>
           <div className="topbar-actions board-heading-actions">
-            <span className={`board-last-updated board-sync-indicator board-sync-indicator-${syncStatus.toLowerCase()}`} role="status" aria-live="polite"><span className="board-sync-dot" aria-hidden="true" />{board.at ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: board.shop.timezone }).format(new Date(board.at))}` : 'Waiting for update'} · {syncStatus === 'LIVE' ? 'Live' : syncStatus === 'POLLING' ? 'Checking' : syncStatus === 'RECONNECTING' ? 'Reconnecting' : 'Stale'}</span>
+            <span className={`board-last-updated board-sync-indicator board-sync-indicator-${syncStatus.toLowerCase()}`} role="status" aria-live="polite"><span className="board-sync-dot" aria-hidden="true" />{board.at ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: board.shop.timezone }).format(new Date(board.at))}` : 'Waiting for update'} · {syncStatus === 'POLLING' ? 'Syncing' : syncStatus === 'RECONNECTING' ? 'Reconnecting' : 'Stale'}</span>
             {activeVerifiedStaff ? <span className="board-staff-verification" role="status" aria-live="polite"><ShieldCheck size={15} aria-hidden="true" /> {activeVerifiedStaff.staffName} verified <span aria-hidden="true">· {formatVerificationRemaining(activeVerifiedStaff.expiresAt, verificationNow)}</span></span> : null}
             <button className="button button-outline button-sm" onClick={loadBoard}><RefreshCcw size={15} aria-hidden="true" /> Refresh</button>
           </div>
@@ -497,9 +506,11 @@ export default function BoardPage() {
           <PinKeypad
             value={pin}
             onChange={(nextPin) => { setPin(nextPin); if (notice) setNotice(''); }}
+            onComplete={(completedPin) => { void submitAction(undefined, completedPin); }}
             maxLength={4}
+            autoSubmit
             label={selectedStaff ? `${selectedStaff.name}’s 4-digit PIN` : 'Staff 4-digit PIN'}
-            hint={selectedStaffIsVerified ? `${selectedStaff?.name} is already verified for ${formatVerificationRemaining(activeVerifiedStaff?.expiresAt ?? verificationNow, verificationNow)}. You can confirm without entering the PIN again.` : selectedStaff ? `Enter ${selectedStaff.name}’s PIN. Verification stays active for the configured session.` : 'Choose a staff member before entering a PIN.'}
+            hint={selectedStaffIsVerified ? `${selectedStaff?.name} is already verified for ${formatVerificationRemaining(activeVerifiedStaff?.expiresAt ?? verificationNow, verificationNow)}. You can confirm without entering the PIN again.` : selectedStaff ? `Enter ${selectedStaff.name}’s PIN. All 4 digits submit automatically.` : 'Choose a staff member before entering a PIN.'}
             error={notice}
             disabled={loading || !selectedStaffIsValid}
           />

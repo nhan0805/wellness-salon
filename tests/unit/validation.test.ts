@@ -15,6 +15,11 @@ describe('phone validation', () => {
     expect(checkInSchema.safeParse({ serviceIds: ['service-1'], phone: '12345', name: 'Taylor Morgan' }).success).toBe(false);
   });
 
+  it('requires an idempotency key for every check-in', () => {
+    expect(checkInSchema.safeParse({ serviceIds: ['service-1'], phone: '+1 415 555 0100', name: 'Taylor Morgan' }).success).toBe(false);
+    expect(checkInSchema.safeParse({ serviceIds: ['service-1'], phone: '+1 415 555 0100', name: 'Taylor Morgan', idempotencyKey: 'kiosk-test-1' }).success).toBe(true);
+  });
+
   it('normalizes equivalent phone formats to one matching key', () => {
     expect(normalizePhoneNumber('+1 (415) 555-0100')).toBe('14155550100');
   });

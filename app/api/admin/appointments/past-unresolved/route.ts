@@ -11,11 +11,20 @@ import { withPrismaRuntime } from '@/src/server/db';
 
 export async function GET(request: Request) {
   return observeApiRequest(request, 'GET /api/admin/appointments/past-unresolved', async () => {
-    const actor = await getAdminActor();
-    if (!actor) return jsonError('Admin authorization required', 403);
-    return withPrismaRuntime('admin.past-unresolved.read', async ({ client }) =>
-      NextResponse.json(await getDbPastUnresolvedAppointments(client)),
-    );
+    try {
+      const actor = await getAdminActor();
+      if (!actor) return jsonError('Admin authorization required', 403);
+      const payload = await withPrismaRuntime(
+        'admin.past-unresolved.read',
+        async ({ client }) => getDbPastUnresolvedAppointments(client),
+      );
+      return NextResponse.json(payload);
+    } catch (error) {
+      return jsonError(
+        error instanceof Error ? error.message : 'Unable to load past appointments',
+        500,
+      );
+    }
   });
 }
 

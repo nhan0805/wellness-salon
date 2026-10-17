@@ -12,6 +12,7 @@ async function clearUnfinishedE2EVisits(page: import('@playwright/test').Page) {
     if (!/^A\d{3}$/.test(appointment.code) || !cancellableStatuses.has(appointment.status))
       continue;
     const cancelResponse = await page.request.post('/api/admin/appointments/cancel', {
+      headers: { Origin: 'http://127.0.0.1:3001' },
       data: {
         appointmentId: appointment.id,
         scope: 'VISIT',
@@ -39,7 +40,7 @@ async function createKioskVisit(
   await page.locator('button.service-card').filter({ has: serviceHeading }).click();
   await page.getByRole('button', { name: /Continue/i }).click({ force: true });
   await page.getByLabel('Mobile number').fill(phone);
-  await expect(page.getByText(/New guest — enter your name to continue/i)).toBeVisible();
+  await expect(page.getByText(/Number looks good — enter your name to continue/i)).toBeVisible();
   await page.getByLabel('First and last name').fill(name);
   await page.getByRole('button', { name: /Check in/i }).click();
   const ticket = page.getByRole('heading', { name: /^A\d{3}$/ });

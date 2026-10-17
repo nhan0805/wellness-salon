@@ -1,7 +1,7 @@
 # D1 Migration Plan
 
-**Date:** 2026-10-13  
-**Status:** Separate D1 schema, three local migrations, Worker bridge, explicit critical-mutation branches, and clean bootstrap workflow are present; remote database migration remains an explicit deployment step.
+**Date:** 2026-10-17
+**Status:** Separate D1 schema, four local migrations, Worker bridge, explicit critical-mutation branches, and clean bootstrap workflow are present; remote database migration remains an explicit deployment step.
 
 ## Source of truth and safety
 
@@ -25,7 +25,8 @@ Production starts with a reviewed D1 database state. The migration excludes real
 - prisma/d1/migrations/0001_init.sql creates the fresh operational schema.
 - prisma/d1/migrations/0002_auth_login_lockouts.sql adds cross-request login lockout state.
 - prisma/d1/migrations/0003_appointment_read_indexes.sql adds the date-scoped appointment read index used by queue/history projections.
-- wrangler.local.jsonc applies all three migrations to disposable local Wrangler state.
+- prisma/d1/migrations/0004_p0_hardening.sql adds historical currency columns and the bounded kiosk rate-limit table/index.
+- wrangler.local.jsonc applies all four migrations to disposable local Wrangler state.
 
 ## Transaction constraint
 
@@ -48,7 +49,7 @@ It does not create appointments, payments, demo history, or import production da
 npm run test:e2e:d1
 ~~~
 
-The command builds the Worker artifact, applies all three local migrations, emits/applies the disposable 101-statement bootstrap, and runs the D1 Playwright gate. For a manual migration/bootstrap review, use `wrangler.local.jsonc` and disposable values only. The local database is disposable and must never be treated as a production seed or data import.
+The command builds the Worker artifact, applies all four local migrations, emits/applies the disposable 101-statement bootstrap, and runs the D1 Playwright gate. For a manual migration/bootstrap review, use `wrangler.local.jsonc` and disposable values only. The local database is disposable and must never be treated as a production seed or data import.
 
 ## References
 

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { kioskCustomerLookupSchema } from '@/src/server/validation';
 import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
-import { lookupDbCustomerByPhone } from '@/src/server/services/prisma-operations';
 import { observeApiRequest } from '@/src/server/observability';
 
 
@@ -28,7 +27,9 @@ export async function GET(request: Request) {
     }
 
     try {
-      return privateLookupResponse({ ...(await lookupDbCustomerByPhone(parsed.data.phone)), ready: true });
+      // Keep this endpoint for older kiosk clients, but never disclose whether
+      // a phone number exists in the customer table.
+      return privateLookupResponse({ ready: true });
     } catch {
       return privateLookupResponse({ error: 'Unable to look up this number right now' }, { status: 503 });
     }

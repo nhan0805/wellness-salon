@@ -1,18 +1,32 @@
 import { Prisma } from '@prisma/d1-client';
 import { NextResponse } from 'next/server';
 import { checkInSchema } from '@/src/server/validation';
-import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
+import { hasTrustedOrigin, jsonError, readJsonBody, RequestBodyTooLargeError } from '@/src/server/request-security';
 import { createDbCheckIn, KioskCheckInClosedError } from '@/src/server/services/prisma-operations';
 import { observeApiRequest } from '@/src/server/observability';
 import { logEvent } from '@/src/server/logger';
+import { checkKioskRateLimits } from '@/src/server/kiosk-rate-limit';
 
 
 export async function POST(request: Request) {
   return observeApiRequest(request, 'POST /api/kiosk/check-in', async () => {
     if (!hasTrustedOrigin(request)) return jsonError('Invalid request origin', 403);
-    const parsed = checkInSchema.safeParse(await request.json().catch(() => null));
+    let body: unknown;
+    try {
+      body = await readJsonBody(request);
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) return jsonError(error.message, 413);
+      body = null;
+    }
+    const parsed = checkInSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, { status: 422 });
     try {
+      const rateLimit = await checkKioskRateLimits(request, parsed.data.phone);
+      if (!rateLimit.allowed) {
+        const response = jsonError('Too many check-in attempts. Please try again shortly.', 429);
+        response.headers.set('Retry-After', String(rateLimit.retryAfterSeconds));
+        return response;
+      }
       return NextResponse.json(await createDbCheckIn(parsed.data), { status: 201 });
     } catch (error) {
       if (error instanceof KioskCheckInClosedError) {

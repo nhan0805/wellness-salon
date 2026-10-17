@@ -75,7 +75,6 @@ export default function SignInPanel() {
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  onTouchStart={(event) => event.currentTarget.focus()}
                   autoComplete="email"
                   autoCapitalize="none"
                   autoCorrect="off"
@@ -100,7 +99,6 @@ export default function SignInPanel() {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    onTouchStart={(event) => event.currentTarget.focus()}
                     autoComplete="current-password"
                     autoCapitalize="none"
                     autoCorrect="off"

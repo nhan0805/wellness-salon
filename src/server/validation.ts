@@ -28,7 +28,7 @@ export const checkInSchema = z
     serviceIds: z.array(z.string().min(1)).min(1).max(8).optional(),
     phone: phoneSchema,
     name: z.string().trim().min(2).max(80),
-    idempotencyKey: z.string().min(8).max(120).optional(),
+    idempotencyKey: z.string().min(8).max(120),
   })
   .refine((value) => Boolean(value.serviceIds?.length || value.serviceId), {
     message: 'Choose at least one service',
@@ -250,6 +250,11 @@ export const adminPastAppointmentResolutionSchema = z
       });
     }
   });
+
+export const adminDemoTurnBackfillSchema = z.object({
+  dryRun: z.boolean().default(false),
+  confirm: z.boolean().default(false),
+});
 
 const shopTime = z
   .string()

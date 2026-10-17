@@ -35,6 +35,8 @@ import {
 import { normalizeServiceIconKey } from '@/src/domain/service-icons';
 import { normalizePhoneNumber } from '@/src/domain/phone';
 import { moneyFromMinorUnits, toMinorUnits } from '@/src/domain/money';
+import { isAppointmentPaymentReady } from '@/src/domain/payment-readiness';
+import { planLegacyDemoTurn } from '@/src/domain/demo-turn-backfill';
 import { DEFAULT_TIMEZONE } from '@/src/domain/locale-options';
 import {
   configuredTimeToMinutes,
@@ -586,6 +588,28 @@ const historyAppointmentInclude = {
   },
   supportingStaff: { select: { staffId: true } },
   payment: { select: { amount: true, tip: true, method: true, confirmedAt: true } },
+} as const;
+
+type HistoryAppointmentRow = Prisma.AppointmentGetPayload<{
+  include: typeof historyAppointmentInclude;
+}>;
+
+// Legacy demo appointments were imported before turn routing existed. Keep
+// the repair projection deliberately narrow because this endpoint only needs
+// service status, staff, completion/cancellation timestamps, and turn counts.
+const demoTurnBackfillInclude = {
+  services: {
+    orderBy: { sequence: 'asc' as const },
+    select: {
+      id: true,
+      status: true,
+      primaryStaffId: true,
+      completedAt: true,
+      cancelledAt: true,
+      primaryStaff: { select: { id: true, name: true } },
+      turns: { select: { id: true } },
+    },
+  },
 } as const;
 
 // A staff member is busy only while actively handling a turn. Payment pending is
@@ -1523,7 +1547,7 @@ async function getDbPastUnresolvedAppointmentsWithClient(
     businessDate: { lt: currentDate },
     status: { in: PAST_UNRESOLVED_STATUSES as AppointmentStatus[] },
   };
-  const [total, statusCounts, rows] = await Promise.all([
+  const [total, statusCounts, orderedRows] = await Promise.all([
     client.appointment.count({ where }),
     Promise.all(
       PAST_UNRESOLVED_STATUSES.map(async (status) => ({
@@ -1533,11 +1557,29 @@ async function getDbPastUnresolvedAppointmentsWithClient(
     ),
     client.appointment.findMany({
       where,
-      include: historyAppointmentInclude,
+      select: { id: true },
       orderBy: [{ businessDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       take: 100,
     }),
   ]);
+
+  // D1 allows fewer bound SQL variables than the local SQLite runtime. A
+  // relation-heavy include for 100 appointments can exceed that limit even
+  // though the top-level appointment query is small enough. Load the oldest
+  // page in bounded batches, then restore the original deterministic order.
+  const rowsById = new Map<string, HistoryAppointmentRow>();
+  const batchSize = 20;
+  for (let start = 0; start < orderedRows.length; start += batchSize) {
+    const ids = orderedRows.slice(start, start + batchSize).map((row) => row.id);
+    const batchRows = await client.appointment.findMany({
+      where: { id: { in: ids } },
+      include: historyAppointmentInclude,
+    });
+    for (const row of batchRows) rowsById.set(row.id, row);
+  }
+  const rows = orderedRows
+    .map((row) => rowsById.get(row.id))
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
   const countByStatus = new Map(statusCounts.map((entry) => [entry.status, entry.count]));
   const summary: PastUnresolvedSummary = {
     total,
@@ -1572,6 +1614,203 @@ export async function getDbPastUnresolvedAppointments(client?: D1PrismaRuntime) 
   return withPrismaRuntime('admin.past-unresolved.read', ({ client: runtimeClient }) =>
     getDbPastUnresolvedAppointmentsWithClient(runtimeClient),
   );
+}
+
+export type DemoTurnBackfillInput = {
+  dryRun: boolean;
+  adminId: string;
+};
+
+export type DemoTurnBackfillResult = {
+  ok: true;
+  scope: 'SAMPLE-*';
+  dryRun: boolean;
+  matchedAppointments: number;
+  appointmentsWithChanges: number;
+  plannedTurns: number;
+  insertedTurns: number;
+  alreadyRoutedServices: number;
+  appointments: Array<{
+    code: string;
+    status: AppointmentStatus;
+    serviceChanges: Array<{
+      serviceId: string;
+      turnStatus: TurnStatus;
+      eventType: TurnEventType;
+      assignedStaffId: string | null;
+      reason: string;
+    }>;
+  }>;
+};
+
+type DemoTurnBackfillRow = Prisma.AppointmentGetPayload<{
+  include: typeof demoTurnBackfillInclude;
+}>;
+
+function demoTurnBackfillPlan(
+  appointment: Pick<DemoTurnBackfillRow, 'status' | 'createdAt' | 'cancelledAt'>,
+  service: DemoTurnBackfillRow['services'][number],
+) {
+  const assignedStaffId = service.primaryStaff?.id ?? service.primaryStaffId ?? null;
+  const plan = planLegacyDemoTurn({
+    appointmentStatus: appointment.status as unknown as Parameters<typeof planLegacyDemoTurn>[0]['appointmentStatus'],
+    serviceStatus: service.status as unknown as Parameters<typeof planLegacyDemoTurn>[0]['serviceStatus'],
+    assignedStaffId,
+    createdAt: appointment.createdAt,
+    completedAt: service.completedAt,
+    cancelledAt: service.cancelledAt ?? appointment.cancelledAt,
+  });
+  return {
+    ...plan,
+    assignedStaffId,
+    status: plan.status as TurnStatus,
+    eventType: plan.eventType as TurnEventType,
+  };
+}
+
+/**
+ * Repair only legacy SAMPLE-* appointments for the demo environment. The
+ * operation is idempotent: a service is changed only when it has no turns.
+ * Writes are intentionally done as D1 batches so a retry after a Worker
+ * interruption can safely continue with the remaining services.
+ */
+export async function backfillDbDemoAppointmentTurns(
+  input: DemoTurnBackfillInput,
+): Promise<DemoTurnBackfillResult> {
+  return withD1Lease(async (database) => {
+    const rows = await prisma.appointment.findMany({
+      where: { code: { startsWith: 'SAMPLE-' } },
+      include: demoTurnBackfillInclude,
+      orderBy: [{ businessDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    });
+    const appointmentChanges = rows.map((appointment) => ({
+      code: appointment.code,
+      status: appointment.status as AppointmentStatus,
+      serviceChanges: appointment.services
+        .filter((service) => service.turns.length === 0)
+        .map((service) => {
+          const plan = demoTurnBackfillPlan(appointment, service);
+          return {
+            serviceId: service.id,
+            assignedStaffName: service.primaryStaff?.name ?? null,
+            plan,
+          };
+        }),
+    }));
+    const changes = appointmentChanges.filter((item) => item.serviceChanges.length > 0);
+    const alreadyRoutedServices = rows.reduce(
+      (total, appointment) =>
+        total + appointment.services.filter((service) => service.turns.length > 0).length,
+      0,
+    );
+    const plannedTurns = changes.reduce((total, appointment) => total + appointment.serviceChanges.length, 0);
+    const resultBase = {
+      ok: true as const,
+      scope: 'SAMPLE-*' as const,
+      dryRun: input.dryRun,
+      matchedAppointments: rows.length,
+      appointmentsWithChanges: changes.length,
+      plannedTurns,
+      insertedTurns: input.dryRun ? 0 : plannedTurns,
+      alreadyRoutedServices,
+      appointments: changes.map((appointment) => ({
+        code: appointment.code,
+        status: appointment.status,
+        serviceChanges: appointment.serviceChanges.map(({ serviceId, plan }) => ({
+          serviceId,
+          turnStatus: plan.status,
+          eventType: plan.eventType,
+          assignedStaffId: plan.assignedStaffId,
+          reason: plan.reason,
+        })),
+      })),
+    } satisfies DemoTurnBackfillResult;
+
+    if (input.dryRun || !plannedTurns) return resultBase;
+
+    const nowIso = d1DateTimeValue(new Date());
+    const batches: Array<ReturnType<typeof d1Statement>[]> = [];
+    let currentBatch: ReturnType<typeof d1Statement>[] = [];
+    const flushBatch = () => {
+      if (currentBatch.length) batches.push(currentBatch);
+      currentBatch = [];
+    };
+
+    for (const appointment of changes) {
+      const repairedServiceIds: string[] = [];
+      for (const { serviceId, assignedStaffName, plan } of appointment.serviceChanges) {
+        const turnId = randomId();
+        repairedServiceIds.push(serviceId);
+        currentBatch.push(
+          d1Statement(
+            database,
+            `INSERT INTO turns (id, appointment_id, appointment_service_id, assigned_staff_id, status, reason, created_at, ended_at)
+             SELECT ?, a.id, ?, ?, ?, ?, ?, ?
+             FROM appointments a
+             JOIN appointment_services s ON s.appointment_id = a.id
+             WHERE a.code = ? AND s.id = ? AND NOT EXISTS (SELECT 1 FROM turns existing_turn WHERE existing_turn.appointment_service_id = s.id)`,
+            turnId,
+            serviceId,
+            plan.assignedStaffId,
+            plan.status,
+            plan.reason,
+            d1DateTimeValue(plan.createdAt),
+            plan.endedAt ? d1DateTimeValue(plan.endedAt) : null,
+            appointment.code,
+            serviceId,
+          ),
+        );
+        currentBatch.push(
+          d1Statement(
+            database,
+            `INSERT INTO turn_events (id, appointment_id, appointment_service_id, turn_id, event_type, assigned_staff_id, assigned_staff_name_snapshot, actor_type, actor_id, actor_name_snapshot, reason, created_at)
+             SELECT ?, a.id, s.id, existing_turn.id, ?, ?, ?, ?, ?, ?, ?, ?
+             FROM appointments a
+             JOIN appointment_services s ON s.appointment_id = a.id
+             JOIN turns existing_turn ON existing_turn.appointment_service_id = s.id
+             WHERE a.code = ? AND s.id = ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM turn_events existing_event
+                 WHERE existing_event.turn_id = existing_turn.id
+                   AND existing_event.event_type = ?
+                   AND existing_event.reason = ?
+               )`,
+            randomId(),
+            plan.eventType,
+            plan.assignedStaffId,
+            assignedStaffName,
+            ActorType.ADMIN,
+            input.adminId,
+            'Demo turn backfill',
+            plan.reason,
+            nowIso,
+            appointment.code,
+            serviceId,
+            plan.eventType,
+            plan.reason,
+          ),
+        );
+      }
+      currentBatch.push(
+        d1AuditEvent(
+          database,
+          {
+            action: 'appointment.demo_turns_backfilled',
+            entity: 'Appointment',
+            actorType: ActorType.ADMIN,
+            actorId: input.adminId,
+            metadata: { code: appointment.code, serviceIds: repairedServiceIds },
+          },
+          nowIso,
+        ),
+      );
+      if (currentBatch.length >= 75) flushBatch();
+    }
+    flushBatch();
+    for (const batch of batches) await database.batch(batch);
+    await database.batch([d1BumpBoardVersion(database, nowIso)]);
+    return resultBase;
+  });
 }
 
 function d1Statement(database: D1DatabaseLike, query: string, ...values: unknown[]) {
@@ -2147,7 +2386,7 @@ async function createDbCheckInD1Attempt(input: {
     const statements = [
       d1Statement(database, `INSERT INTO customers (id, phone, phone_normalized, name, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(phone_normalized) DO UPDATE SET phone = excluded.phone, name = excluded.name, updated_at = excluded.updated_at`, customerId, input.phone, phoneNormalized, input.name.trim(), nowIso, nowIso),
+        ON CONFLICT(phone_normalized) DO UPDATE SET phone = excluded.phone, updated_at = excluded.updated_at`, customerId, input.phone, phoneNormalized, input.name.trim(), nowIso, nowIso),
       d1Statement(database, `INSERT INTO appointments (id, code, customer_id, service_id, service_name_snapshot, duration_min_snapshot, status, primary_staff_id, amount, business_date, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`, appointmentId, code, customerId, orderedServices[0].id, orderedServices[0].name, orderedServices[0].durationMin, AppointmentStatus.CREATED, totalAmount, businessDateIso, nowIso),
       ...orderedServices.map((service, index) => d1Statement(database, `INSERT INTO appointment_services (id, appointment_id, service_id, sequence, service_name_snapshot, duration_min_snapshot, amount, status, primary_staff_id)
@@ -2257,9 +2496,13 @@ async function confirmDbPaymentD1(input: {
       const response = { ok: true, appointment: mapAppointment(appointment), message: 'Payment already confirmed' };
       return response;
     }
-    const payableServices = appointment.services.filter((service) => service.status === AppointmentStatus.COMPLETED);
-    const hasUnfinishedServices = appointment.services.some((service) => !([AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED] as AppointmentStatus[]).includes(service.status));
-    if (appointment.status !== AppointmentStatus.PAYMENT_PENDING || !payableServices.length || hasUnfinishedServices) throw new Error('Appointment is not ready for payment');
+    if (!isAppointmentPaymentReady(appointment))
+      throw new Error(
+        'Appointment is not ready for payment: every completed service must have a specialist and completion record',
+      );
+    const payableServices = appointment.services.filter(
+      (service) => service.status === AppointmentStatus.COMPLETED,
+    );
     const admin = input.adminId ? await prisma.authUser.findUnique({ where: { id: input.adminId } }) : await prisma.authUser.findFirst({ where: { role: 'ADMIN', isActive: true } });
     if (!admin) throw new Error('Admin account not found');
     const paymentId = randomId();
@@ -2315,7 +2558,7 @@ export async function createDbCheckIn(input: {
   return prisma.$transaction(async (tx) => {
     const shopConfig = await tx.shopConfig.findUnique({
       where: { id: 1 },
-      select: { timezone: true, openingTime: true, closingTime: true },
+      select: { timezone: true, openingTime: true, closingTime: true, currency: true },
     });
     const timezone = shopConfig?.timezone ?? SHOP_TIMEZONE;
     const openingTime = shopConfig?.openingTime ?? '09:00';
@@ -2361,7 +2604,7 @@ export async function createDbCheckIn(input: {
     const phoneNormalized = normalizePhoneNumber(input.phone);
     const customer = await tx.customer.upsert({
       where: { phoneNormalized },
-      update: { name: input.name, phone: input.phone, phoneNormalized },
+      update: { phone: input.phone, phoneNormalized },
       create: { phone: input.phone, phoneNormalized, name: input.name },
     });
     const code = await nextAppointmentCode(tx, businessDate);
@@ -2512,21 +2755,13 @@ export async function confirmDbPayment(input: {
         });
       return response;
     }
+    if (!isAppointmentPaymentReady(appointment))
+      throw new Error(
+        'Appointment is not ready for payment: every completed service must have a specialist and completion record',
+      );
     const payableServices = appointment.services.filter(
       (service) => service.status === AppointmentStatus.COMPLETED,
     );
-    const hasUnfinishedServices = appointment.services.some(
-      (service) =>
-        !(
-          [AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED] as AppointmentStatus[]
-        ).includes(service.status),
-    );
-    if (
-      appointment.status !== AppointmentStatus.PAYMENT_PENDING ||
-      !payableServices.length ||
-      hasUnfinishedServices
-    )
-      throw new Error('Appointment is not ready for payment');
     const admin = input.adminId
       ? await tx.authUser.findUnique({ where: { id: input.adminId } })
       : await tx.authUser.findFirst({ where: { role: 'ADMIN', isActive: true } });
@@ -3561,6 +3796,17 @@ function isPastAppointmentActionableStatus(status: AppointmentStatus) {
   return pastAppointmentActionableStatuses.includes(status);
 }
 
+function isInvalidPaymentPendingAppointment(appointment: {
+  status: AppointmentStatus;
+  services: Array<{
+    status: AppointmentStatus;
+    primaryStaffId: string | null;
+    completedAt: Date | null;
+  }>;
+}) {
+  return appointment.status === AppointmentStatus.PAYMENT_PENDING && !isAppointmentPaymentReady(appointment);
+}
+
 function pastAppointmentResolutionMessage(
   action: PastAppointmentResolutionInput['action'],
   code: string,
@@ -3617,8 +3863,11 @@ async function resolvePastAppointmentTx(
   if (appointment.payment)
     throw new Error('Payment-confirmed history cannot be changed');
 
-  const actionableServices = appointment.services.filter((service) =>
-    isPastAppointmentActionableStatus(service.status),
+  const invalidPaymentPending = isInvalidPaymentPendingAppointment(appointment);
+  const actionableServices = appointment.services.filter(
+    (service) =>
+      isPastAppointmentActionableStatus(service.status) ||
+      (invalidPaymentPending && service.status === AppointmentStatus.PAYMENT_PENDING),
   );
   const target = input.appointmentServiceId
     ? appointment.services.find((service) => service.id === input.appointmentServiceId)
@@ -3632,7 +3881,10 @@ async function resolvePastAppointmentTx(
         : 'Appointment service not found',
     );
   }
-  if (!isPastAppointmentActionableStatus(target.status))
+  if (
+    !isPastAppointmentActionableStatus(target.status) &&
+    !(invalidPaymentPending && target.status === AppointmentStatus.PAYMENT_PENDING)
+  )
     throw new Error('Only unfinished services can be resolved from past appointments');
   if (
     input.action === 'CANCEL_UNSERVED' &&
@@ -3676,7 +3928,10 @@ async function resolvePastAppointmentTx(
     await tx.appointmentService.update({
       where: { id: target.id },
       data: {
-        status: transitionAppointment(target.status, AppointmentStatus.CANCELLED),
+        status:
+          invalidPaymentPending && target.status === AppointmentStatus.PAYMENT_PENDING
+            ? AppointmentStatus.CANCELLED
+            : transitionAppointment(target.status, AppointmentStatus.CANCELLED),
         primaryStaffId: null,
         cancelledAt: now,
         cancelledReason: reason,
@@ -3871,8 +4126,11 @@ async function resolvePastAppointmentD1(
       throw new Error('This appointment is already resolved');
     if (appointment.payment) throw new Error('Payment-confirmed history cannot be changed');
 
-    const actionableServices = appointment.services.filter((service) =>
-      isPastAppointmentActionableStatus(service.status),
+    const invalidPaymentPending = isInvalidPaymentPendingAppointment(appointment);
+    const actionableServices = appointment.services.filter(
+      (service) =>
+        isPastAppointmentActionableStatus(service.status) ||
+        (invalidPaymentPending && service.status === AppointmentStatus.PAYMENT_PENDING),
     );
     const target = input.appointmentServiceId
       ? appointment.services.find((service) => service.id === input.appointmentServiceId)
@@ -3886,7 +4144,10 @@ async function resolvePastAppointmentD1(
           : 'Appointment service not found',
       );
     }
-    if (!isPastAppointmentActionableStatus(target.status))
+    if (
+      !isPastAppointmentActionableStatus(target.status) &&
+      !(invalidPaymentPending && target.status === AppointmentStatus.PAYMENT_PENDING)
+    )
       throw new Error('Only unfinished services can be resolved from past appointments');
     if (
       input.action === 'CANCEL_UNSERVED' &&
@@ -5115,15 +5376,18 @@ async function getDbReportForRange({
       select: { businessDate: true, status: true },
     }),
   ]);
-  const refundEvents = payments.length
-    ? await client.auditEvent.findMany({
-        where: {
-          entity: 'Payment',
-          entityId: { in: payments.map((payment) => payment.id) },
-          action: 'payment.refunded',
-        },
+  // SQLite/D1 caps the number of bound parameters in a prepared statement.
+  // A monthly report can legitimately contain thousands of payments, so do
+  // not send all payment IDs through one `IN (...)` Prisma query (which caused
+  // D1 error P2029 at production-scale fixture sizes). Payment refund events
+  // are rare relative to confirmed payments; read that narrow audit stream once
+  // and keep only events belonging to this report's payments in memory.
+  const paymentIds = new Set(payments.map((payment) => payment.id));
+  const refundEvents = paymentIds.size
+    ? (await client.auditEvent.findMany({
+        where: { entity: 'Payment', action: 'payment.refunded' },
         select: { entityId: true, metadata: true },
-      })
+      })).filter((event) => Boolean(event.entityId && paymentIds.has(event.entityId)))
     : [];
   const refundsByPayment = new Map<string, number>();
   for (const event of refundEvents) {

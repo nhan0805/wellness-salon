@@ -12,19 +12,26 @@ const keypadRows = [
 type PinKeypadProps = {
   value: string;
   onChange: (value: string) => void;
+  onComplete?: (value: string) => void;
   label: string;
   hint?: string;
   error?: string;
   maxLength?: number;
   disabled?: boolean;
+  autoSubmit?: boolean;
 };
 
 function normalizePin(value: string, maxLength: number) {
   return value.replace(/\D/g, '').slice(0, maxLength);
 }
 
-export function PinKeypad({ value, onChange, label, hint, error, maxLength = 4, disabled = false }: PinKeypadProps) {
-  const updateValue = (nextValue: string) => onChange(normalizePin(nextValue, maxLength));
+export function PinKeypad({ value, onChange, onComplete, label, hint, error, maxLength = 4, disabled = false, autoSubmit = false }: PinKeypadProps) {
+  const updateValue = (nextValue: string) => {
+    const normalizedValue = normalizePin(nextValue, maxLength);
+    const reachedMaxLength = value.length < maxLength && normalizedValue.length === maxLength;
+    onChange(normalizedValue);
+    if (reachedMaxLength) onComplete?.(normalizedValue);
+  };
   const keypadLabel = `${label} keypad`;
   const enteredLabel = `${value.length} of ${maxLength} digits entered`;
 
@@ -110,7 +117,7 @@ export function PinKeypad({ value, onChange, label, hint, error, maxLength = 4, 
         </button>
       </div>
 
-      <span className="pin-keypad-footnote">Use the number keys and Backspace on desktop.</span>
+      <span className="pin-keypad-footnote">{autoSubmit ? `Enter all ${maxLength} digits to confirm automatically. ` : ''}Use the number keys and Backspace on desktop.</span>
     </div>
   );
 }

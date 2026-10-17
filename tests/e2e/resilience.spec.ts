@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('public board reports a transient SSE disconnect and returns to live sync', async ({ page }) => {
+test('public board reports a transient SSE disconnect and returns to polling sync', async ({ page }) => {
   let sseAttempts = 0;
   await page.route('**/api/sse/board', async (route) => {
     sseAttempts += 1;
@@ -13,9 +13,8 @@ test('public board reports a transient SSE disconnect and returns to live sync',
 
   await page.goto('/board');
   await expect(page.getByRole('heading', { name: "Today’s queue", exact: true })).toBeVisible();
-  await expect(page.locator('.board-last-updated')).toContainText('Reconnecting', { timeout: 5_000 });
-  await expect(page.locator('.board-last-updated')).toContainText('Live', { timeout: 10_000 });
-  expect(sseAttempts).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => sseAttempts, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+  await expect(page.locator('.board-last-updated')).toContainText('Syncing', { timeout: 10_000 });
 });
 
 test('tablet browser recovers after an emulated board-network interruption', async ({ page }) => {
@@ -42,7 +41,7 @@ test('tablet browser recovers after an emulated board-network interruption', asy
 
   networkDown = false;
   await boardError.getByRole('button', { name: 'Retry', exact: true }).click();
-  await expect(page.locator('.board-last-updated')).toContainText('Live', { timeout: 15_000 });
+  await expect(page.locator('.board-last-updated')).toContainText('Syncing', { timeout: 15_000 });
 });
 
 test('repeated kiosk submissions with one idempotency key return one visit', async ({ page }) => {
@@ -55,8 +54,8 @@ test('repeated kiosk submissions with one idempotency key return one visit', asy
   const phone = `+1 415 666 ${String(Date.now()).slice(-7)}`;
   const body = { serviceIds: [service.id], phone, name: 'Retry Safety Guest', idempotencyKey: `resilience-${Date.now()}` };
   const responses = await Promise.all([
-    page.request.post('/api/kiosk/check-in', { data: body }),
-    page.request.post('/api/kiosk/check-in', { data: body }),
+    page.request.post('/api/kiosk/check-in', { data: body, headers: { Origin: 'http://127.0.0.1:3001' } }),
+    page.request.post('/api/kiosk/check-in', { data: body, headers: { Origin: 'http://127.0.0.1:3001' } }),
   ]);
   expect(responses.every((response) => response.status() === 201)).toBeTruthy();
   const payloads = await Promise.all(responses.map((response) => response.json() as Promise<{ appointmentId: string }>));

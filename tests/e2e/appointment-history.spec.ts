@@ -10,6 +10,7 @@ async function createKioskVisit(page: import('@playwright/test').Page, name: str
   expect(service).toBeTruthy();
 
   const response = await page.request.post('/api/kiosk/check-in', {
+    headers: { Origin: 'http://127.0.0.1:3001' },
     data: {
       serviceIds: [service!.id],
       phone,

@@ -47,6 +47,7 @@ import {
 } from '@/src/client/fetch-with-timeout';
 import { makeAccountViewer, type AccountViewer } from '@/src/domain/viewer';
 import { DEFAULT_TIMEZONE } from '@/src/domain/locale-options';
+import { isAppointmentPaymentReady } from '@/src/domain/payment-readiness';
 import { ADMIN_REFRESH_INTERVAL_MS } from '@/src/domain/realtime';
 
 // Settings, master-data management, and modal workflows are not needed for the
@@ -54,30 +55,66 @@ import { ADMIN_REFRESH_INTERVAL_MS } from '@/src/domain/realtime';
 // the live overview without downloading every form, keypad, and table editor.
 const AdminManagement = dynamic(
   () => import('@/src/components/admin-management').then((module) => module.AdminManagement),
-  { loading: () => <div className="card management-loading" role="status">Loading management…</div> },
+  {
+    loading: () => (
+      <div className="card management-loading" role="status">
+        Loading management…
+      </div>
+    ),
+  },
 );
 const AdminAccessManagement = dynamic(
   () => import('@/src/components/admin-access').then((module) => module.AdminAccessManagement),
-  { loading: () => <div className="card management-loading" role="status">Loading access…</div> },
+  {
+    loading: () => (
+      <div className="card management-loading" role="status">
+        Loading access…
+      </div>
+    ),
+  },
 );
 const AdminShopConfig = dynamic(
   () => import('@/src/components/admin-operations').then((module) => module.AdminShopConfig),
-  { loading: () => <div className="card management-loading" role="status">Loading settings…</div> },
+  {
+    loading: () => (
+      <div className="card management-loading" role="status">
+        Loading settings…
+      </div>
+    ),
+  },
 );
 const AdminSkipReasons = dynamic(
   () => import('@/src/components/admin-operations').then((module) => module.AdminSkipReasons),
-  { loading: () => <div className="card management-loading" role="status">Loading skip reasons…</div> },
+  {
+    loading: () => (
+      <div className="card management-loading" role="status">
+        Loading skip reasons…
+      </div>
+    ),
+  },
 );
 const AdminAppointmentAction = dynamic(
   () =>
     import('@/src/components/admin-appointment-actions').then(
       (module) => module.AdminAppointmentAction,
     ),
-  { loading: () => <div className="card management-loading" role="status">Loading action…</div> },
+  {
+    loading: () => (
+      <div className="card management-loading" role="status">
+        Loading action…
+      </div>
+    ),
+  },
 );
 const AmountKeypad = dynamic(
   () => import('@/src/components/amount-keypad').then((module) => module.AmountKeypad),
-  { loading: () => <div className="card management-loading" role="status">Loading keypad…</div> },
+  {
+    loading: () => (
+      <div className="card management-loading" role="status">
+        Loading keypad…
+      </div>
+    ),
+  },
 );
 
 type Section =
@@ -125,6 +162,8 @@ type Appointment = {
     durationMin: number;
     amount: number;
     status: string;
+    primaryStaffId?: string | null;
+    completedAt?: string | null;
     primaryStaff: { id: string; name: string; initials: string } | null;
     turnExclusions: Array<{
       staffId: string;
@@ -134,6 +173,19 @@ type Appointment = {
     }>;
   }>;
 };
+
+function isPaymentReadyForAdminAppointment(appointment: Appointment) {
+  const services = appointment.services.length
+    ? appointment.services
+    : [
+        {
+          status: appointment.status,
+          primaryStaffId: appointment.primaryStaffId,
+          completedAt: appointment.completedAt,
+        },
+      ];
+  return isAppointmentPaymentReady({ status: appointment.status, services });
+}
 type PaymentHistoryEvent = {
   id: string;
   action: string;
@@ -271,6 +323,31 @@ function getAdminApiError(payload: unknown) {
   if (!payload || typeof payload !== 'object' || !('error' in payload)) return '';
   const error = (payload as { error?: unknown }).error;
   return typeof error === 'string' ? error : '';
+}
+
+async function parseAdminJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const body = await response.text();
+  if (!body.trim()) {
+    throw new Error(
+      response.ok
+        ? `${fallbackMessage}. The server returned an empty response.`
+        : `${fallbackMessage} (HTTP ${response.status}). The server returned an empty response.`,
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    throw new Error(
+      `${fallbackMessage} (HTTP ${response.status}). The server returned an invalid response.`,
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(getAdminApiError(payload) || `${fallbackMessage} (HTTP ${response.status})`);
+  }
+  return payload as T;
 }
 
 async function fetchAdminDashboardJson<T>(
@@ -590,6 +667,10 @@ export default function AdminPage() {
   }));
 
   function openPayment(appointment: Appointment) {
+    if (!isPaymentReadyForAdminAppointment(appointment)) {
+      setToast('Payment is unavailable until every completed service has a specialist.');
+      return;
+    }
     setPaymentModal(appointment);
     setMethod('CARD');
     setPaymentAmount(String(appointment.amount));
@@ -705,8 +786,22 @@ export default function AdminPage() {
   }
 
   function changeReportPeriod(next: ReportPeriod) {
+    if (next === reportPeriod) return;
     setReportPeriod(next);
-    void refresh(next);
+    if (next === 'month') {
+      const nextMonth = reportDate
+        ? reportDate.slice(0, 7)
+        : reportMonth || formatLocalPeriodValue('month');
+      setReportMonth(nextMonth);
+      void refresh('month', reportDate, nextMonth);
+      return;
+    }
+
+    const nextDate = reportMonth
+      ? `${reportMonth}-01`
+      : reportDate || formatLocalPeriodValue('day');
+    setReportDate(nextDate);
+    void refresh('day', nextDate, reportMonth);
   }
   function changeReportDate(value: string) {
     setReportDate(value);
@@ -739,7 +834,7 @@ export default function AdminPage() {
       (appointment) => !['COMPLETED', 'CANCELLED'].includes(appointment.status),
     );
     const pendingPaymentAppointments = activeAppointments.filter(
-      (appointment) => appointment.status === 'PAYMENT_PENDING' && !appointment.payment,
+      (appointment) => !appointment.payment && isPaymentReadyForAdminAppointment(appointment),
     );
     const unassignedAppointments = activeAppointments.filter(
       (appointment) => !appointment.primaryStaff,
@@ -776,7 +871,7 @@ export default function AdminPage() {
     return (
       <>
         <div className="dashboard-greeting">
-          <div>
+          <div className="dashboard-greeting-copy">
             <div className="eyebrow">
               {report.period === 'month' ? 'Business month' : 'Business date'} · {reportLabel}
             </div>
@@ -786,17 +881,17 @@ export default function AdminPage() {
               exceptions are always for today.
             </p>
           </div>
-          <div className="report-toolbar">
-            <ReportPeriodFilter
-              period={reportPeriod}
-              date={reportDate}
-              month={reportMonth}
-              onPeriodChange={changeReportPeriod}
-              onDateChange={changeReportDate}
-              onMonthChange={changeReportMonth}
-              loading={loading}
-            />
-          </div>
+        </div>
+        <div className="report-toolbar dashboard-report-toolbar">
+          <ReportPeriodFilter
+            period={reportPeriod}
+            date={reportDate}
+            month={reportMonth}
+            onPeriodChange={changeReportPeriod}
+            onDateChange={changeReportDate}
+            onMonthChange={changeReportMonth}
+            loading={loading}
+          />
         </div>
         <div className="kpi-grid">
           <Kpi
@@ -1722,6 +1817,7 @@ function DateNavigator({
   value,
   onChange,
   disabled,
+  className = '',
 }: {
   id: string;
   mode: DateNavigatorMode;
@@ -1729,11 +1825,13 @@ function DateNavigator({
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
+  className?: string;
 }) {
   const today = formatLocalPeriodValue(mode);
   const periodLabel = mode === 'day' ? 'date' : 'month';
+  const resetLabel = mode === 'day' ? 'Today' : 'This month';
   return (
-    <div className="date-filter">
+    <div className={`date-filter${className ? ` ${className}` : ''}`}>
       <label htmlFor={id}>{label}</label>
       <div className="date-filter-controls date-filter-navigator">
         <button
@@ -1768,8 +1866,9 @@ function DateNavigator({
             className="date-filter-today"
             onClick={() => onChange(today)}
             disabled={disabled}
+            aria-label={`Use ${resetLabel}`}
           >
-            Today
+            {resetLabel}
           </button>
         ) : null}
       </div>
@@ -1796,34 +1895,70 @@ function ReportPeriodFilter({
 }) {
   const isDay = period === 'day';
   const value = isDay ? date : month;
+  const periodValueLabel = value
+    ? isDay
+      ? formatBusinessDateLabel(value)
+      : formatBusinessMonthLabel(value)
+    : isDay
+      ? 'selected date'
+      : 'selected month';
   return (
-    <div className="report-period-filter">
-      <div className="period-toggle" role="group" aria-label="Report period">
-        <button
-          type="button"
-          className={`button button-sm ${isDay ? 'active' : ''}`}
-          onClick={() => onPeriodChange('day')}
-          aria-pressed={isDay}
-        >
-          Day
-        </button>
-        <button
-          type="button"
-          className={`button button-sm ${!isDay ? 'active' : ''}`}
-          onClick={() => onPeriodChange('month')}
-          aria-pressed={!isDay}
-        >
-          Month
-        </button>
+    <div
+      className="dashboard-report-filter"
+      role="group"
+      aria-labelledby="dashboard-report-filter-title"
+      aria-busy={loading}
+    >
+      <div className="dashboard-filter-header">
+        <div>
+          <span className="dashboard-filter-kicker">Report filters</span>
+          <strong id="dashboard-report-filter-title">Choose a reporting period</strong>
+        </div>
+        <span className="dashboard-filter-live-status">
+          <span className="dashboard-filter-live-dot" aria-hidden="true" />
+          Live operations: Today only
+        </span>
       </div>
-      <DateNavigator
-        id={isDay ? 'business-date' : 'business-month'}
-        mode={isDay ? 'day' : 'month'}
-        label={isDay ? 'Business date' : 'Business month'}
-        value={value}
-        onChange={(nextValue) => (isDay ? onDateChange(nextValue) : onMonthChange(nextValue))}
-        disabled={loading}
-      />
+      <div className="dashboard-filter-body">
+        <div className="dashboard-filter-field dashboard-filter-period">
+          <span className="dashboard-filter-field-label">Period</span>
+          <div className="period-toggle" role="group" aria-label="Report period">
+            <button
+              type="button"
+              className={`button button-sm ${isDay ? 'active' : ''}`}
+              onClick={() => onPeriodChange('day')}
+              aria-pressed={isDay}
+              disabled={loading}
+            >
+              Day
+            </button>
+            <button
+              type="button"
+              className={`button button-sm ${!isDay ? 'active' : ''}`}
+              onClick={() => onPeriodChange('month')}
+              aria-pressed={!isDay}
+              disabled={loading}
+            >
+              Month
+            </button>
+          </div>
+        </div>
+        <DateNavigator
+          id={isDay ? 'business-date' : 'business-month'}
+          mode={isDay ? 'day' : 'month'}
+          label={isDay ? 'Business date' : 'Business month'}
+          value={value}
+          onChange={(nextValue) => (isDay ? onDateChange(nextValue) : onMonthChange(nextValue))}
+          disabled={loading}
+          className="dashboard-filter-date"
+        />
+        <div className="dashboard-filter-summary" role="status" aria-live="polite">
+          <span>Showing</span>
+          <strong>
+            {isDay ? 'Day' : 'Month'} · {periodValueLabel}
+          </strong>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2260,7 +2395,7 @@ function QueueView({
                         />
                       </td>
                       <td data-label="Actions">
-                        {appointment.status === 'PAYMENT_PENDING' ? (
+                        {!appointment.payment && isPaymentReadyForAdminAppointment(appointment) ? (
                           <button
                             className="button button-primary button-sm"
                             onClick={() => onPayment(appointment)}
@@ -2790,7 +2925,7 @@ function AppointmentsView({
                     appointment.status,
                   );
                   const hasPendingPayment =
-                    appointment.status === 'PAYMENT_PENDING' && !appointment.payment;
+                    !appointment.payment && isPaymentReadyForAdminAppointment(appointment);
                   return (
                     <tr key={appointment.id}>
                       <td data-label="Appointment">
@@ -3006,11 +3141,9 @@ function PastUnresolvedPanel({
       cache: 'no-store',
       signal: controller.signal,
     })
-      .then(async (response) => {
-        const nextPayload = await response.json();
-        if (!response.ok) throw new Error(nextPayload.error ?? 'Unable to load past appointments');
-        return nextPayload as PastUnresolvedPayload;
-      })
+      .then((response) =>
+        parseAdminJsonResponse<PastUnresolvedPayload>(response, 'Unable to load past appointments'),
+      )
       .then((nextPayload) => {
         if (!disposed) {
           setPayload(nextPayload);
@@ -3033,6 +3166,8 @@ function PastUnresolvedPanel({
   }, [refreshToken, reloadKey]);
 
   const summary = payload?.summary;
+  const hasReviewItems = Boolean(summary?.total);
+  const isUnavailable = Boolean(error && !payload);
   return (
     <section
       className="card card-pad past-unresolved-card"
@@ -3041,8 +3176,10 @@ function PastUnresolvedPanel({
     >
       <div className="past-unresolved-header">
         <div className="past-unresolved-heading">
-          <span className={`past-unresolved-icon ${summary?.total ? 'has-alert' : 'is-clear'}`}>
-            {summary?.total ? (
+          <span
+            className={`past-unresolved-icon ${hasReviewItems || isUnavailable ? 'has-alert' : 'is-clear'}`}
+          >
+            {hasReviewItems || isUnavailable ? (
               <AlertCircle size={18} aria-hidden="true" />
             ) : (
               <CheckCircle2 size={18} aria-hidden="true" />
@@ -3059,8 +3196,14 @@ function PastUnresolvedPanel({
             </p>
           </div>
         </div>
-        <div className={`past-unresolved-total ${summary?.total ? 'has-alert' : 'is-clear'}`}>
-          {loading && !payload ? 'Loading…' : `${summary?.total ?? 0} open`}
+        <div
+          className={`past-unresolved-total ${hasReviewItems || isUnavailable ? 'has-alert' : 'is-clear'}`}
+        >
+          {loading && !payload
+            ? 'Loading…'
+            : isUnavailable
+              ? 'Unavailable'
+              : `${summary?.total ?? 0} open`}
         </div>
       </div>
 
@@ -3077,7 +3220,16 @@ function PastUnresolvedPanel({
         </div>
       ) : null}
 
-      {summary?.total ? (
+      {isUnavailable ? (
+        <div className="empty-state past-unresolved-empty" role="status">
+          <AlertCircle size={28} aria-hidden="true" />
+          <div>
+            <strong>Historical review is unavailable</strong>
+            <br />
+            <span>Retry to load past appointments before making a reconciliation decision.</span>
+          </div>
+        </div>
+      ) : summary?.total ? (
         <>
           <div className="past-unresolved-summary-grid" aria-label="Past appointment summary">
             <div className="past-unresolved-stat">
@@ -3115,7 +3267,9 @@ function PastUnresolvedPanel({
               <tbody>
                 {payload?.appointments.map((item) => {
                   const appointment = item.appointment;
-                  const canCollectPayment = item.resolutionKind === 'PAYMENT_REVIEW';
+                  const canCollectPayment =
+                    item.resolutionKind === 'PAYMENT_REVIEW' &&
+                    isPaymentReadyForAdminAppointment(appointment);
                   return (
                     <tr key={appointment.id}>
                       <td data-label="Date">
@@ -3160,7 +3314,7 @@ function PastUnresolvedPanel({
                             ) : (
                               <ClipboardCheck size={15} aria-hidden="true" />
                             )}
-                            {canCollectPayment ? 'Collect payment' : 'Review'}
+                            {canCollectPayment ? 'Collect' : 'Review'}
                           </button>
                           <button
                             type="button"
@@ -3240,8 +3394,17 @@ function PastAppointmentResolutionDialog({
           turnExclusions: [],
         },
       ];
+  const invalidPaymentPending =
+    item.appointment.status === 'PAYMENT_PENDING' &&
+    !isAppointmentPaymentReady({ status: item.appointment.status, services: serviceRows });
+  const issueLabel = invalidPaymentPending ? 'Payment state needs review' : item.guidance.label;
+  const issueDescription = invalidPaymentPending
+    ? 'This record is marked payment pending, but no completed service with a specialist is recorded. Reconcile the visit before collecting payment.'
+    : item.guidance.description;
   const unfinishedServices = serviceRows.filter(
-    (service) => !['COMPLETED', 'CANCELLED', 'PAYMENT_PENDING'].includes(service.status),
+    (service) =>
+      !['COMPLETED', 'CANCELLED'].includes(service.status) &&
+      (service.status !== 'PAYMENT_PENDING' || invalidPaymentPending),
   );
   const [action, setAction] = useState<'CANCEL_UNSERVED' | 'MARK_COMPLETED'>('CANCEL_UNSERVED');
   const [serviceId, setServiceId] = useState(
@@ -3268,11 +3431,12 @@ function PastAppointmentResolutionDialog({
   useEffect(() => {
     let disposed = false;
     void fetch('/api/admin/staff', { cache: 'no-store' })
-      .then(async (response) => {
-        const nextPayload = await response.json();
-        if (!response.ok) throw new Error(nextPayload.error ?? 'Unable to load specialists');
-        return nextPayload as { staff?: HistoricalStaff[] };
-      })
+      .then((response) =>
+        parseAdminJsonResponse<{ staff?: HistoricalStaff[] }>(
+          response,
+          'Unable to load specialists',
+        ),
+      )
       .then((nextPayload) => {
         if (disposed) return;
         const nextStaff = nextPayload.staff ?? [];
@@ -3331,9 +3495,10 @@ function PastAppointmentResolutionDialog({
           idempotencyKey: `past-resolution-${item.appointment.id}-${selectedService.id}-${action}-${Date.now()}`,
         }),
       });
-      const responsePayload = await response.json();
-      if (!response.ok)
-        throw new Error(responsePayload.error ?? 'Historical resolution could not be recorded');
+      const responsePayload = await parseAdminJsonResponse<{ message?: string }>(
+        response,
+        'Historical resolution could not be recorded',
+      );
       onComplete(
         responsePayload.message ??
           `${item.appointment.code} ${action === 'MARK_COMPLETED' ? 'marked completed' : 'marked unserved'}.`,
@@ -3392,10 +3557,10 @@ function PastAppointmentResolutionDialog({
               <h3>Why this needs review</h3>
             </div>
             <span className={`past-unresolved-kind ${item.resolutionKind.toLowerCase()}`}>
-              {item.guidance.label}
+              {issueLabel}
             </span>
           </div>
-          <p>{item.guidance.description}</p>
+          <p>{issueDescription}</p>
         </div>
 
         <div className="past-resolution-notice">
@@ -3671,12 +3836,9 @@ function TurnHistoryModal({
       cache: 'no-store',
       signal: controller.signal,
     })
-      .then(async (response) => {
-        const nextPayload = await response.json();
-        if (!response.ok)
-          throw new Error(nextPayload.error ?? 'Unable to load appointment history');
-        return nextPayload as TurnHistoryPayload;
-      })
+      .then((response) =>
+        parseAdminJsonResponse<TurnHistoryPayload>(response, 'Unable to load appointment history'),
+      )
       .then(setPayload)
       .catch((fetchError: unknown) => {
         if (fetchError instanceof DOMException && fetchError.name === 'AbortError') return;
@@ -3951,7 +4113,7 @@ function PaymentsView({
   const historyControllerRef = useRef<AbortController | null>(null);
   const lastHistoryRefreshTokenRef = useRef(refreshToken);
   const pending = appointments.filter(
-    (appointment) => appointment.status === 'PAYMENT_PENDING' && !appointment.payment,
+    (appointment) => !appointment.payment && isPaymentReadyForAdminAppointment(appointment),
   );
   const pendingTotal = pending.reduce((total, appointment) => total + appointment.amount, 0);
   const activeHistoryFilterCount = [

@@ -7491,6 +7491,33 @@ p {
   box-shadow: 0 0 0 4px rgb(81 70 74 / 0.08);
 }
 
+.kiosk-offline-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(100%, 760px);
+  margin: 0 auto 18px;
+  border: 1px solid var(--color-danger);
+  border-radius: 14px;
+  background: var(--color-danger-soft);
+  color: var(--color-danger-strong);
+  padding: 12px 15px;
+}
+
+.kiosk-offline-banner div {
+  display: grid;
+  gap: 2px;
+}
+
+.kiosk-offline-banner strong {
+  font-size: 0.86rem;
+}
+
+.kiosk-offline-banner span {
+  color: var(--color-muted-foreground);
+  font-size: 0.78rem;
+}
+
 .kiosk-closed-banner {
   display: flex;
   align-items: center;
@@ -13908,19 +13935,22 @@ p {
 
 @media (max-width: 720px) {
   .admin-topbar {
-    grid-template-areas:
-      'title account'
-      'actions actions';
-    grid-template-columns: minmax(0, 1fr) 52px;
-    column-gap: 10px;
-    row-gap: 8px;
+    /* Keep the mobile navigation controls beside the page title. The previous
+       two-row layout made Refresh and Queue look detached from Dashboard and
+       unnecessarily increased the header height on phones. */
+    grid-template-areas: 'title actions account';
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: 8px;
+    row-gap: 0;
+    min-height: 72px;
     padding-right: 12px;
     padding-left: 12px;
   }
 
   .admin-topbar > .topbar-actions {
     grid-template-columns: repeat(2, 52px);
-    justify-content: end;
+    width: auto;
+    justify-content: initial;
     gap: 8px;
   }
 
@@ -14498,15 +14528,290 @@ p {
   }
 }
 
-/* Final desktop override: keep the full payment label inside its own
-   background instead of allowing the table cell to shrink the button. */
+/* The action rail may be narrower than the two labels. Let it reflow instead
+   of forcing Collect to paint over History. A payment action remains
+   the primary control; History moves to its own line when needed. */
 @media (min-width: 768px) {
+  .past-unresolved-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: 8px;
+    width: 100%;
+    max-width: 312px;
+  }
+
   .past-unresolved-actions .past-unresolved-review-button {
-    flex: 0 0 auto;
-    width: max-content;
-    min-width: max-content;
-    max-width: none;
-    box-sizing: border-box;
+    flex: 1 1 158px;
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
     white-space: nowrap;
+  }
+
+  .past-unresolved-actions .past-unresolved-history-button {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: max-content;
+  }
+}
+
+/* Desktop table rhythm: every data cell shares the same vertical center and
+   the two row actions share one horizontal, equal-width rail. Narrow layouts
+   keep the reflow behavior above so their card treatment remains usable. */
+@media (min-width: 1101px) {
+  .past-unresolved-table td {
+    vertical-align: middle;
+  }
+
+  .past-unresolved-table td[data-label='Assigned'],
+  .past-unresolved-table td[data-label='Status'] {
+    text-align: left;
+  }
+
+  .past-unresolved-table td[data-label='Status'] > .status-badge {
+    justify-self: start;
+  }
+
+  .past-unresolved-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: center;
+    justify-content: initial;
+    width: 100%;
+    max-width: 320px;
+    margin-left: auto;
+    gap: 8px;
+  }
+
+  .past-unresolved-actions .past-unresolved-review-button,
+  .past-unresolved-actions .past-unresolved-history-button {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    min-height: 44px;
+    flex: initial;
+    white-space: nowrap;
+  }
+}
+
+/* Dashboard report filter: keep the reporting scope and the live-only scope
+   visible as one calm, touch-friendly control surface. */
+.dashboard-greeting {
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.dashboard-greeting-copy {
+  min-width: 0;
+}
+
+.dashboard-report-toolbar {
+  width: 100%;
+  align-items: stretch;
+  margin-bottom: 24px;
+}
+
+.dashboard-report-filter {
+  display: grid;
+  width: 100%;
+  gap: 14px;
+  border: 1px solid var(--ops-line-strong);
+  border-radius: 18px;
+  background: linear-gradient(110deg, rgb(255 255 255 / 0.88) 0%, rgb(255 248 247 / 0.92) 100%);
+  box-shadow: var(--ops-shadow-card);
+  padding: 15px 18px;
+}
+
+.dashboard-filter-header,
+.dashboard-filter-header > div,
+.dashboard-filter-live-status,
+.dashboard-filter-summary {
+  display: flex;
+  align-items: center;
+}
+
+.dashboard-filter-header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dashboard-filter-header > div {
+  min-width: 0;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dashboard-filter-kicker,
+.dashboard-filter-field-label,
+.dashboard-filter-summary > span {
+  color: var(--color-muted-foreground);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.dashboard-filter-header strong {
+  color: var(--color-foreground);
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.dashboard-filter-live-status {
+  flex: 0 0 auto;
+  gap: 7px;
+  border: 1px solid rgb(177 205 169 / 0.72);
+  border-radius: 999px;
+  background: rgb(238 247 235 / 0.9);
+  color: #5b7754;
+  padding: 7px 11px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.dashboard-filter-live-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: #6c9362;
+  box-shadow: 0 0 0 3px rgb(108 147 98 / 0.13);
+}
+
+.dashboard-filter-body {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.42fr) minmax(280px, 1fr) minmax(220px, 0.8fr);
+  align-items: end;
+  gap: 14px;
+}
+
+.dashboard-filter-field,
+.dashboard-filter-date {
+  min-width: 0;
+}
+
+.dashboard-filter-field {
+  display: grid;
+  gap: 6px;
+}
+
+.dashboard-filter-period .period-toggle {
+  width: 100%;
+  min-height: 44px;
+}
+
+.dashboard-filter-period .period-toggle .button {
+  min-height: 36px;
+  flex: 1 1 0;
+}
+
+.dashboard-filter-date {
+  gap: 6px;
+}
+
+.dashboard-filter-date .date-filter-controls {
+  min-width: 0;
+}
+
+.dashboard-filter-date .date-filter-controls input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  font-weight: 700;
+}
+
+.dashboard-filter-summary {
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  gap: 9px;
+  border-left: 1px solid var(--color-border);
+  padding-left: 16px;
+}
+
+.dashboard-filter-summary > span {
+  flex: 0 0 auto;
+}
+
+.dashboard-filter-summary strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-primary-strong);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-report-filter button:disabled,
+.dashboard-report-filter input:disabled {
+  cursor: wait;
+}
+
+@media (min-width: 721px) and (max-width: 1100px) {
+  .dashboard-filter-body {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr);
+  }
+
+  .dashboard-filter-summary {
+    grid-column: 1 / -1;
+    min-height: 0;
+    border-top: 1px solid var(--color-border);
+    border-left: 0;
+    padding-top: 11px;
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-greeting {
+    margin-bottom: 16px;
+  }
+
+  .dashboard-report-toolbar {
+    margin-bottom: 18px;
+  }
+
+  .dashboard-report-filter {
+    gap: 13px;
+    border-radius: 16px;
+    padding: 14px;
+  }
+
+  .dashboard-filter-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 11px;
+  }
+
+  .dashboard-filter-live-status {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .dashboard-filter-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .dashboard-filter-period .period-toggle {
+    width: 100%;
+  }
+
+  .dashboard-filter-date .date-filter-controls {
+    width: 100%;
+  }
+
+  .dashboard-filter-summary {
+    min-height: 0;
+    border-top: 1px solid var(--color-border);
+    border-left: 0;
+    padding-top: 11px;
+    padding-left: 0;
   }
 }

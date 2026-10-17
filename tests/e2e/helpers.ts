@@ -29,5 +29,9 @@ export async function enterPin(page: Page, pin: string) {
 }
 
 export async function confirmStaffAction(page: Page) {
-  await page.getByRole('button', { name: /^(Verify & confirm|Confirm for .+)$/ }).click();
+  const confirmButton = page.getByRole('button', { name: /^(Verify & (confirm|continue)|Confirm for .+|Continue as .+)$/ });
+  if (await confirmButton.count()) {
+    await confirmButton.click();
+  }
+  await expect(page.getByRole('dialog')).toBeHidden();
 }

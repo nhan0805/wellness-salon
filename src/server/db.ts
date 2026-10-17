@@ -143,13 +143,15 @@ async function getCloudflareDatabase(): Promise<D1DatabaseLike | undefined> {
 }
 
 async function acquireD1Lease(database: D1DatabaseLike) {
+  const leaseTtlSeconds = 60;
+  const renewalIntervalMs = 5_000;
   const owner = globalThis.crypto.randomUUID();
   const lockKey = 'wellness-salon:shop';
   const timeoutAt = Date.now() + 5_000;
 
   while (Date.now() < timeoutAt) {
     const now = Math.floor(Date.now() / 1_000);
-    const expiresAt = now + 15;
+    const expiresAt = now + leaseTtlSeconds;
     const result = await database
       .prepare(
         `INSERT INTO "__app_locks" (lock_key, owner, expires_at)
@@ -161,7 +163,32 @@ async function acquireD1Lease(database: D1DatabaseLike) {
       .run();
 
     if ((result.meta?.changes ?? 0) > 0) {
+      let stopped = false;
+      let renewalTimer: ReturnType<typeof setTimeout> | undefined;
+      const renew = async () => {
+        if (stopped) return;
+        try {
+          const renewed = await database
+            .prepare('UPDATE "__app_locks" SET expires_at = ? WHERE lock_key = ? AND owner = ?')
+            .bind(Math.floor(Date.now() / 1_000) + leaseTtlSeconds, lockKey, owner)
+            .run();
+          if ((renewed.meta?.changes ?? 0) !== 1) {
+            logEvent('error', 'db.lease.lost', { lockKey });
+            stopped = true;
+            return;
+          }
+        } catch (error) {
+          logEvent('error', 'db.lease.renew_failed', {
+            lockKey,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+        if (!stopped) renewalTimer = setTimeout(() => void renew(), renewalIntervalMs);
+      };
+      renewalTimer = setTimeout(() => void renew(), renewalIntervalMs);
       return async () => {
+        stopped = true;
+        if (renewalTimer) clearTimeout(renewalTimer);
         await database.prepare('DELETE FROM "__app_locks" WHERE lock_key = ? AND owner = ?').bind(lockKey, owner).run();
       };
     }

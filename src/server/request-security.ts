@@ -1,8 +1,11 @@
 import { getBuildTimeValue } from '@/src/server/runtime-config';
 
-export function hasTrustedOrigin(request: Request) {
+export function hasTrustedOrigin(request: Request, options: { allowMissing?: boolean } = {}) {
   const origin = request.headers.get('origin');
-  if (!origin) return true;
+  if (!origin) {
+    if (options.allowMissing !== undefined) return options.allowMissing;
+    return request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS';
+  }
   const requestUrl = new URL(request.url);
   const requestOrigin = requestUrl.origin;
   const configuredOrigin = getBuildTimeValue('NEXTAUTH_URL');
@@ -25,6 +28,28 @@ export function hasTrustedOrigin(request: Request) {
     }
   }
   return false;
+}
+
+export class RequestBodyTooLargeError extends Error {
+  constructor() {
+    super('Request body is too large');
+    this.name = 'RequestBodyTooLargeError';
+  }
+}
+
+export async function readJsonBody(request: Request, maxBytes = 16 * 1024): Promise<unknown> {
+  const contentLength = Number(request.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new RequestBodyTooLargeError();
+  }
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > maxBytes) throw new RequestBodyTooLargeError();
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 export function jsonError(message: string, status = 400) {

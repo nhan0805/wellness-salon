@@ -9,9 +9,9 @@ import { getRuntimeValue } from '@/src/server/runtime-config';
 
 export async function POST(request: Request) {
   return observeApiRequest(request, 'POST /api/jobs/closing', async () => {
-    if (!hasTrustedOrigin(request)) return jsonError('Invalid request origin', 403);
     const cronSecret = await getRuntimeValue('CRON_SECRET');
     const hasCronAccess = Boolean(cronSecret && request.headers.get('x-cron-secret') === cronSecret);
+    if (!hasTrustedOrigin(request, { allowMissing: hasCronAccess })) return jsonError('Invalid request origin', 403);
     const session = hasCronAccess ? null : await auth();
     if (!hasCronAccess && session?.user?.role !== 'ADMIN') return jsonError('Admin or scheduler authorization required', 403);
     try {

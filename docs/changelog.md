@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — 2026-10-17
+
+- Added D1 migration `0004_p0_hardening.sql` for historical currency snapshots and bounded kiosk rate limiting.
+- Hardened legacy demo-turn repair, payment readiness, kiosk input/rate-limit handling, and responsive admin/kiosk workflows.
+- Local Worker/D1 verification now applies four migrations and passes 63 unit/integration tests plus 37 E2E tests with one intentional skip.
+
 Release-style history of meaningful repository changes. Dates use the project timezone context and are based on the artifacts currently present in the workspace.
 
 ## Unreleased — 2026-10-16

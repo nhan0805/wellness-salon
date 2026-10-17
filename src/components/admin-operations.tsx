@@ -164,9 +164,9 @@ export function AdminShopConfig({ onToast }: { onToast: (message: string) => voi
             <span id="shop-timezone-hint" className="field-hint">Used for opening hours and daily reports.</span>
           </div>
           <div className="field salon-setting-field">
-            <div className="setting-label-row"><label htmlFor="shop-currency">Currency</label><SettingHelp id="shop-currency-help" label="Currency" message="Formats service prices, payments, tips, and reports. Changing it does not convert amounts already recorded." open={openHelp === 'currency'} onToggle={() => setOpenHelp(openHelp === 'currency' ? null : 'currency')} /></div>
+            <div className="setting-label-row"><label htmlFor="shop-currency">Currency</label><SettingHelp id="shop-currency-help" label="Currency" message="Formats new service prices, payments, tips, and reports. It is locked after the first visit so historical amounts stay unambiguous." open={openHelp === 'currency'} onToggle={() => setOpenHelp(openHelp === 'currency' ? null : 'currency')} /></div>
             <div className="salon-field-control"><CircleDollarSign size={17} aria-hidden="true" /><select id="shop-currency" aria-describedby="shop-currency-hint" value={form.currency} onChange={(event) => updateField('currency', event.target.value)}>{currencyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
-            <span id="shop-currency-hint" className="field-hint">Used for service prices, payments, and reports.</span>
+            <span id="shop-currency-hint" className="field-hint">Used for new service prices, payments, and reports. Locked after the first visit.</span>
           </div>
         </div>
       </section>

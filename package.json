@@ -25,6 +25,7 @@
     "pretypecheck": "npm run db:generate",
     "pretest": "npm run db:generate",
     "db:seed:d1:sql": "tsx scripts/seed-d1-bootstrap.ts",
+    "db:seed:perf": "tsx scripts/seed-d1-performance.ts",
     "format": "prettier --write .",
     "predev:vinext": "npm run db:generate",
     "dev:vinext": "vite dev --port 3001",

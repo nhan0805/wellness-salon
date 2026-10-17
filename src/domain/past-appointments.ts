@@ -42,7 +42,7 @@ export const pastAppointmentGuidance: Record<
   PAYMENT_REVIEW: {
     label: 'Payment pending',
     description: 'The service is complete; only payment confirmation remains.',
-    actionLabel: 'Collect payment',
+    actionLabel: 'Collect',
   },
 };
 

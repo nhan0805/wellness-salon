@@ -1,6 +1,7 @@
 import { headers } from 'next/headers';
 import { z } from 'zod';
 import { getD1Database } from '@/src/server/db';
+import { logEvent } from '@/src/server/logger';
 import { hasTrustedOrigin } from '@/src/server/request-security';
 import { assertDbLoginNotLocked, recordDbLoginAttempt, verifySecret } from '@/src/server/security';
 import { getRuntimeValue, isProductionRuntime } from '@/src/server/runtime-config';
@@ -106,7 +107,13 @@ async function authenticateCredentials(rawCredentials: unknown) {
     await recordDbLoginAttempt(email, false);
     return null;
   }
-  await recordDbLoginAttempt(email, true);
+  try {
+    // Clearing an expired lockout is housekeeping. Do not let a temporary D1
+    // write/quota failure block a credential that has already been verified.
+    await recordDbLoginAttempt(email, true);
+  } catch {
+    logEvent('warn', 'auth.login_lockout_cleanup_skipped', { reason: 'd1_write_unavailable' });
+  }
   return { id: user.id, email: user.email, name: safeDisplayName(user.displayName, user.role), role: user.role, sessionVersion: user.sessionVersion };
 }
 

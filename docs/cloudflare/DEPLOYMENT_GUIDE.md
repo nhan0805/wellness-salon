@@ -41,7 +41,7 @@ The following steps are for the owner/operator after the D1 command port, tests,
 3. Apply the reviewed migrations to the remote database:
 
 ~~~bash
-npx wrangler d1 migrations apply wellness-salon --remote --config=wrangler.local.jsonc
+npx wrangler d1 migrations apply wellness-salon --remote --config=wrangler.production.jsonc
 ~~~
 
 4. Generate a bootstrap SQL file outside the repository with the approved admin/station credentials, initial PIN, and `SHOP_TIMEZONE=Asia/Ho_Chi_Minh`. Use D1_BOOTSTRAP_CONFIRM=YES and review the file; it contains password hashes and must be protected.

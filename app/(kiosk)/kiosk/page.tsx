@@ -5,12 +5,11 @@ import Link from 'next/link';
 import {
   ArrowLeft,
   ArrowRight,
-  CheckCircle2,
   Clock3,
-  LoaderCircle,
   RefreshCcw,
   Search,
   Sparkles,
+  WifiOff,
   X,
 } from 'lucide-react';
 import { ErrorMessage } from '@/src/components/ui';
@@ -36,8 +35,6 @@ function getFallbackServiceDescription(name: string) {
   if (normalized.includes('art')) return 'A playful finish with room for your signature style';
   return 'A polished, personalized treatment for your visit';
 }
-type CustomerLookupState = 'idle' | 'checking' | 'found' | 'new' | 'error';
-
 type Ticket = {
   code: string;
   appointmentId: string;
@@ -88,10 +85,8 @@ export default function KioskPage() {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [error, setError] = useState('');
   const [phoneError, setPhoneError] = useState('');
-  const [lookupError, setLookupError] = useState('');
-  const [lookupState, setLookupState] = useState<CustomerLookupState>('idle');
-  const [lookupAttempt, setLookupAttempt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const checkInKeyRef = useRef<string | null>(null);
   const previousStepRef = useRef(step);
@@ -248,40 +243,14 @@ export default function KioskPage() {
   }, [ticket]);
 
   useEffect(() => {
-    const normalizedPhone = phone.trim();
-    if (step !== 2 || getPhoneValidationMessage(normalizedPhone)) return;
-
-    const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      setLookupState('checking');
-      setLookupError('');
-      try {
-        const response = await fetch(
-          `/api/kiosk/customer-lookup?phone=${encodeURIComponent(normalizedPhone)}`,
-          { cache: 'no-store', signal: controller.signal },
-        );
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error ?? 'Unable to check this number');
-        if (payload.found && payload.name) {
-          setName(payload.name);
-          setLookupState('found');
-        } else {
-          setName('');
-          setLookupState('new');
-        }
-      } catch (err) {
-        if (!(err instanceof DOMException && err.name === 'AbortError')) {
-          setLookupState('error');
-          setLookupError(err instanceof Error ? err.message : 'Unable to check this number');
-        }
-      }
-    }, 350);
-
+    const updateOnlineState = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', updateOnlineState);
+    window.addEventListener('offline', updateOnlineState);
     return () => {
-      controller.abort();
-      window.clearTimeout(timer);
+      window.removeEventListener('online', updateOnlineState);
+      window.removeEventListener('offline', updateOnlineState);
     };
-  }, [lookupAttempt, phone, step]);
+  }, []);
 
   function reset() {
     setStep(1);
@@ -293,8 +262,6 @@ export default function KioskPage() {
     setTicket(null);
     setError('');
     setPhoneError('');
-    setLookupError('');
-    setLookupState('idle');
     setSubmitting(false);
     checkInKeyRef.current = null;
   }
@@ -311,8 +278,6 @@ export default function KioskPage() {
     setName('');
     setError('');
     setPhoneError('');
-    setLookupError('');
-    setLookupState('idle');
   }
 
   function handlePhoneChange(value: string) {
@@ -320,17 +285,11 @@ export default function KioskPage() {
     setName('');
     setError('');
     setPhoneError('');
-    setLookupError('');
-    setLookupState('idle');
   }
 
   function handlePhoneBlur() {
     const validationMessage = getPhoneValidationMessage(phone);
     setPhoneError(validationMessage);
-    if (validationMessage) {
-      setLookupState('idle');
-      setLookupError('');
-    }
   }
 
   async function submitCheckIn(event: React.FormEvent<HTMLFormElement>) {
@@ -342,21 +301,14 @@ export default function KioskPage() {
       return;
     }
     if (!selectedServices.length) return;
+    if (!isOnline) {
+      setError('The kiosk is offline. Reconnect before checking in; your request has not been sent.');
+      return;
+    }
     if (!isShopOpen) {
       setError(`Check-in is available from ${shop.openingTime} to ${shop.closingTime}.`);
       return;
     }
-    if (lookupState === 'idle') {
-      setError('We’re checking your number. Please wait a moment.');
-      document.getElementById('kiosk-phone')?.focus();
-      return;
-    }
-    if (
-      !['found', 'new'].includes(lookupState) ||
-      lookupState === 'checking' ||
-      lookupState === 'error'
-    )
-      return;
     if (name.trim().length < 2) {
       setError('Enter your name to continue.');
       document.getElementById('kiosk-name')?.focus();
@@ -425,6 +377,15 @@ export default function KioskPage() {
         </span>
       </header>
       <div className="kiosk-main">
+        {!isOnline ? (
+          <div className="kiosk-offline-banner" role="alert">
+            <WifiOff size={20} aria-hidden="true" />
+            <div>
+              <strong>Connection interrupted</strong>
+              <span>Reconnect to load services or submit a check-in. Nothing has been sent.</span>
+            </div>
+          </div>
+        ) : null}
         <div className="kiosk-panel">
           <div className="kiosk-progress" role="list" aria-label={`Step ${step} of 3`}>
             <span
@@ -693,8 +654,8 @@ export default function KioskPage() {
                   Enter your details
                 </h1>
                 <p>
-                  Enter your mobile number. Returning guests can confirm their saved name; new
-                  guests can add it.
+                  Enter your mobile number and name. For privacy, we never reveal whether this
+                  number has visited before.
                 </p>
               </div>
               <form className="form-grid" onSubmit={submitCheckIn}>
@@ -723,64 +684,30 @@ export default function KioskPage() {
                     We use your number to find your salon profile and never for marketing.
                   </span>
                 </div>
-                {lookupState === 'checking' ? (
-                  <div className="kiosk-lookup-status checking" role="status" aria-live="polite">
-                    <LoaderCircle className="spin" size={18} aria-hidden="true" />
-                    <span>Checking your number…</span>
-                  </div>
-                ) : null}
-                {lookupState === 'found' ? (
-                  <div className="kiosk-lookup-status found" role="status" aria-live="polite">
-                    <CheckCircle2 size={18} aria-hidden="true" />
-                    <span>Welcome back — we found your details.</span>
-                  </div>
-                ) : null}
-                {lookupState === 'new' ? (
+                {phone.trim() && !getPhoneValidationMessage(phone) ? (
                   <div className="kiosk-lookup-status new" role="status" aria-live="polite">
-                    <span>New guest — enter your name to continue.</span>
+                    <span>Number looks good — enter your name to continue. We keep guest history private.</span>
                   </div>
                 ) : null}
-                {lookupState === 'error' ? (
-                  <div className="kiosk-lookup-status error" role="alert">
-                    <span>{lookupError}</span>
-                    <button
-                      className="button button-quiet button-sm"
-                      type="button"
-                      onClick={() => setLookupAttempt((attempt) => attempt + 1)}
-                    >
-                      Try again
-                    </button>
-                  </div>
-                ) : null}
-                {lookupState === 'found' || lookupState === 'new' ? (
-                  <div className="field">
-                    <label htmlFor="kiosk-name">
-                      {lookupState === 'found' ? 'Name on file' : 'First and last name'}
-                    </label>
-                    <input
-                      id="kiosk-name"
-                      name="name"
-                      value={name}
-                      onChange={(event) => setName(event.target.value)}
-                      autoComplete="name"
-                      placeholder="e.g. Jamie Lee"
-                      readOnly={lookupState === 'found'}
-                      required
-                      minLength={2}
-                      className={lookupState === 'found' ? 'lookup-name-input' : undefined}
-                    />
-                    <span className="field-hint">
-                      {lookupState === 'found'
-                        ? 'We’ll use this saved name for your turn.'
-                        : 'This is your first visit with this number.'}
-                    </span>
-                  </div>
-                ) : null}
+                <div className="field">
+                  <label htmlFor="kiosk-name">First and last name</label>
+                  <input
+                    id="kiosk-name"
+                    name="name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    autoComplete="name"
+                    placeholder="e.g. Jamie Lee"
+                    required
+                    minLength={2}
+                  />
+                  <span className="field-hint">We use this name for today’s visit only.</span>
+                </div>
                 {error ? <ErrorMessage>{error}</ErrorMessage> : null}
                 <div className="form-actions">
                   <button
                     className="button button-primary"
-                    disabled={submitting || lookupState === 'checking' || lookupState === 'error'}
+                    disabled={submitting}
                   >
                     {submitting ? (
                       'Checking you in…'
