@@ -67,6 +67,9 @@ import {
 
 const SHOP_TIMEZONE = getBuildTimeValue('SHOP_TIMEZONE', DEFAULT_TIMEZONE) ?? DEFAULT_TIMEZONE;
 const BUSINESS_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+// Keep each D1 routing command comfortably below the 50-statement batch cap.
+// The admin UI repeats the command when more work remains.
+const MAX_ROUTING_APPOINTMENTS_PER_BATCH = 1;
 
 export function currentBusinessDate(now = new Date(), timeZone = SHOP_TIMEZONE) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -1020,19 +1023,12 @@ async function nextAppointmentCode(
   tx: typeof prisma | Prisma.TransactionClient,
   businessDate: Date,
 ) {
-  // Keep code allocation compatible with SQLite/D1. D1 commands are
-  // serialized by
-  // the application lease before this read and the following appointment
-  // insert, so the max calculation remains single-writer within a shop.
-  const rows = await tx.appointment.findMany({
+  const counter = await tx.appointmentCounter.upsert({
     where: { businessDate },
-    select: { code: true },
+    update: { nextSequence: { increment: 1 } },
+    create: { businessDate, nextSequence: 2 },
   });
-  const highestSequence = rows.reduce((highest, row) => {
-    const match = /^A([0-9]+)$/.exec(row.code);
-    return match ? Math.max(highest, Number(match[1])) : highest;
-  }, 0);
-  return `A${String(highestSequence + 1).padStart(3, '0')}`;
+  return `A${String(counter.nextSequence - 1).padStart(3, '0')}`;
 }
 
 export async function getDbAppointments(businessDate?: Date) {
@@ -1172,18 +1168,13 @@ function buildAdminAppointmentWhere(
 async function addServiceCountConstraint(
   where: Prisma.AppointmentWhereInput,
   serviceCount: AdminAppointmentFilters['serviceCount'],
-  client: D1PrismaRuntime | Prisma.TransactionClient = prisma,
+  _client: D1PrismaRuntime | Prisma.TransactionClient = prisma,
 ) {
   if (!serviceCount || serviceCount === 'ALL') return where;
-  const rows =
-    serviceCount === 'SINGLE'
-      ? await client.$queryRaw<
-          Array<{ id: string }>
-        >`SELECT appointment_id AS id FROM appointment_services GROUP BY appointment_id HAVING COUNT(*) = 1`
-      : await client.$queryRaw<
-          Array<{ id: string }>
-        >`SELECT appointment_id AS id FROM appointment_services GROUP BY appointment_id HAVING COUNT(*) > 1`;
-  return { ...where, id: { in: rows.map((row) => row.id) } };
+  return {
+    ...where,
+    serviceCount: serviceCount === 'SINGLE' ? 1 : { gt: 1 },
+  };
 }
 
 async function buildAdminAppointmentQuery(
@@ -1908,6 +1899,7 @@ function d1AppointmentAggregate(
     serviceId: activeService?.serviceId ?? appointment.serviceId,
     serviceNameSnapshot: activeService?.serviceNameSnapshot ?? appointment.serviceNameSnapshot,
     durationMinSnapshot: activeService?.durationMinSnapshot ?? appointment.durationMinSnapshot,
+    serviceCount: services.length,
     primaryStaffId: activeService?.primaryStaffId ?? null,
   };
 }
@@ -2194,13 +2186,14 @@ async function changeDbAppointmentServiceD1(
       d1Statement(
         database,
         `UPDATE appointments
-         SET amount = ?, status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ?, completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END
+         SET amount = ?, status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, service_count = ?, primary_staff_id = ?, completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END
          WHERE id = ? AND business_date = ?`,
         moneyFromMinorUnits(totalAmount),
         aggregate.status,
         aggregate.serviceId,
         aggregate.serviceNameSnapshot,
         aggregate.durationMinSnapshot,
+        aggregate.serviceCount,
         aggregate.primaryStaffId,
         aggregate.status,
         AppointmentStatus.PAYMENT_PENDING,
@@ -2273,12 +2266,19 @@ function d1DateTimeValue(date: Date) {
 }
 
 async function d1NextAppointmentCode(database: D1DatabaseLike, businessDate: string) {
-  const rows = await database.prepare('SELECT code FROM appointments WHERE business_date = ?').bind(businessDate).all<{ code: string }>();
-  const highestSequence = rows.results.reduce((highest, row) => {
-    const match = /^A([0-9]+)$/.exec(row.code);
-    return match ? Math.max(highest, Number(match[1])) : highest;
-  }, 0);
-  return `A${String(highestSequence + 1).padStart(3, '0')}`;
+  await database
+    .prepare(
+      `INSERT INTO appointment_counters (business_date, next_sequence)
+       VALUES (?, 2)
+       ON CONFLICT(business_date) DO UPDATE SET next_sequence = next_sequence + 1`,
+    )
+    .bind(businessDate)
+    .run();
+  const row = await database
+    .prepare('SELECT next_sequence - 1 AS sequence FROM appointment_counters WHERE business_date = ?')
+    .bind(businessDate)
+    .first<{ sequence: number }>();
+  return `A${String(Number(row?.sequence ?? 1)).padStart(3, '0')}`;
 }
 
 async function d1CheckInTicket(
@@ -2318,12 +2318,13 @@ async function routeDbAppointmentD1(
     d1Statement(
       database,
       `UPDATE appointments
-       SET status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ?, completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END
+       SET status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, service_count = ?, primary_staff_id = ?, completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END
        WHERE id = ? AND business_date = ?`,
       aggregate.status,
       aggregate.serviceId,
       aggregate.serviceNameSnapshot,
       aggregate.durationMinSnapshot,
+      aggregate.serviceCount,
       aggregate.primaryStaffId,
       aggregate.status,
       AppointmentStatus.PAYMENT_PENDING,
@@ -2390,8 +2391,8 @@ async function createDbCheckInD1Attempt(input: {
       d1Statement(database, `INSERT INTO customers (id, phone, phone_normalized, name, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(phone_normalized) DO UPDATE SET phone = excluded.phone, updated_at = excluded.updated_at`, customerId, input.phone, phoneNormalized, input.name.trim(), nowIso, nowIso),
-      d1Statement(database, `INSERT INTO appointments (id, code, customer_id, service_id, service_name_snapshot, duration_min_snapshot, status, primary_staff_id, amount, business_date, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`, appointmentId, code, customerId, orderedServices[0].id, orderedServices[0].name, orderedServices[0].durationMin, AppointmentStatus.CREATED, totalAmount, businessDateIso, nowIso),
+      d1Statement(database, `INSERT INTO appointments (id, code, customer_id, service_id, service_name_snapshot, duration_min_snapshot, status, primary_staff_id, amount, service_count, business_date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`, appointmentId, code, customerId, orderedServices[0].id, orderedServices[0].name, orderedServices[0].durationMin, AppointmentStatus.CREATED, totalAmount, orderedServices.length, businessDateIso, nowIso),
       ...orderedServices.map((service, index) => d1Statement(database, `INSERT INTO appointment_services (id, appointment_id, service_id, sequence, service_name_snapshot, duration_min_snapshot, amount, status, primary_staff_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`, randomId(), appointmentId, service.id, index + 1, service.name, service.durationMin, moneyFromMinorUnits(toMinorUnits(service.price)), AppointmentStatus.CREATED)),
       d1Statement(database, `INSERT INTO audit_events (id, ts, actor_type, actor_id, action, entity, entity_id, metadata)
@@ -2641,6 +2642,7 @@ export async function createDbCheckIn(input: {
         status: AppointmentStatus.CREATED,
         primaryStaffId: null,
         amount: totalAmount,
+        serviceCount: orderedServices.length,
         businessDate,
       },
     });
@@ -3601,7 +3603,7 @@ async function cancelDbAppointmentD1(input: CancellationInput, businessDate: Dat
     statements.push(...d1ReleaseStaffStatements(database, businessDate, releasableStaffIds));
     statements.push(...routePlan.statements);
     const appointmentStatementIndex = statements.length;
-    statements.push(d1Statement(database, `UPDATE appointments SET amount = ?, status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ?, ${cancelsEntireVisit ? 'cancelled_at = ?, cancelled_reason = ?, cancelled_by_type = ?, cancelled_by_id = ?,' : ''} completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END WHERE id = ? AND business_date = ?`, totalAmount ? moneyFromMinorUnits(totalAmount) : 0, aggregate.status, aggregate.serviceId, aggregate.serviceNameSnapshot, aggregate.durationMinSnapshot, aggregate.primaryStaffId, ...(cancelsEntireVisit ? [cancelledAtIso, reason, ActorType.ADMIN, input.adminId] : []), aggregate.status, AppointmentStatus.PAYMENT_PENDING, appointment.id, d1DateTimeValue(businessDate)));
+    statements.push(d1Statement(database, `UPDATE appointments SET amount = ?, status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, service_count = ?, primary_staff_id = ?, ${cancelsEntireVisit ? 'cancelled_at = ?, cancelled_reason = ?, cancelled_by_type = ?, cancelled_by_id = ?,' : ''} completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END WHERE id = ? AND business_date = ?`, totalAmount ? moneyFromMinorUnits(totalAmount) : 0, aggregate.status, aggregate.serviceId, aggregate.serviceNameSnapshot, aggregate.durationMinSnapshot, aggregate.serviceCount, aggregate.primaryStaffId, ...(cancelsEntireVisit ? [cancelledAtIso, reason, ActorType.ADMIN, input.adminId] : []), aggregate.status, AppointmentStatus.PAYMENT_PENDING, appointment.id, d1DateTimeValue(businessDate)));
     statements.push(d1AuditEvent(database, { action: input.scope === 'VISIT' ? 'appointment.cancelled' : 'appointment_service.cancelled', entity: input.scope === 'VISIT' ? 'Appointment' : 'AppointmentService', entityId: input.scope === 'VISIT' ? appointment.id : targets[0].id, actorId: input.adminId, actorType: ActorType.ADMIN, metadata: { reason, scope: input.scope, appointmentServiceIds: targets.map((service) => service.id) } }, cancelledAtIso));
     statements.push(d1BumpBoardVersion(database, cancelledAtIso));
     if (input.idempotencyKey)
@@ -4368,12 +4370,13 @@ async function resolvePastAppointmentD1(
     statements.push(
       d1Statement(
         database,
-        `UPDATE appointments SET amount = ?, status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ?, ${allCancelled ? 'cancelled_at = ?, cancelled_reason = ?, cancelled_by_type = ?, cancelled_by_id = ?,' : ''} completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END WHERE id = ? AND status = ?`,
+        `UPDATE appointments SET amount = ?, status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, service_count = ?, primary_staff_id = ?, ${allCancelled ? 'cancelled_at = ?, cancelled_reason = ?, cancelled_by_type = ?, cancelled_by_id = ?,' : ''} completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END WHERE id = ? AND status = ?`,
         moneyFromMinorUnits(totalAmount),
         aggregate.status,
         aggregate.serviceId,
         aggregate.serviceNameSnapshot,
         aggregate.durationMinSnapshot,
+        aggregate.serviceCount,
         aggregate.primaryStaffId,
         ...(allCancelled ? [nowIso, reason, ActorType.ADMIN, input.adminId] : []),
         aggregate.status,
@@ -4513,7 +4516,7 @@ async function reassignDbAppointmentServiceD1(input: {
         AND NOT EXISTS (SELECT 1 FROM appointment_services active_service JOIN appointments active_appointment ON active_appointment.id = active_service.appointment_id WHERE active_service.primary_staff_id = ? AND active_service.status IN (?, ?) AND active_appointment.business_date = ?)
         AND NOT EXISTS (SELECT 1 FROM appointment_supporting_staff support JOIN appointments support_appointment ON support_appointment.id = support.appointment_id WHERE support.staff_id = ? AND support.released_at IS NULL AND support_appointment.business_date = ? AND support_appointment.status IN (?, ?, ?))`, Availability.AVAILABLE, service.primaryStaffId, Availability.BUSY, service.primaryStaffId, AppointmentStatus.ASSIGNED, AppointmentStatus.IN_SERVICE, d1DateTimeValue(businessDate), service.primaryStaffId, d1DateTimeValue(businessDate), AppointmentStatus.ASSIGNED, AppointmentStatus.IN_SERVICE, AppointmentStatus.PAYMENT_PENDING));
     }
-    statements.push(d1Statement(database, `UPDATE appointments SET status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ? WHERE id = ?`, aggregate.status, aggregate.serviceId, aggregate.serviceNameSnapshot, aggregate.durationMinSnapshot, aggregate.primaryStaffId, service.appointmentId));
+    statements.push(d1Statement(database, `UPDATE appointments SET status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, service_count = ?, primary_staff_id = ? WHERE id = ?`, aggregate.status, aggregate.serviceId, aggregate.serviceNameSnapshot, aggregate.durationMinSnapshot, aggregate.serviceCount, aggregate.primaryStaffId, service.appointmentId));
     statements.push(d1AuditEvent(database, { action: 'appointment_service.reassigned', entity: 'AppointmentService', entityId: service.id, actorId: input.adminId, actorType: ActorType.ADMIN, metadata: { staffId: input.staffId, reason: input.reason.trim() } }, nowIso));
     statements.push(d1BumpBoardVersion(database, nowIso));
     if (input.idempotencyKey)
@@ -5115,6 +5118,7 @@ async function syncAppointmentAggregate(tx: Prisma.TransactionClient, appointmen
       serviceId: activeService?.serviceId ?? appointment.serviceId,
       serviceNameSnapshot: activeService?.serviceNameSnapshot ?? appointment.serviceNameSnapshot,
       durationMinSnapshot: activeService?.durationMinSnapshot ?? appointment.durationMinSnapshot,
+      serviceCount: appointment.services.length,
       primaryStaffId: activeService?.primaryStaffId ?? null,
       completedAt: status === AppointmentStatus.PAYMENT_PENDING ? null : appointment.completedAt,
     },
@@ -5234,15 +5238,18 @@ async function routeAppointmentServices(
 
 async function reconcileDbAssignmentsD1(date: Date, adminId?: string) {
   return withD1Lease(async (database) => {
-    const appointments = await prisma.appointment.findMany({
-      where: {
-        businessDate: date,
-        status: { not: AppointmentStatus.COMPLETED },
-        services: {
-          some: { status: { in: [AppointmentStatus.CREATED, AppointmentStatus.WAITING] } },
-        },
+    const where = {
+      businessDate: date,
+      status: { not: AppointmentStatus.COMPLETED },
+      services: {
+        some: { status: { in: [AppointmentStatus.CREATED, AppointmentStatus.WAITING] } },
       },
+    };
+    const totalAppointments = await prisma.appointment.count({ where });
+    const appointments = await prisma.appointment.findMany({
+      where,
       orderBy: { createdAt: 'asc' },
+      take: MAX_ROUTING_APPOINTMENTS_PER_BATCH,
       select: { id: true },
     });
     const [routingConfig, routingStaff] = await Promise.all([
@@ -5280,12 +5287,13 @@ async function reconcileDbAssignmentsD1(date: Date, adminId?: string) {
         d1Statement(
           database,
           `UPDATE appointments
-           SET status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ?, completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END
+           SET status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, service_count = ?, primary_staff_id = ?, completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END
            WHERE id = ? AND business_date = ?`,
           aggregate.status,
           aggregate.serviceId,
           aggregate.serviceNameSnapshot,
           aggregate.durationMinSnapshot,
+          aggregate.serviceCount,
           aggregate.primaryStaffId,
           aggregate.status,
           AppointmentStatus.PAYMENT_PENDING,
@@ -5306,6 +5314,7 @@ async function reconcileDbAssignmentsD1(date: Date, adminId?: string) {
           metadata: {
             businessDate: formatBusinessDate(date),
             routedAppointments: appointments.length,
+            remainingAppointments: Math.max(0, totalAppointments - appointments.length),
           },
         },
         nowIso,
@@ -5317,7 +5326,10 @@ async function reconcileDbAssignmentsD1(date: Date, adminId?: string) {
       if (d1BatchChanges(results[statementIndex]) !== 1)
         throw new Error('An appointment changed before reconciliation could be recorded; retry the command');
     }
-    return { routedAppointments: appointments.length };
+    return {
+      routedAppointments: appointments.length,
+      remainingAppointments: Math.max(0, totalAppointments - appointments.length),
+    };
   });
 }
 
@@ -5326,15 +5338,18 @@ export async function reconcileDbAssignments(businessDate?: Date, adminId?: stri
   if (await isD1Runtime()) return reconcileDbAssignmentsD1(date, adminId);
   return prisma.$transaction(async (tx) => {
     await lockShopBusinessDate(tx, date.toISOString());
-    const appointments = await tx.appointment.findMany({
-      where: {
-        businessDate: date,
-        status: { not: AppointmentStatus.COMPLETED },
-        services: {
-          some: { status: { in: [AppointmentStatus.CREATED, AppointmentStatus.WAITING] } },
-        },
+    const where = {
+      businessDate: date,
+      status: { not: AppointmentStatus.COMPLETED },
+      services: {
+        some: { status: { in: [AppointmentStatus.CREATED, AppointmentStatus.WAITING] } },
       },
+    };
+    const totalAppointments = await tx.appointment.count({ where });
+    const appointments = await tx.appointment.findMany({
+      where,
       orderBy: { createdAt: 'asc' },
+      take: MAX_ROUTING_APPOINTMENTS_PER_BATCH,
       select: { id: true },
     });
     const [routingConfig, routingStaff] = await Promise.all([
@@ -5356,11 +5371,15 @@ export async function reconcileDbAssignments(businessDate?: Date, adminId?: stri
         metadata: {
           businessDate: formatBusinessDate(date),
           routedAppointments: appointments.length,
+          remainingAppointments: Math.max(0, totalAppointments - appointments.length),
         },
       },
     });
     if (appointments.length) await bumpBoardVersion(tx);
-    return { routedAppointments: appointments.length };
+    return {
+      routedAppointments: appointments.length,
+      remainingAppointments: Math.max(0, totalAppointments - appointments.length),
+    };
   });
 }
 
@@ -5401,19 +5420,24 @@ async function getDbReportForRange({
       select: { businessDate: true, status: true },
     }),
   ]);
-  // SQLite/D1 caps the number of bound parameters in a prepared statement.
-  // A monthly report can legitimately contain thousands of payments, so do
-  // not send all payment IDs through one `IN (...)` Prisma query (which caused
-  // D1 error P2029 at production-scale fixture sizes). Payment refund events
-  // are rare relative to confirmed payments; read that narrow audit stream once
-  // and keep only events belonging to this report's payments in memory.
-  const paymentIds = new Set(payments.map((payment) => payment.id));
-  const refundEvents = paymentIds.size
-    ? (await client.auditEvent.findMany({
-        where: { entity: 'Payment', action: 'payment.refunded' },
+  // D1 caps bound parameters at 100. Keep report lookups indexed and
+  // sequential instead of scanning the complete refund audit stream or
+  // building one oversized `IN (...)` statement for a large month.
+  const paymentIds = payments.map((payment) => payment.id);
+  const refundEvents: Array<{ entityId: string | null; metadata: Prisma.JsonValue | null }> = [];
+  for (let offset = 0; offset < paymentIds.length; offset += 75) {
+    const chunk = paymentIds.slice(offset, offset + 75);
+    refundEvents.push(
+      ...(await client.auditEvent.findMany({
+        where: {
+          entity: 'Payment',
+          action: 'payment.refunded',
+          entityId: { in: chunk },
+        },
         select: { entityId: true, metadata: true },
-      })).filter((event) => Boolean(event.entityId && paymentIds.has(event.entityId)))
-    : [];
+      })),
+    );
+  }
   const refundsByPayment = new Map<string, number>();
   for (const event of refundEvents) {
     if (!event.entityId) continue;
@@ -5801,16 +5825,19 @@ export async function cleanupDbOperationalData(
 ) {
   const safeRetentionDays = Math.min(3650, Math.max(30, Math.floor(retentionDays)));
   const cutoff = new Date(Date.now() - safeRetentionDays * 24 * 60 * 60 * 1000);
+  const rateLimitCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const now = new Date();
   if (await isD1Runtime()) {
     return withD1Lease(async (database) => {
       const cutoffIso = d1DateTimeValue(cutoff);
+      const rateLimitCutoffIso = d1DateTimeValue(rateLimitCutoff);
       const nowIso = d1DateTimeValue(now);
       const results = (await database.batch([
         d1Statement(database, 'DELETE FROM verified_staff_sessions WHERE expires_at < ?', cutoffIso),
         d1Statement(database, 'DELETE FROM command_receipts WHERE created_at < ?', cutoffIso),
         d1Statement(database, `DELETE FROM staff_pin_lockouts WHERE updated_at < ? AND (locked_until IS NULL OR locked_until < ?)`, cutoffIso, nowIso),
-        d1AuditEvent(database, { actorType: auditActor.actorType, actorId: auditActor.actorId, action: 'operational_data.retention_cleanup', entity: 'OperationalData', metadata: { retentionDays: safeRetentionDays, cutoff: cutoff.toISOString() } }, nowIso),
+        d1Statement(database, 'DELETE FROM kiosk_rate_limits WHERE updated_at < ?', rateLimitCutoffIso),
+        d1AuditEvent(database, { actorType: auditActor.actorType, actorId: auditActor.actorId, action: 'operational_data.retention_cleanup', entity: 'OperationalData', metadata: { retentionDays: safeRetentionDays, cutoff: cutoff.toISOString(), rateLimitCutoff: rateLimitCutoff.toISOString() } }, nowIso),
       ])) as D1BatchResult[];
       return {
         retentionDays: safeRetentionDays,
@@ -5818,10 +5845,11 @@ export async function cleanupDbOperationalData(
         expiredSessions: d1BatchChanges(results[0]),
         oldReceipts: d1BatchChanges(results[1]),
         oldLockouts: d1BatchChanges(results[2]),
+        oldRateLimitRows: d1BatchChanges(results[3]),
       };
     });
   }
-  const [expiredSessions, oldReceipts, oldLockouts] = await prisma.$transaction(async (tx) => {
+  const [expiredSessions, oldReceipts, oldLockouts, oldRateLimitRows] = await prisma.$transaction(async (tx) => {
     const result = await Promise.all([
       tx.verifiedStaffSession.deleteMany({ where: { expiresAt: { lt: cutoff } } }),
       tx.commandReceipt.deleteMany({ where: { createdAt: { lt: cutoff } } }),
@@ -5831,6 +5859,7 @@ export async function cleanupDbOperationalData(
           OR: [{ lockedUntil: null }, { lockedUntil: { lt: now } }],
         },
       }),
+      tx.kioskRateLimit.deleteMany({ where: { updatedAt: { lt: rateLimitCutoff } } }),
     ]);
     await tx.auditEvent.create({
       data: {
@@ -5838,7 +5867,7 @@ export async function cleanupDbOperationalData(
         actorId: auditActor.actorId,
         action: 'operational_data.retention_cleanup',
         entity: 'OperationalData',
-        metadata: { retentionDays: safeRetentionDays, cutoff: cutoff.toISOString() },
+        metadata: { retentionDays: safeRetentionDays, cutoff: cutoff.toISOString(), rateLimitCutoff: rateLimitCutoff.toISOString() },
       },
     });
     return result;
@@ -5849,6 +5878,7 @@ export async function cleanupDbOperationalData(
     expiredSessions: expiredSessions.count,
     oldReceipts: oldReceipts.count,
     oldLockouts: oldLockouts.count,
+    oldRateLimitRows: oldRateLimitRows.count,
   };
 }
 
@@ -5976,12 +6006,13 @@ async function staffActionD1({
         d1Statement(
           database,
           `UPDATE appointments
-           SET status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, primary_staff_id = ?, completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END
+           SET status = ?, service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, service_count = ?, primary_staff_id = ?, completed_at = CASE WHEN ? = ? THEN NULL ELSE completed_at END
            WHERE id = ? AND business_date = ?`,
           aggregate.status,
           aggregate.serviceId,
           aggregate.serviceNameSnapshot,
           aggregate.durationMinSnapshot,
+          aggregate.serviceCount,
           aggregate.primaryStaffId,
           aggregate.status,
           AppointmentStatus.PAYMENT_PENDING,
@@ -6020,6 +6051,7 @@ async function staffActionD1({
       const existing = await db.attendance.findUnique({
         where: { staffId_businessDate: { staffId: input.staffId, businessDate } },
       });
+      let remainingAppointments: number | undefined;
       if (input.action === 'CHECK_IN') {
         statements.push(
           d1Statement(
@@ -6081,20 +6113,24 @@ async function staffActionD1({
           candidates,
           roundRobinEnabled: routingConfig?.roundRobinEnabled ?? true,
         };
-        const waitingAppointments = await db.appointment.findMany({
-          where: {
-            businessDate,
-            status: {
-              in: [
-                AppointmentStatus.CREATED,
-                AppointmentStatus.WAITING,
-                AppointmentStatus.ASSIGNED,
-              ],
-            },
+        const waitingWhere = {
+          businessDate,
+          status: {
+            in: [
+              AppointmentStatus.CREATED,
+              AppointmentStatus.WAITING,
+              AppointmentStatus.ASSIGNED,
+            ],
           },
+        };
+        const waitingAppointmentCount = await db.appointment.count({ where: waitingWhere });
+        const waitingAppointments = await db.appointment.findMany({
+          where: waitingWhere,
           orderBy: { createdAt: 'asc' },
+          take: MAX_ROUTING_APPOINTMENTS_PER_BATCH,
           select: { id: true },
         });
+        remainingAppointments = Math.max(0, waitingAppointmentCount - waitingAppointments.length);
         for (const waitingAppointment of waitingAppointments) {
           const appointment = await db.appointment.findUnique({
             where: { id: waitingAppointment.id },
@@ -6160,6 +6196,7 @@ async function staffActionD1({
         ok: true,
         staffId: input.staffId,
         action: input.action,
+        ...(remainingAppointments === undefined ? {} : { remainingAppointments }),
         ...sessionResponse,
       };
     }
@@ -6896,6 +6933,7 @@ export async function staffActionDb(
           where: { staffId: input.staffId },
           data: { availability: Availability.AVAILABLE },
         });
+      let remainingAppointments: number | undefined;
       if (input.action === 'CHECK_IN') {
         const [routingConfig, routingStaff] = await Promise.all([
           tx.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
@@ -6905,20 +6943,24 @@ export async function staffActionDb(
           candidates: routingStaff.map(mapStaff),
           roundRobinEnabled: routingConfig?.roundRobinEnabled ?? true,
         };
-        const waitingAppointments = await tx.appointment.findMany({
-          where: {
-            businessDate,
-            status: {
-              in: [
-                AppointmentStatus.CREATED,
-                AppointmentStatus.WAITING,
-                AppointmentStatus.ASSIGNED,
-              ],
-            },
+        const waitingWhere = {
+          businessDate,
+          status: {
+            in: [
+              AppointmentStatus.CREATED,
+              AppointmentStatus.WAITING,
+              AppointmentStatus.ASSIGNED,
+            ],
           },
+        };
+        const waitingAppointmentCount = await tx.appointment.count({ where: waitingWhere });
+        const waitingAppointments = await tx.appointment.findMany({
+          where: waitingWhere,
           orderBy: { createdAt: 'asc' },
+          take: MAX_ROUTING_APPOINTMENTS_PER_BATCH,
           select: { id: true },
         });
+        remainingAppointments = Math.max(0, waitingAppointmentCount - waitingAppointments.length);
         for (const waitingAppointment of waitingAppointments) {
           const before = await tx.appointment.findUnique({
             where: { id: waitingAppointment.id },
@@ -6963,6 +7005,7 @@ export async function staffActionDb(
         ok: true,
         staffId: input.staffId,
         action: input.action,
+        ...(remainingAppointments === undefined ? {} : { remainingAppointments }),
         verifiedStaffSessionId: session?.id ?? null,
         verifiedStaffSessionExpiresAt: session?.expiresAt ?? null,
       };

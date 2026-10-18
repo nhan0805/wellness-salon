@@ -202,6 +202,8 @@ model Appointment {
   status              AppointmentStatus
   primaryStaffId      String?                      @map("primary_staff_id")
   amount              Decimal
+  currency            String                       @default("USD")
+  serviceCount        Int                          @default(1) @map("service_count")
   businessDate        DateTime                     @map("business_date")
   createdAt           DateTime                     @default(now()) @map("created_at")
   completedAt         DateTime?                    @map("completed_at")
@@ -221,6 +223,7 @@ model Appointment {
 
   @@unique([businessDate, code])
   @@index([businessDate, status])
+  @@index([businessDate, serviceCount, createdAt])
   @@index([businessDate, createdAt])
   @@index([customerId, createdAt])
   @@map("appointments")
@@ -234,6 +237,7 @@ model AppointmentService {
   serviceNameSnapshot String            @map("service_name_snapshot")
   durationMinSnapshot Int               @map("duration_min_snapshot")
   amount              Decimal
+  currency            String            @default("USD")
   status              AppointmentStatus
   primaryStaffId      String?           @map("primary_staff_id")
   completedAt         DateTime?         @map("completed_at")
@@ -359,6 +363,7 @@ model ServiceChangeEvent {
   newServiceName       String             @map("new_service_name")
   newDurationMin       Int                @map("new_duration_min")
   newAmount            Decimal            @map("new_amount")
+  currency             String             @default("USD")
   reason               String
   actorId              String             @map("actor_id")
   createdAt            DateTime           @default(now()) @map("created_at")
@@ -400,6 +405,7 @@ model Payment {
   appointmentId       String        @unique @map("appointment_id")
   amount              Decimal
   tip                 Decimal       @default(0)
+  currency            String        @default("USD")
   method              PaymentMethod
   serviceNameSnapshot String        @map("service_name_snapshot")
   staffNameSnapshot   String?       @map("staff_name_snapshot")
@@ -420,6 +426,7 @@ model PaymentItem {
   serviceNameSnapshot  String             @map("service_name_snapshot")
   staffNameSnapshot    String?            @map("staff_name_snapshot")
   amount               Decimal
+  currency             String             @default("USD")
   payment              Payment            @relation(fields: [paymentId], references: [id], onDelete: Cascade)
   appointmentService   AppointmentService @relation(fields: [appointmentServiceId], references: [id], onDelete: Restrict)
 
@@ -470,6 +477,23 @@ model CommandReceipt {
   @@unique([scope, key])
   @@index([createdAt])
   @@map("command_receipts")
+}
+
+model KioskRateLimit {
+  rateKey         String   @id @map("rate_key")
+  windowStartedAt DateTime @map("window_started_at")
+  requestCount    Int      @default(0) @map("request_count")
+  updatedAt       DateTime @map("updated_at")
+
+  @@index([updatedAt])
+  @@map("kiosk_rate_limits")
+}
+
+model AppointmentCounter {
+  businessDate DateTime @id @map("business_date")
+  nextSequence Int      @map("next_sequence")
+
+  @@map("appointment_counters")
 }
 
 model ShopConfig {

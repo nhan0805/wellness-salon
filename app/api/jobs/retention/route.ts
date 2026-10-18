@@ -29,7 +29,7 @@ export async function POST(request: Request) {
           actorId: hasCronAccess ? undefined : session?.user?.id,
         },
       );
-      logEvent('info', 'job.retention.completed', { retentionDays: result.retentionDays, expiredSessions: result.expiredSessions, oldReceipts: result.oldReceipts, oldLockouts: result.oldLockouts });
+      logEvent('info', 'job.retention.completed', { retentionDays: result.retentionDays, expiredSessions: result.expiredSessions, oldReceipts: result.oldReceipts, oldLockouts: result.oldLockouts, oldRateLimitRows: result.oldRateLimitRows });
       return NextResponse.json(result);
     } catch (error) {
       logEvent('error', 'job.retention.failed', { error: error instanceof Error ? error.message : 'Unknown error' });

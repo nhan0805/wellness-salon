@@ -1,12 +1,12 @@
 import { normalizePhoneNumber } from '@/src/domain/phone';
 import { getD1Database } from '@/src/server/db';
-import { randomId, sha256Hex } from '@/src/server/web-crypto';
+import { sha256Hex } from '@/src/server/web-crypto';
 
 const IP_WINDOW_SECONDS = 5 * 60;
 const IP_LIMIT = 60;
 const PHONE_WINDOW_SECONDS = 15 * 60;
 const PHONE_LIMIT = 10;
-const RATE_LIMIT_PREFIX = 'wellness-salon:kiosk-rate:v1:';
+const RATE_LIMIT_PREFIX = 'wellness-salon:kiosk-rate:v2:';
 
 function clientAddress(request: Request) {
   return (
@@ -29,30 +29,30 @@ async function incrementRateLimit(
 ) {
   const database = await getD1Database();
   const currentWindow = windowStart(Math.floor(now / 1000), windowSeconds);
-  const scope = `kiosk-rate:${windowSeconds}:${new Date(currentWindow * 1000).toISOString()}`;
   const rateKey = await sha256Hex(`${RATE_LIMIT_PREFIX}${key}`);
+  const windowStartedAt = new Date(currentWindow * 1000).toISOString();
   const nowIso = new Date(now).toISOString();
 
-  const inserted = await database
+  const row = await database
     .prepare(
-      `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at)
-       VALUES (?, ?, ?, ?, NULL, ?)
-       ON CONFLICT(scope, key) DO NOTHING`,
+      `INSERT INTO kiosk_rate_limits (rate_key, window_started_at, request_count, updated_at)
+       VALUES (?, ?, 1, ?)
+       ON CONFLICT(rate_key) DO UPDATE SET
+         request_count = CASE
+           WHEN window_started_at = ? THEN MIN(request_count + 1, ?)
+           ELSE 1
+         END,
+         window_started_at = CASE
+           WHEN window_started_at = ? THEN window_started_at
+           ELSE excluded.window_started_at
+         END,
+         updated_at = excluded.updated_at
+       RETURNING request_count`,
     )
-    .bind(randomId(), scope, rateKey, JSON.stringify({ count: 1 }), nowIso)
-    .run();
-  if ((inserted.meta?.changes ?? 0) === 1) return { allowed: true, retryAfterSeconds: 0 };
-
-  const incremented = await database
-    .prepare(
-      `UPDATE command_receipts
-       SET response = json_set(response, '$.count', CAST(json_extract(response, '$.count') AS INTEGER) + 1), created_at = ?
-       WHERE scope = ? AND key = ?
-         AND CAST(json_extract(response, '$.count') AS INTEGER) < ?`,
-    )
-    .bind(nowIso, scope, rateKey, limit)
-    .run();
-  if ((incremented.meta?.changes ?? 0) === 1) return { allowed: true, retryAfterSeconds: 0 };
+    .bind(rateKey, windowStartedAt, nowIso, windowStartedAt, limit + 1, windowStartedAt)
+    .first<{ request_count: number }>();
+  if (!row) throw new Error('Unable to update kiosk rate limit');
+  if (row.request_count <= limit) return { allowed: true, retryAfterSeconds: 0 };
 
   return {
     allowed: false,

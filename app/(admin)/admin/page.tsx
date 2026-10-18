@@ -738,14 +738,24 @@ export default function AdminPage() {
   async function repairQueue() {
     setQueueRepairing(true);
     try {
-      const response = await fetch('/api/admin/queue/reconcile', { method: 'POST' });
-      const payload = await parseAdminJsonResponse<{ routedAppointments?: number }>(
-        response,
-        'Queue repair could not be completed',
-      );
-      const routedAppointments = payload.routedAppointments ?? 0;
+      let routedAppointments = 0;
+      let remainingAppointments = 1;
+      let attempts = 0;
+      while (remainingAppointments > 0 && attempts < 20) {
+        attempts += 1;
+        const response = await fetch('/api/admin/queue/reconcile', { method: 'POST' });
+        const payload = await parseAdminJsonResponse<{
+          routedAppointments?: number;
+          remainingAppointments?: number;
+        }>(response, 'Queue repair could not be completed');
+        routedAppointments += payload.routedAppointments ?? 0;
+        remainingAppointments = payload.remainingAppointments ?? 0;
+        if (!payload.routedAppointments && remainingAppointments > 0) break;
+      }
       setToast(
-        `Assignment check complete · ${routedAppointments} appointment${routedAppointments === 1 ? '' : 's'} reviewed.`,
+        remainingAppointments > 0
+          ? `Assignment check reviewed ${routedAppointments} appointment${routedAppointments === 1 ? '' : 's'} · ${remainingAppointments} still queued. Press repair again to continue.`
+          : `Assignment check complete · ${routedAppointments} appointment${routedAppointments === 1 ? '' : 's'} reviewed.`,
       );
       await refresh('day', reportDate, reportMonth, true);
     } catch (error) {

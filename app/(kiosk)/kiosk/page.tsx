@@ -204,7 +204,7 @@ export default function KioskPage() {
     async function loadServices() {
       try {
         const request = fetch('/api/services', {
-          cache: 'no-store',
+          cache: 'default',
           ...(controller ? { signal: controller.signal } : {}),
         });
         const timeout = new Promise<never>((_, reject) => {

@@ -155,6 +155,7 @@ export default function BoardPage() {
   const dialogRef = useDialogFocus(Boolean(modal), closeActionModal);
 
   const loadBoard = useCallback(async () => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     const requestSequence = ++requestSequenceRef.current;
     requestControllerRef.current?.abort();
     const controller = typeof AbortController === 'undefined' ? null : new AbortController();
@@ -218,8 +219,13 @@ export default function BoardPage() {
     let source: EventSource | null = null;
     let reconnectTimer: number | undefined;
     let reconnectAttempt = 0;
+    const clearReconnectTimer = () => {
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      reconnectTimer = undefined;
+    };
     const connect = () => {
-      if (disposed) return;
+      if (disposed || document.visibilityState !== 'visible') return;
+      clearReconnectTimer();
       source?.close();
       source = new EventSource('/api/sse/board');
       source.onopen = () => { reconnectAttempt = 0; setSyncStatus('POLLING'); };
@@ -244,9 +250,23 @@ export default function BoardPage() {
         source = null;
         setSyncStatus('RECONNECTING');
         reconnectAttempt += 1;
-        reconnectTimer = window.setTimeout(connect, Math.min(30_000, 1_000 * (2 ** Math.min(reconnectAttempt, 5))));
+        const backoff = Math.min(30_000, 1_000 * (2 ** Math.min(reconnectAttempt, 5)));
+        reconnectTimer = window.setTimeout(connect, backoff + Math.floor(Math.random() * 500));
       };
     };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        source?.close();
+        source = null;
+        clearReconnectTimer();
+        requestControllerRef.current?.abort();
+        return;
+      }
+      reconnectAttempt = 0;
+      void loadBoard();
+      connect();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     const initialLoad = window.setTimeout(() => { void loadBoard(); }, 0);
     // A newly checked-in visit can be routed by the same command that created
     // it. Give the board one short convergence refresh after the initial SSE
@@ -254,18 +274,21 @@ export default function BoardPage() {
     // fast queue actions without returning to a 3-second D1 polling loop.
     const convergenceRefresh = window.setTimeout(() => { void loadBoard(); }, 1_000);
     connect();
-    const poll = window.setInterval(() => { void loadBoard(); }, BOARD_POLL_INTERVAL_MS);
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadBoard();
+    }, BOARD_POLL_INTERVAL_MS);
     const staleCheck = window.setInterval(() => {
-      if (lastSuccessAtRef.current && Date.now() - lastSuccessAtRef.current > BOARD_STALE_AFTER_MS) setSyncStatus('STALE');
+      if (document.visibilityState === 'visible' && lastSuccessAtRef.current && Date.now() - lastSuccessAtRef.current > BOARD_STALE_AFTER_MS) setSyncStatus('STALE');
     }, BOARD_POLL_INTERVAL_MS);
     return () => {
       disposed = true;
       source?.close();
-      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      clearReconnectTimer();
       window.clearTimeout(initialLoad);
       window.clearTimeout(convergenceRefresh);
       window.clearInterval(poll);
       window.clearInterval(staleCheck);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       requestControllerRef.current?.abort();
     };
   }, [loadBoard]);

@@ -12,15 +12,18 @@ export async function GET(request: Request) {
         getDbServices(client),
         getDbShopConfig(client),
       ]);
-      return NextResponse.json({
-        services,
-        shop: {
-          timezone: shop.timezone,
-          openingTime: shop.openingTime,
-          closingTime: shop.closingTime,
-          currency: shop.currency,
+      return NextResponse.json(
+        {
+          services,
+          shop: {
+            timezone: shop.timezone,
+            openingTime: shop.openingTime,
+            closingTime: shop.closingTime,
+            currency: shop.currency,
+          },
         },
-      });
+        { headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' } },
+      );
     });
   });
 }

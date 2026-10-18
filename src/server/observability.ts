@@ -21,15 +21,20 @@ export async function observeApiRequest(request: Request, route: string, handler
       `${existingServerTiming ? `${existingServerTiming}, ` : ''}api;dur=${durationMs}`,
     );
     response.headers.set('x-response-time-ms', String(durationMs));
-    logEvent(response.status >= 500 ? 'error' : response.status >= 400 ? 'warn' : 'info', 'api.request.completed', {
-      requestId,
-      method: request.method,
-      route,
-      status: response.status,
-      durationMs,
-      slow: durationMs >= 1000,
-      outcome: response.status >= 400 ? 'rejected' : 'success',
-    });
+    const isRoutineRead =
+      request.method === 'GET' &&
+      response.status < 400 &&
+      (response.status === 304 || route === 'GET /api/board' || route === 'GET /api/sse/board');
+    if (!isRoutineRead || durationMs >= 1000)
+      logEvent(response.status >= 500 ? 'error' : response.status >= 400 ? 'warn' : 'info', 'api.request.completed', {
+        requestId,
+        method: request.method,
+        route,
+        status: response.status,
+        durationMs,
+        slow: durationMs >= 1000,
+        outcome: response.status >= 400 ? 'rejected' : 'success',
+      });
     if (response.status >= 400 && request.method !== 'GET') {
       logEvent('warn', 'command.rejected', { requestId, method: request.method, route, status: response.status });
     }
