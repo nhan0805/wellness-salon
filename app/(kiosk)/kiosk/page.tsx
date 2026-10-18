@@ -14,6 +14,11 @@ import {
 } from 'lucide-react';
 import { ErrorMessage } from '@/src/components/ui';
 import { ServiceIcon } from '@/src/components/service-icons';
+import {
+  ApiResponseError,
+  getApiErrorMessage,
+  parseApiResponse,
+} from '@/src/client/api-response';
 import { isWithinOperatingHours } from '@/src/domain/operating-hours';
 import { DEFAULT_TIMEZONE } from '@/src/domain/locale-options';
 
@@ -210,8 +215,10 @@ export default function KioskPage() {
           }, 12_000);
         });
         const response = await Promise.race([request, timeout]);
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error ?? 'Unable to load services');
+        const payload = await parseApiResponse<{
+          services?: Service[];
+          shop?: Shop;
+        }>(response, 'Unable to load services');
         setServices(payload.services ?? []);
         if (payload.shop) setShop(payload.shop);
         setCatalogError('');
@@ -222,7 +229,7 @@ export default function KioskPage() {
             'Services are taking too long to load. Check the kiosk connection and try again.',
           );
         else if (!(err instanceof Error && err.name === 'AbortError'))
-          setCatalogError(err instanceof Error ? err.message : 'Unable to load services');
+          setCatalogError(getApiErrorMessage(err, 'Unable to load services'));
       } finally {
         window.clearTimeout(timeoutId);
         if (!disposed) setCatalogLoading(false);
@@ -325,29 +332,37 @@ export default function KioskPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ serviceIds: selectedServiceIds, phone, name, idempotencyKey }),
       });
-      const payload = await response.json();
-      if (!response.ok) {
-        if (payload.code === 'KIOSK_CHECK_IN_CLOSED') {
-          setShop((current) => ({
-            ...current,
-            openingTime: payload.openingTime ?? current.openingTime,
-            closingTime: payload.closingTime ?? current.closingTime,
-            timezone: payload.timezone ?? current.timezone,
-          }));
-        }
-        throw new Error(payload.error ?? 'Unable to check in');
-      }
+      const payload = await parseApiResponse<Ticket>(response, 'Unable to check in');
       setTicket(payload);
       setStep(3);
     } catch (err) {
+      if (err instanceof ApiResponseError) {
+        const errorPayload = err.payload;
+        if (
+          errorPayload &&
+          typeof errorPayload === 'object' &&
+          'code' in errorPayload &&
+          errorPayload.code === 'KIOSK_CHECK_IN_CLOSED'
+        ) {
+          const details = errorPayload as {
+            openingTime?: string;
+            closingTime?: string;
+            timezone?: string;
+          };
+          setShop((current) => ({
+            ...current,
+            openingTime: details.openingTime ?? current.openingTime,
+            closingTime: details.closingTime ?? current.closingTime,
+            timezone: details.timezone ?? current.timezone,
+          }));
+        }
+      }
       const networkFailure = typeof navigator !== 'undefined' && !navigator.onLine;
       const unknownResult = networkFailure || err instanceof TypeError;
       setError(
         unknownResult
           ? 'We could not confirm the check-in because the kiosk connection was interrupted. No success was shown; check the connection and retry. The same request will be reused to prevent a duplicate visit.'
-          : err instanceof Error
-            ? err.message
-            : 'Unable to check in',
+          : getApiErrorMessage(err, 'Unable to check in'),
       );
     } finally {
       setSubmitting(false);

@@ -37,7 +37,7 @@ test('tablet browser recovers after an emulated board-network interruption', asy
   await page.goto('/board');
   await expect(page.getByRole('heading', { name: "Today’s queue", exact: true })).toBeVisible();
   const boardError = page.locator('.management-error');
-  await expect(boardError).toContainText('Failed to fetch', { timeout: 10_000 });
+  await expect(boardError).toContainText('The request could not be completed', { timeout: 10_000 });
 
   networkDown = false;
   await boardError.getByRole('button', { name: 'Retry', exact: true }).click();

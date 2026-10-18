@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Check, CircleDollarSign, Clock3, Globe2, Info, Pencil, Plus, RotateCcw, Save, ShieldCheck, Trash2, UsersRound } from 'lucide-react';
 import { SectionHeader, StatusBadge } from '@/src/components/ui';
+import { parseApiResponse } from '@/src/client/api-response';
 import { CURRENCY_OPTIONS, DEFAULT_TIMEZONE, TIMEZONE_OPTIONS, timezoneGroup } from '@/src/domain/locale-options';
 
 type SkipReason = { id: string; name: string; sortOrder: number; isActive: boolean };
@@ -34,8 +35,10 @@ export function AdminSkipReasons({ onToast }: { onToast: (message: string) => vo
     setLoading(true);
     try {
       const response = await fetch('/api/admin/skip-reasons', { cache: 'no-store' });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Unable to load skip reasons');
+      const payload = await parseApiResponse<{ skipReasons?: SkipReason[] }>(
+        response,
+        'Unable to load skip reasons',
+      );
       setRows(payload.skipReasons ?? []);
       setError('');
     } catch (err) { setError(err instanceof Error ? err.message : 'Unable to load skip reasons'); } finally { setLoading(false); }
@@ -52,8 +55,7 @@ export function AdminSkipReasons({ onToast }: { onToast: (message: string) => vo
     setSaving(true); setError('');
     try {
       const response = await fetch('/api/admin/skip-reasons', { method: editingId ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...(editingId ? { id: editingId, isActive } : {}), name, sortOrder: Number(sortOrder) || 0 }) });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Unable to save skip reason');
+      await parseApiResponse<Record<string, unknown>>(response, 'Unable to save skip reason');
       onToast(editingId ? 'Skip reason updated.' : 'Skip reason created.');
       reset();
       await load();
@@ -63,8 +65,12 @@ export function AdminSkipReasons({ onToast }: { onToast: (message: string) => vo
   async function remove(id: string) {
     if (!window.confirm('Delete this skip reason? Historical reasons cannot be deleted.')) return;
     const response = await fetch(`/api/admin/skip-reasons?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-    const payload = await response.json();
-    if (!response.ok) { setError(payload.error ?? 'Unable to delete skip reason'); return; }
+    try {
+      await parseApiResponse<Record<string, unknown>>(response, 'Unable to delete skip reason');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to delete skip reason');
+      return;
+    }
     onToast('Skip reason deleted.');
     await load();
   }
@@ -83,8 +89,10 @@ export function AdminShopConfig({ onToast }: { onToast: (message: string) => voi
   useEffect(() => {
     let active = true;
     void fetch('/api/admin/config', { cache: 'no-store' }).then(async (response) => {
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Unable to load salon settings');
+      const payload = await parseApiResponse<{ shop?: ShopConfig }>(
+        response,
+        'Unable to load salon settings',
+      );
       if (active && payload.shop) {
         const nextForm: ShopConfig = { timezone: payload.shop.timezone, openingTime: payload.shop.openingTime, closingTime: payload.shop.closingTime, currency: payload.shop.currency, verifiedSessionTtlMin: payload.shop.verifiedSessionTtlMin, roundRobinEnabled: payload.shop.roundRobinEnabled };
         setForm(nextForm);
@@ -121,8 +129,10 @@ export function AdminShopConfig({ onToast }: { onToast: (message: string) => voi
     setSaving(true); setError('');
     try {
       const response = await fetch('/api/admin/config', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(form) });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Unable to save salon settings');
+      const payload = await parseApiResponse<{ shop?: ShopConfig }>(
+        response,
+        'Unable to save salon settings',
+      );
       onToast('Salon settings updated.');
       const nextForm: ShopConfig = payload.shop ? { timezone: payload.shop.timezone, openingTime: payload.shop.openingTime, closingTime: payload.shop.closingTime, currency: payload.shop.currency, verifiedSessionTtlMin: payload.shop.verifiedSessionTtlMin, roundRobinEnabled: payload.shop.roundRobinEnabled } : form;
       setForm(nextForm);

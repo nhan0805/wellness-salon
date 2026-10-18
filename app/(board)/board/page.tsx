@@ -9,6 +9,7 @@ import { PinKeypad } from '@/src/components/pin-keypad';
 import { SignOutButton } from '@/src/components/sign-out-button';
 import SafariLoginLink from '@/src/components/safari-login-link';
 import { useDialogFocus } from '@/src/components/use-dialog-focus';
+import { getApiErrorMessage, parseApiResponse } from '@/src/client/api-response';
 import type { AccountViewer } from '@/src/domain/viewer';
 import { DEFAULT_TIMEZONE } from '@/src/domain/locale-options';
 import { BOARD_POLL_INTERVAL_MS, BOARD_STALE_AFTER_MS } from '@/src/domain/realtime';
@@ -188,8 +189,7 @@ export default function BoardPage() {
         lastSuccessAtRef.current = Date.now();
         return;
       }
-      if (!response.ok) throw new Error('Unable to load the live board');
-      const nextBoard = await response.json() as BoardState;
+      const nextBoard = await parseApiResponse<BoardState>(response, 'Unable to load the live board');
       if (requestSequence !== requestSequenceRef.current) return;
       if (nextBoard.version < latestVersionRef.current) return;
       latestVersionRef.current = nextBoard.version;
@@ -202,7 +202,11 @@ export default function BoardPage() {
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return;
       if (requestSequence !== requestSequenceRef.current) return;
-      setBoardError(timedOut ? 'The live queue is taking too long to load. Check the tablet connection and try again.' : error instanceof Error ? error.message : 'Unable to load the live board');
+      setBoardError(
+        timedOut
+          ? 'The live queue is taking too long to load. Check the tablet connection and try again.'
+          : getApiErrorMessage(error, 'Unable to load the live board'),
+      );
     } finally {
       window.clearTimeout(timeoutId);
     }
@@ -308,8 +312,10 @@ export default function BoardPage() {
           idempotencyKey: modal.idempotencyKey,
         }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Action failed');
+      const payload = await parseApiResponse<{
+        appointment?: { code?: string };
+        verifiedStaffSessionExpiresAt?: string | null;
+      }>(response, 'Action failed');
       const selectedStaffName = selectedStaff?.name ?? 'Staff member';
       const returnedExpiry = payload.verifiedStaffSessionExpiresAt ? new Date(payload.verifiedStaffSessionExpiresAt).getTime() : null;
       const nextExpiry = returnedExpiry && Number.isFinite(returnedExpiry) ? returnedExpiry : selectedStaffIsVerified ? activeVerifiedStaff?.expiresAt ?? null : null;
@@ -328,7 +334,7 @@ export default function BoardPage() {
       window.setTimeout(() => setBoardNotice(''), 4200);
     } catch (error) {
       setPin('');
-      setNotice(error instanceof Error ? error.message : 'Action failed');
+      setNotice(getApiErrorMessage(error, 'Action failed'));
     } finally {
       actionSubmitInFlightRef.current = false;
       setLoading(false);

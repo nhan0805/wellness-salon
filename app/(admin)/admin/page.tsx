@@ -45,6 +45,7 @@ import {
   isAbortError,
   RequestTimeoutError,
 } from '@/src/client/fetch-with-timeout';
+import { parseApiResponse } from '@/src/client/api-response';
 import { makeAccountViewer, type AccountViewer } from '@/src/domain/viewer';
 import { DEFAULT_TIMEZONE } from '@/src/domain/locale-options';
 import { isAppointmentPaymentReady } from '@/src/domain/payment-readiness';
@@ -319,35 +320,8 @@ const emptyReport: Report = {
 
 const ADMIN_DASHBOARD_REQUEST_TIMEOUT_MS = 10_000;
 
-function getAdminApiError(payload: unknown) {
-  if (!payload || typeof payload !== 'object' || !('error' in payload)) return '';
-  const error = (payload as { error?: unknown }).error;
-  return typeof error === 'string' ? error : '';
-}
-
 async function parseAdminJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
-  const body = await response.text();
-  if (!body.trim()) {
-    throw new Error(
-      response.ok
-        ? `${fallbackMessage}. The server returned an empty response.`
-        : `${fallbackMessage} (HTTP ${response.status}). The server returned an empty response.`,
-    );
-  }
-
-  let payload: unknown;
-  try {
-    payload = JSON.parse(body);
-  } catch {
-    throw new Error(
-      `${fallbackMessage} (HTTP ${response.status}). The server returned an invalid response.`,
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(getAdminApiError(payload) || `${fallbackMessage} (HTTP ${response.status})`);
-  }
-  return payload as T;
+  return parseApiResponse<T>(response, fallbackMessage);
 }
 
 async function fetchAdminDashboardJson<T>(
@@ -361,12 +335,7 @@ async function fetchAdminDashboardJson<T>(
       { cache: 'no-store', signal: parentSignal },
       ADMIN_DASHBOARD_REQUEST_TIMEOUT_MS,
     );
-    const payload = await response.json();
-    if (!response.ok) {
-      const detail = getAdminApiError(payload);
-      throw new Error(`${label} failed (${response.status})${detail ? `: ${detail}` : ''}`);
-    }
-    return payload as T;
+    return await parseAdminJsonResponse<T>(response, `${label} failed`);
   } catch (error) {
     if (error instanceof RequestTimeoutError) {
       throw new Error(
@@ -434,9 +403,9 @@ export default function AdminPage() {
       try {
         const response = await fetch('/api/auth/session', { cache: 'no-store' });
         if (!response.ok) return;
-        const payload = (await response.json()) as {
+        const payload = await parseApiResponse<{
           user?: { email?: string | null; name?: string | null; role?: 'ADMIN' | 'STATION' | null };
-        };
+        }>(response, 'Unable to load the current account');
         const viewer = makeAccountViewer({ ...payload.user, displayName: payload.user?.name });
         if (!disposed && viewer) setAccountViewer(viewer);
       } catch {
@@ -755,8 +724,7 @@ export default function AdminPage() {
           idempotencyKey: `payment-${paymentModal.id}-${method}-${parsedAmount}-${parsedTip}-${parsedCashReceived ?? 'card'}`,
         }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Payment could not be confirmed');
+      await parseAdminJsonResponse(response, 'Payment could not be confirmed');
       setToast(`${paymentModal.code} marked paid via ${method === 'CARD' ? 'card' : 'cash'}.`);
       closePayment();
       await refresh();
@@ -771,8 +739,10 @@ export default function AdminPage() {
     setQueueRepairing(true);
     try {
       const response = await fetch('/api/admin/queue/reconcile', { method: 'POST' });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Queue repair could not be completed');
+      const payload = await parseAdminJsonResponse<{ routedAppointments?: number }>(
+        response,
+        'Queue repair could not be completed',
+      );
       const routedAppointments = payload.routedAppointments ?? 0;
       setToast(
         `Assignment check complete · ${routedAppointments} appointment${routedAppointments === 1 ? '' : 's'} reviewed.`,
@@ -2579,8 +2549,12 @@ function AppointmentsView({
         cache: 'no-store',
         signal: controller.signal,
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Unable to load appointments');
+      const payload = await parseAdminJsonResponse<{
+        appointments?: Appointment[];
+        pagination?: AppointmentPageMeta;
+        summary?: AppointmentSummary;
+        filterOptions?: AppointmentFilterOptions;
+      }>(response, 'Unable to load appointments');
       if (requestId !== dateRequestRef.current) return;
       setRows(payload.appointments ?? []);
       setPagination(
@@ -4158,8 +4132,11 @@ function PaymentsView({
         cache: 'no-store',
         signal: controller.signal,
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Unable to load payment history');
+      const payload = await parseAdminJsonResponse<{
+        appointments?: Appointment[];
+        pagination?: AppointmentPageMeta;
+        summary?: AppointmentSummary;
+      }>(response, 'Unable to load payment history');
       if (requestId !== historyRequestRef.current) return;
       setHistoryRows(payload.appointments ?? []);
       setHistoryPagination(
@@ -4770,8 +4747,10 @@ function PaymentHistoryModal({
           `/api/admin/payments/${encodeURIComponent(appointment.id)}/history`,
           { cache: 'no-store', signal },
         );
-        const nextPayload = await response.json();
-        if (!response.ok) throw new Error(nextPayload.error ?? 'Unable to load payment history');
+        const nextPayload = await parseAdminJsonResponse<PaymentHistoryPayload>(
+          response,
+          'Unable to load payment history',
+        );
         setPayload(nextPayload as PaymentHistoryPayload);
       } catch (fetchError) {
         if (fetchError instanceof DOMException && fetchError.name === 'AbortError') return;
@@ -4849,9 +4828,10 @@ function PaymentHistoryModal({
           idempotencyKey: `payment-adjustment-${appointment.id}-${Date.now()}`,
         }),
       });
-      const responsePayload = await response.json();
-      if (!response.ok)
-        throw new Error(responsePayload.error ?? 'Payment action could not be completed');
+      const responsePayload = await parseAdminJsonResponse<{ message?: string }>(
+        response,
+        'Payment action could not be completed',
+      );
       setNotice(responsePayload.message ?? 'Payment updated.');
       setReason('');
       setMode('VIEW');

@@ -10,6 +10,8 @@ Cloudflare Workers + D1 (SQLite, canonical runtime and test target), Next.js App
 
 The latest recorded hardening deployment is live at [wellness.n8l.workers.dev](https://wellness.n8l.workers.dev) as Worker version `1a2b699a-e573-450c-bdd6-b82cda87e81e`, deployed from documentation-sync commit `7fb7f55` on application commit `6f379c0`; its post-deploy `/api/health` check returned `status: ok`. GitHub Actions run `38992751463` passed the verification gate before deployment. The Cloudflare Worker + D1 path is the canonical runtime and test target for this handoff. It contains a separate SQLite/D1 schema and local migrations, a Worker-compatible auth boundary, explicit D1 batch branches for critical mutations, a clean bootstrap SQL generator, and a repeatable D1 Worker E2E gate. D1 migrations `0003` and `0004` were applied to the existing production database on 2026-10-17, and the remote migration check reports no pending work. Full production approval remains gated by fault-injection/concurrency evidence, financial storage review, deployed capacity, remote auth/mutation/scheduler smoke, and final owner approval. The owner has confirmed `Asia/Ho_Chi_Minh`; the existing remote D1 data and secrets were preserved and no custom domain or production-data import was used.
 
+The 2026-10-18 release is deployed through `.github/workflows/ci.yml`: push the verified application commit to `main`, let the CI gate pass, and use the resulting GitHub Actions deployment as the production source of truth. Direct deployment from an uncommitted local tree is not part of the release flow.
+
 Local Cloudflare checks:
 
 ```bash

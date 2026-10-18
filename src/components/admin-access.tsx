@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { Edit3, LoaderCircle, LockKeyhole, Plus, RotateCcw, Tags, Trash2, UserCog, X } from 'lucide-react';
 import { InitialsAvatar, SectionHeader, StatusBadge } from '@/src/components/ui';
 import { useDialogFocus } from '@/src/components/use-dialog-focus';
+import { parseApiResponse } from '@/src/client/api-response';
 
 type AccessKind = 'skills' | 'accounts';
 type SkillRecord = { id: string; name: string; staffCount: number; serviceCount: number; createdAt: string };
@@ -29,8 +30,10 @@ export function AdminAccessManagement({ kind, onToast }: { kind: AccessKind; onT
     setError('');
     try {
       const response = await fetch(endpointByKind[kind], { cache: 'no-store' });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error ?? 'Unable to load this section');
+      const payload = await parseApiResponse<{
+        skills?: SkillRecord[];
+        accounts?: Account[];
+      }>(response, 'Unable to load this section');
       if (kind === 'skills') setSkills(payload.skills ?? []);
       if (kind === 'accounts') setAccounts(payload.accounts ?? []);
     } catch (loadError) {
@@ -46,9 +49,10 @@ export function AdminAccessManagement({ kind, onToast }: { kind: AccessKind; onT
 
   async function request(path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown) {
     const response = await fetch(path, { method, headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error ?? 'The operation could not be completed');
-    return payload;
+    return parseApiResponse<Record<string, unknown>>(
+      response,
+      'The operation could not be completed',
+    );
   }
 
   async function submit(path: string, method: 'POST' | 'PATCH' | 'DELETE', body: unknown, message: string) {

@@ -1251,12 +1251,17 @@ textarea:focus-visible {
   display: grid;
   place-items: center;
   width: 46px;
-  height: 46px;
+  min-height: 46px;
+  height: auto;
   border-radius: 12px;
   background: var(--color-peach-soft);
   color: #8d5b42;
   font-family: var(--font-heading);
   font-weight: 700;
+  line-height: 1.2;
+  padding: 5px 4px;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 .queue-item-body {
   grid-column: 2;
@@ -4698,9 +4703,12 @@ p {
 }
 .queue-number {
   width: 52px;
-  height: 52px;
+  min-height: 52px;
+  height: auto;
   border-radius: 15px;
   font-size: 1rem;
+  line-height: 1.18;
+  padding: 6px 5px;
 }
 .queue-item-body strong {
   font-size: 1rem;
@@ -14813,5 +14821,47 @@ p {
     border-left: 0;
     padding-top: 11px;
     padding-left: 0;
+  }
+}
+
+/* Phone reconciliation cards need a full-width reading measure for ownership
+   and state. Keeping these cells in the same two-column grid as the desktop
+   card gives the status badge an auto-sized rail and leaves staff names only a
+   few pixels wide, which makes Safari wrap them one character per line. */
+@media (max-width: 767px) {
+  .past-unresolved-table tr {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'appointment'
+      'actions'
+      'date'
+      'assigned'
+      'status';
+    column-gap: 0;
+  }
+
+  .past-unresolved-table td[data-label='Appointment'],
+  .past-unresolved-table td[data-label='Actions'],
+  .past-unresolved-table td[data-label='Date'],
+  .past-unresolved-table td[data-label='Assigned'],
+  .past-unresolved-table td[data-label='Status'] {
+    grid-column: 1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .past-unresolved-table td[data-label='Assigned'],
+  .past-unresolved-table td[data-label='Status'] {
+    grid-template-columns: minmax(82px, 104px) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .past-unresolved-table td[data-label='Status'] {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .past-unresolved-table td[data-label='Status'] > .status-badge {
+    justify-self: start;
   }
 }

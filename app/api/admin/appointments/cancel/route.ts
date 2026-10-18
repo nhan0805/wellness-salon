@@ -16,7 +16,10 @@ export async function POST(request: Request) {
     try {
       return NextResponse.json(await cancelDbAppointment({ ...parsed.data, adminId: actor.id }));
     } catch (error) {
-      return jsonError(error instanceof Error ? error.message : 'Unable to cancel appointment', 409);
+      const message = error instanceof Error ? error.message : 'Unable to cancel appointment';
+      const response = jsonError(message, /D1 command lock is busy/i.test(message) ? 503 : 409);
+      if (/D1 command lock is busy/i.test(message)) response.headers.set('retry-after', '1');
+      return response;
     }
   });
 }

@@ -1,5 +1,13 @@
 # Implementation changelog
 
+## 2026-10-18 — Historical reconciliation and PIN verification UX
+
+- Added the four-digit PIN auto-submit flow and changed an incorrect PIN response to `Incorrect PIN. Please try again.` while keeping technical request references out of the user-facing message.
+- Reduced historical reconciliation reads to a grouped D1 status query, completed the one-time production review queue, and removed the temporary bulk reconciliation endpoint and script afterward.
+- Preserved the request reference internally for diagnostics and added API-response coverage for the user-facing error behavior.
+
+Verification for this release: `npm run lint`, `npm run typecheck`, the API-response unit test (4 passed), and `npm run test:e2e:d1` (41 passed, 1 intentional skip).
+
 ## 2026-10-15 — Worker D1 request-context and Dashboard snapshot fix
 
 - Removed the module-global Prisma runtime, D1 binding, and cross-request Prisma Promise queue. Each Prisma operation now creates and disconnects a client inside the request-local D1 context.

@@ -25,6 +25,7 @@ import { DEFAULT_SERVICE_ICON_KEY, type ServiceIconKey } from '@/src/domain/serv
 import { PinKeypad } from '@/src/components/pin-keypad';
 import { ServiceIcon, ServiceIconPicker } from '@/src/components/service-icons';
 import { useDialogFocus } from '@/src/components/use-dialog-focus';
+import { parseApiResponse } from '@/src/client/api-response';
 import {
   fetchWithTimeout,
   isAbortError,
@@ -138,6 +139,20 @@ type CustomerHistoryPayload = {
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
 };
 
+type ManagementApiPayload = {
+  attendance?: Attendance[];
+  customers?: Customer[];
+  pagination?: { total?: number };
+  staff?: Staff[];
+  skills?: Skill[];
+  services?: Service[];
+  categories?: ServiceCategory[];
+  skipped?: boolean;
+  reason?: string;
+  closedCount?: number;
+  deferredCount?: number;
+};
+
 type CustomerForm = { name: string; phone: string };
 type StaffForm = { name: string; pin: string; skillIds: string[]; isActive: boolean };
 type ServiceForm = {
@@ -229,8 +244,10 @@ export function AdminManagement({
         { cache: 'no-store', signal: controller.signal },
         ADMIN_MANAGEMENT_REQUEST_TIMEOUT_MS,
       );
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error ?? 'Unable to load this section');
+      const payload = await parseApiResponse<ManagementApiPayload>(
+        response,
+        'Unable to load this section',
+      );
       if (sequence !== loadSequenceRef.current) return;
       if (kind === 'attendance') setAttendance(payload.attendance ?? []);
       if (kind === 'customers') {
@@ -274,7 +291,11 @@ export function AdminManagement({
     };
   }, [load]);
 
-  async function request(path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown) {
+  async function request(
+    path: string,
+    method: 'POST' | 'PATCH' | 'DELETE',
+    body?: unknown,
+  ): Promise<ManagementApiPayload> {
     const response = await fetchWithTimeout(
       path,
       {
@@ -284,9 +305,10 @@ export function AdminManagement({
       },
       ADMIN_MUTATION_REQUEST_TIMEOUT_MS,
     );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error ?? 'The operation could not be completed');
-    return payload;
+    return parseApiResponse<ManagementApiPayload>(
+      response,
+      'The operation could not be completed',
+    );
   }
 
   async function submit(
@@ -1010,8 +1032,10 @@ function CustomerHistoryModal({
           { cache: 'no-store' },
           ADMIN_MANAGEMENT_REQUEST_TIMEOUT_MS,
         );
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error ?? 'Unable to load customer history');
+        const payload = await parseApiResponse<CustomerHistoryPayload>(
+          response,
+          'Unable to load customer history',
+        );
         setData(payload);
       } catch (historyError) {
         setError(

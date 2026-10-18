@@ -48,9 +48,11 @@ import {
   isD1Runtime,
   prisma,
   withD1Lease,
+  withD1PrismaLease,
   withPrismaRuntime,
   type D1DatabaseLike,
   type D1PrismaRuntime,
+  type D1Statement,
 } from '@/src/server/db';
 import { sha256Hex } from '@/src/server/web-crypto';
 import { randomId } from '@/src/server/web-crypto';
@@ -1547,14 +1549,12 @@ async function getDbPastUnresolvedAppointmentsWithClient(
     businessDate: { lt: currentDate },
     status: { in: PAST_UNRESOLVED_STATUSES as AppointmentStatus[] },
   };
-  const [total, statusCounts, orderedRows] = await Promise.all([
-    client.appointment.count({ where }),
-    Promise.all(
-      PAST_UNRESOLVED_STATUSES.map(async (status) => ({
-        status,
-        count: await client.appointment.count({ where: { ...where, status } }),
-      })),
-    ),
+  const [statusCounts, orderedRows] = await Promise.all([
+    client.appointment.groupBy({
+      by: ['status'],
+      where,
+      _count: { _all: true },
+    }),
     client.appointment.findMany({
       where,
       select: { id: true },
@@ -1580,7 +1580,10 @@ async function getDbPastUnresolvedAppointmentsWithClient(
   const rows = orderedRows
     .map((row) => rowsById.get(row.id))
     .filter((row): row is NonNullable<typeof row> => Boolean(row));
-  const countByStatus = new Map(statusCounts.map((entry) => [entry.status, entry.count]));
+  const countByStatus = new Map(
+    statusCounts.map((entry) => [entry.status, entry._count._all]),
+  );
+  const total = statusCounts.reduce((sum, entry) => sum + entry._count._all, 0);
   const summary: PastUnresolvedSummary = {
     total,
     unserved:
@@ -2443,8 +2446,9 @@ async function confirmDbPaymentD1(input: {
   idempotencyKey?: string;
   adminId?: string;
 }) {
-  return withD1Lease(async (database) => {
-    const shopConfig = await prisma.shopConfig.findUnique({
+  const run = async (database: D1DatabaseLike) => {
+    const db = prisma;
+    const shopConfig = await db.shopConfig.findUnique({
       where: { id: 1 },
       select: {
         timezone: true,
@@ -2456,7 +2460,10 @@ async function confirmDbPaymentD1(input: {
       },
     });
     const businessDate = currentBusinessDate(new Date(), shopConfig?.timezone ?? SHOP_TIMEZONE);
-    const appointment = await prisma.appointment.findUnique({ where: { id: input.appointmentId }, include: appointmentInclude });
+    const appointment = await db.appointment.findUnique({
+      where: { id: input.appointmentId },
+      include: appointmentInclude,
+    });
     if (!appointment) throw new Error('Appointment not found');
     const shouldReleaseCurrentStaff =
       formatBusinessDate(appointment.businessDate) === formatBusinessDate(businessDate);
@@ -2466,11 +2473,14 @@ async function confirmDbPaymentD1(input: {
     const cashDetails = paymentCashDetails({ method: input.method, amount: finalAmount, tip, cashReceived: input.cashReceived });
     const idempotencyScope = `payment:${appointment.id}`;
     const normalizedRequestHash = await requestHash({ appointmentId: input.appointmentId, method: input.method, amount: finalAmount, tip, cashReceived: cashDetails.cashReceived });
-    const prior = input.idempotencyKey ? await prisma.commandReceipt.findUnique({ where: { scope_key: { scope: idempotencyScope, key: input.idempotencyKey } } }) : null;
+    const prior = input.idempotencyKey ? await db.commandReceipt.findUnique({ where: { scope_key: { scope: idempotencyScope, key: input.idempotencyKey } } }) : null;
     if (prior) {
       if (prior.requestHash && prior.requestHash !== normalizedRequestHash) throw new Error('This payment key was already used for different payment details');
       const stored = prior.response as Prisma.JsonObject;
-      const savedAppointment = await prisma.appointment.findUnique({ where: { id: appointment.id }, include: appointmentInclude });
+      const savedAppointment = await db.appointment.findUnique({
+        where: { id: appointment.id },
+        include: appointmentInclude,
+      });
       return { ok: true, appointment: savedAppointment ? mapAppointment(savedAppointment) : null, message: typeof stored.message === 'string' ? stored.message : 'Payment already confirmed', idempotent: true };
     }
     const appointmentStaffIds = [...new Set([appointment.primaryStaffId, ...appointment.services.map((service) => service.primaryStaffId), ...appointment.supportingStaff.map((staff) => staff.staffId)].filter((staffId): staffId is string => Boolean(staffId)))];
@@ -2493,7 +2503,15 @@ async function confirmDbPaymentD1(input: {
           ),
         );
       if (releaseStatements.length) await database.batch(releaseStatements);
-      const response = { ok: true, appointment: mapAppointment(appointment), message: 'Payment already confirmed' };
+      const snapshot = await db.appointment.findUnique({
+        where: { id: appointment.id },
+        include: appointmentInclude,
+      });
+      const response = {
+        ok: true,
+        appointment: snapshot ? mapAppointment(snapshot) : null,
+        message: 'Payment already confirmed',
+      };
       return response;
     }
     if (!isAppointmentPaymentReady(appointment))
@@ -2503,7 +2521,7 @@ async function confirmDbPaymentD1(input: {
     const payableServices = appointment.services.filter(
       (service) => service.status === AppointmentStatus.COMPLETED,
     );
-    const admin = input.adminId ? await prisma.authUser.findUnique({ where: { id: input.adminId } }) : await prisma.authUser.findFirst({ where: { role: 'ADMIN', isActive: true } });
+    const admin = input.adminId ? await db.authUser.findUnique({ where: { id: input.adminId } }) : await db.authUser.findFirst({ where: { role: 'ADMIN', isActive: true } });
     if (!admin) throw new Error('Admin account not found');
     const paymentId = randomId();
     const nowIso = new Date().toISOString();
@@ -2541,10 +2559,14 @@ async function confirmDbPaymentD1(input: {
         ON CONFLICT(id) DO UPDATE SET state_version = shop_config.state_version + 1, updated_at = excluded.updated_at`, shopConfig?.timezone ?? SHOP_TIMEZONE, shopConfig?.openingTime ?? '09:00', shopConfig?.closingTime ?? '21:00', shopConfig?.verifiedSessionTtlMin ?? 3, shopConfig?.currency ?? 'USD', shopConfig?.roundRobinEnabled ?? true, nowIso, nowIso),
     ];
     await database.batch(statements);
-    const updated = await prisma.appointment.findUnique({ where: { id: appointment.id }, include: appointmentInclude });
+    const updated = await db.appointment.findUnique({
+      where: { id: appointment.id },
+      include: appointmentInclude,
+    });
     const response = { ok: true, appointment: updated ? mapAppointment(updated) : null, message: `Payment confirmed via ${input.method}` };
     return response;
-  });
+  };
+  return withD1Lease(run);
 }
 
 export async function createDbCheckIn(input: {
@@ -2678,7 +2700,8 @@ export async function confirmDbPayment(input: {
   idempotencyKey?: string;
   adminId?: string;
 }) {
-  if (await isD1Runtime()) return confirmDbPaymentD1(input);
+  if (await isD1Runtime())
+    return confirmDbPaymentD1(input);
   const businessDate = await currentDbBusinessDate();
   return prisma.$transaction(async (tx) => {
     await lockShopBusinessDate(tx, businessDate.toISOString());
@@ -2720,7 +2743,7 @@ export async function confirmDbPayment(input: {
         });
         return {
           ok: true,
-          appointment: savedAppointment ? mapAppointment(savedAppointment) : null,
+          appointment: savedAppointment,
           message:
             typeof stored.message === 'string' ? stored.message : 'Payment already confirmed',
           idempotent: true,
@@ -4090,7 +4113,8 @@ async function resolvePastAppointmentD1(
   input: PastAppointmentResolutionInput,
   currentBusinessDate: Date,
 ) {
-  return withD1Lease(async (database) => {
+  const run = async (database: D1DatabaseLike) => {
+    const db = prisma;
     const scope = `past-resolve:${input.appointmentId}:${input.appointmentServiceId ?? 'auto'}`;
     const normalizedRequestHash = await requestHash({
       appointmentId: input.appointmentId,
@@ -4100,13 +4124,13 @@ async function resolvePastAppointmentD1(
       reason: input.reason.trim(),
       confirmed: input.confirmed === true,
     });
-    const appointment = await prisma.appointment.findUnique({
+    const appointment = await db.appointment.findUnique({
       where: { id: input.appointmentId },
       include: appointmentInclude,
     });
     if (!appointment) throw new Error('Appointment not found');
     if (input.idempotencyKey) {
-      const prior = await prisma.commandReceipt.findUnique({
+      const prior = await db.commandReceipt.findUnique({
         where: { scope_key: { scope, key: input.idempotencyKey } },
       });
       if (prior) {
@@ -4114,7 +4138,7 @@ async function resolvePastAppointmentD1(
           throw new Error('This historical resolution key was already used for different details');
         return {
           ok: true,
-          appointment: mapAppointment(appointment),
+          appointment: mapAppointment(appointment as unknown as D1MappedAppointment),
           message: pastAppointmentResolutionMessage(input.action, appointment.code),
           idempotent: true,
         };
@@ -4224,7 +4248,7 @@ async function resolvePastAppointmentD1(
     } else {
       const resolvedStaffId = input.staffId ?? target.primaryStaffId;
       if (!resolvedStaffId) throw new Error('Choose the specialist who completed the service');
-      const resolvedStaff = await prisma.staff.findUnique({
+      const resolvedStaff = await db.staff.findUnique({
         where: { id: resolvedStaffId },
         select: { id: true, name: true },
       });
@@ -4401,7 +4425,7 @@ async function resolvePastAppointmentD1(
       d1BatchChanges(results[appointmentStatementIndex]) !== 1
     )
       throw new Error('Appointment changed before historical resolution could be recorded; retry the command');
-    const updated = await prisma.appointment.findUnique({
+    const updated = await db.appointment.findUnique({
       where: { id: appointment.id },
       include: appointmentInclude,
     });
@@ -4411,7 +4435,8 @@ async function resolvePastAppointmentD1(
       message: pastAppointmentResolutionMessage(input.action, appointment.code),
       idempotent: false,
     };
-  });
+  };
+  return withD1Lease(run);
 }
 
 export async function resolveDbPastAppointment(input: PastAppointmentResolutionInput) {
@@ -5865,10 +5890,11 @@ async function staffActionD1({
   businessDate: Date;
   scope: string;
   staff: { id: string; name: string };
-}) {
-  return withD1Lease(async (database) => {
+}, databaseOverride?: D1DatabaseLike, clientOverride?: D1PrismaRuntime) {
+  const run = async (database: D1DatabaseLike) => {
+    const db = clientOverride ?? prisma;
     if (input.idempotencyKey) {
-      const prior = await prisma.commandReceipt.findUnique({
+      const prior = await db.commandReceipt.findUnique({
         where: { scope_key: { scope, key: input.idempotencyKey } },
       });
       if (prior) {
@@ -5878,16 +5904,16 @@ async function staffActionD1({
         const appointmentId =
           typeof stored.appointmentId === 'string' ? stored.appointmentId : null;
         const savedAppointment = appointmentId
-          ? await prisma.appointment.findUnique({
+          ? await db.appointment.findUnique({
               where: { id: appointmentId },
-              include: appointmentInclude,
+              select: { code: true },
             })
           : null;
         return {
           ok: true,
           action: input.action,
           staffId: input.staffId,
-          appointment: savedAppointment ? mapAppointment(savedAppointment) : null,
+          appointment: savedAppointment,
           idempotent: true,
           verifiedStaffSessionId: null,
           verifiedStaffSessionExpiresAt: null,
@@ -5895,7 +5921,7 @@ async function staffActionD1({
       }
     }
 
-    const config = await prisma.shopConfig.findUnique({ where: { id: 1 } });
+    const config = await db.shopConfig.findUnique({ where: { id: 1 } });
     const now = new Date();
     const nowIso = d1DateTimeValue(now);
     const sessionId = pin ? randomId() : null;
@@ -5967,7 +5993,7 @@ async function staffActionD1({
 
     if (input.action === 'CHECK_IN' || input.action === 'CHECK_OUT') {
       if (input.action === 'CHECK_OUT') {
-        const blockingService = await prisma.appointmentService.findFirst({
+        const blockingService = await db.appointmentService.findFirst({
           where: {
             appointment: { businessDate },
             status: { in: manualCheckoutBlockingAppointmentStatuses },
@@ -5977,7 +6003,7 @@ async function staffActionD1({
         });
         const blockingAppointment =
           blockingService ??
-          (await prisma.appointmentSupportingStaff.findFirst({
+          (await db.appointmentSupportingStaff.findFirst({
             where: {
               staffId: input.staffId,
               releasedAt: null,
@@ -5991,7 +6017,7 @@ async function staffActionD1({
         if (blockingAppointment)
           throw new Error('Staff cannot check out while assigned to an active turn');
       }
-      const existing = await prisma.attendance.findUnique({
+      const existing = await db.attendance.findUnique({
         where: { staffId_businessDate: { staffId: input.staffId, businessDate } },
       });
       if (input.action === 'CHECK_IN') {
@@ -6042,8 +6068,8 @@ async function staffActionD1({
 
       if (input.action === 'CHECK_IN') {
         const [routingConfig, routingStaff] = await Promise.all([
-          prisma.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
-          staffForBusinessDate(prisma, businessDate),
+          db.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
+          staffForBusinessDate(db, businessDate),
         ]);
         const candidates = routingStaff.map(mapStaff);
         const checkedInCandidate = candidates.find((candidate) => candidate.id === input.staffId);
@@ -6055,7 +6081,7 @@ async function staffActionD1({
           candidates,
           roundRobinEnabled: routingConfig?.roundRobinEnabled ?? true,
         };
-        const waitingAppointments = await prisma.appointment.findMany({
+        const waitingAppointments = await db.appointment.findMany({
           where: {
             businessDate,
             status: {
@@ -6070,7 +6096,7 @@ async function staffActionD1({
           select: { id: true },
         });
         for (const waitingAppointment of waitingAppointments) {
-          const appointment = await prisma.appointment.findUnique({
+          const appointment = await db.appointment.findUnique({
             where: { id: waitingAppointment.id },
             include: appointmentInclude,
           });
@@ -6139,13 +6165,13 @@ async function staffActionD1({
     }
 
     if (!input.appointmentId) throw new Error('Appointment is required');
-    const appointment = await prisma.appointment.findUnique({
+    const appointment = await db.appointment.findUnique({
       where: { id: input.appointmentId },
       include: appointmentInclude,
     });
     if (!appointment) throw new Error('Appointment not found');
     if (['ACCEPT', 'FINISH', 'ADD_SUPPORT', 'CONTINUE_WITH_ME'].includes(input.action)) {
-      const attendance = await prisma.attendance.findUnique({
+      const attendance = await db.attendance.findUnique({
         where: { staffId_businessDate: { staffId: input.staffId, businessDate } },
         select: { status: true },
       });
@@ -6190,7 +6216,7 @@ async function staffActionD1({
         throw new Error(
           'You were explicitly skipped for this service; a manager must override that exclusion first',
         );
-      const continuingStaff = await prisma.staff.findUnique({
+      const continuingStaff = await db.staff.findUnique({
         where: { id: input.staffId },
         select: {
           id: true,
@@ -6335,15 +6361,15 @@ async function staffActionD1({
       const results = (await database.batch(statements)) as D1BatchResult[];
       if (d1BatchChanges(results[serviceUpdateIndex]) !== 1)
         throw new Error('The next service changed before it could be continued; retry the command');
-      const updated = await prisma.appointment.findUnique({
+      const updated = await db.appointment.findUnique({
         where: { id: appointment.id },
-        include: appointmentInclude,
+        select: { code: true },
       });
       return {
         ok: true,
         action: input.action,
         staffId: input.staffId,
-        appointment: updated ? mapAppointment(updated) : null,
+        appointment: updated,
         ...sessionResponse,
       };
     }
@@ -6557,8 +6583,8 @@ async function staffActionD1({
         );
       statements.push(...d1ReleaseStaffStatements(database, businessDate, participatingStaffIds));
       const [routingConfig, routingStaff] = await Promise.all([
-        prisma.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
-        staffForBusinessDate(prisma, businessDate),
+        db.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
+        staffForBusinessDate(db, businessDate),
       ]);
       const routePlan = await d1RouteAppointmentPlan(
         database,
@@ -6579,7 +6605,7 @@ async function staffActionD1({
 
     if (input.action === 'SKIP') {
       const skipReason = input.skipReasonId
-        ? await prisma.skipReason.findFirst({
+        ? await db.skipReason.findFirst({
             where: { id: input.skipReasonId, isActive: true },
             select: { id: true, name: true },
           })
@@ -6646,8 +6672,8 @@ async function staffActionD1({
       currentServiceCopy.status = AppointmentStatus.WAITING;
       currentServiceCopy.primaryStaffId = null;
       const [routingConfig, routingStaff] = await Promise.all([
-        prisma.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
-        staffForBusinessDate(prisma, businessDate),
+        db.shopConfig.findUnique({ where: { id: 1 }, select: { roundRobinEnabled: true } }),
+        staffForBusinessDate(db, businessDate),
       ]);
       const routePlan = await d1RouteAppointmentPlan(
         database,
@@ -6691,14 +6717,15 @@ async function staffActionD1({
     }
     const updated = await prisma.appointment.findUnique({
       where: { id: appointment.id },
-      include: appointmentInclude,
+      select: { code: true },
     });
     return {
       ok: true,
-      appointment: updated ? mapAppointment(updated) : null,
+      appointment: updated,
       ...sessionResponse,
     };
-  });
+  };
+  return databaseOverride ? run(databaseOverride) : withD1Lease(run);
 }
 
 export async function staffActionDb(
@@ -6727,7 +6754,7 @@ export async function staffActionDb(
     await assertDbPinNotLocked(input.staffId);
     if (!(await verifySecret(staff.pinHash, pin))) {
       await recordDbPinAttempt(input.staffId, false);
-      throw new Error('Staff verification failed');
+      throw new Error('Incorrect PIN. Please try again.');
     }
     await recordDbPinAttempt(input.staffId, true);
   } else {
@@ -6747,17 +6774,23 @@ export async function staffActionDb(
   const businessDate = await currentDbBusinessDate();
   const scope = 'staff:' + stationUserId + ':' + input.staffId;
   if (await isD1Runtime())
-    return staffActionD1({
-      input,
-      stationUserId,
-      verifiedSessionId,
-      trustedAdmin,
-      pin,
-      normalizedRequestHash,
-      businessDate,
-      scope,
-      staff,
-    });
+    return withD1PrismaLease(({ client, database }) =>
+      staffActionD1(
+        {
+          input,
+          stationUserId,
+          verifiedSessionId,
+          trustedAdmin,
+          pin,
+          normalizedRequestHash,
+          businessDate,
+          scope,
+          staff,
+        },
+        database,
+        client,
+      ),
+    );
   return prisma.$transaction(async (tx) => {
     await lockShopBusinessDate(tx, businessDate.toISOString());
     if (input.idempotencyKey) {

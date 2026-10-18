@@ -3,12 +3,63 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Check, X } from 'lucide-react';
 import { useDialogFocus } from '@/src/components/use-dialog-focus';
+import { parseApiResponse } from '@/src/client/api-response';
 
 type ServiceRow = { id: string; serviceId: string; sequence: number; serviceName: string; durationMin: number; amount: number; status: string; primaryStaff: { id: string; name: string; initials: string } | null; turnExclusions: Array<{ staffId: string; staffName: string; reason: string; createdAt: string }> };
 type Appointment = { id: string; code: string; customerName: string; status: string; serviceId: string; serviceName: string; amount: number; primaryStaff: { id: string; name: string; initials: string } | null; services: ServiceRow[] };
 type CatalogService = { id: string; name: string; durationMin: number; price: number; requiredSkillIds: string[] };
 type Staff = { id: string; name: string; isActive: boolean; status: string; availability: string };
 type Mode = 'CANCEL' | 'CHANGE_SERVICE' | 'REASSIGN' | 'OVERRIDE_EXCLUSION';
+
+const MANAGER_ACTION_MAX_ATTEMPTS = 3;
+
+function managerActionErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message.trim() : '';
+  if (/D1 command lock is busy|retry the request safely/i.test(message)) {
+    return 'Another update is still processing. Please wait a moment and try again.';
+  }
+  if (/the string did not match the expected pattern|failed to fetch|load failed|networkerror/i.test(message)) {
+    return 'The request could not be completed. Check the connection and try again.';
+  }
+  return message || 'Unable to complete manager action. Try again.';
+}
+
+function shouldRetryManagerAction(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+  return /D1 command lock is busy|retry the request safely|server returned an (?:empty|invalid) response|the string did not match the expected pattern|failed to fetch|load failed|networkerror/i.test(message);
+}
+
+async function parseManagerActionResponse(response: Response) {
+  return parseApiResponse<Record<string, unknown>>(response, 'The manager action failed');
+}
+
+function waitForManagerActionRetry(attempt: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, 250 * 2 ** attempt));
+}
+
+async function postManagerAction(url: string, body: Record<string, unknown>) {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < MANAGER_ACTION_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return await parseManagerActionResponse(response);
+    } catch (error) {
+      lastError = error;
+      if (attempt === MANAGER_ACTION_MAX_ATTEMPTS - 1 || !shouldRetryManagerAction(error)) {
+        throw error;
+      }
+      await waitForManagerActionRetry(attempt);
+    }
+  }
+
+  throw lastError ?? new Error('Unable to complete manager action. Try again.');
+}
 
 export function AdminAppointmentAction({ appointment, mode, currency, onClose, onComplete }: { appointment: Appointment; mode: Mode; currency: string; onClose: () => void; onComplete: (message: string) => void }) {
   const [serviceId, setServiceId] = useState(appointment.services.find((service) => mode === 'OVERRIDE_EXCLUSION' ? service.turnExclusions.length > 0 : !['COMPLETED', 'CANCELLED'].includes(service.status))?.id ?? appointment.services[0]?.id ?? '');
@@ -37,8 +88,16 @@ export function AdminAppointmentAction({ appointment, mode, currency, onClose, o
     if (mode === 'CANCEL' || mode === 'OVERRIDE_EXCLUSION') return;
     const timer = window.setTimeout(() => {
       void Promise.all([
-        mode === 'CHANGE_SERVICE' ? fetch('/api/services', { cache: 'no-store' }).then((response) => response.json()) : Promise.resolve(null),
-        mode === 'REASSIGN' ? fetch('/api/admin/staff', { cache: 'no-store' }).then((response) => response.json()) : Promise.resolve(null),
+        mode === 'CHANGE_SERVICE'
+          ? fetch('/api/services', { cache: 'no-store' }).then((response) =>
+              parseApiResponse<{ services?: CatalogService[] }>(response, 'Unable to load services'),
+            )
+          : Promise.resolve(null),
+        mode === 'REASSIGN'
+          ? fetch('/api/admin/staff', { cache: 'no-store' }).then((response) =>
+              parseApiResponse<{ staff?: Staff[] }>(response, 'Unable to load staff'),
+            )
+          : Promise.resolve(null),
       ]).then(([servicePayload, staffPayload]) => {
         if (servicePayload?.services) {
           const nextCatalog = servicePayload.services as CatalogService[];
@@ -71,11 +130,9 @@ export function AdminAppointmentAction({ appointment, mode, currency, onClose, o
         ? { url: '/api/admin/appointments/reassign', body: { appointmentServiceId: serviceId, staffId, reason, idempotencyKey } }
         : { url: '/api/admin/appointments/override-exclusion', body: { appointmentServiceId: serviceId, staffId: exclusionStaffId, reason, idempotencyKey } };
     try {
-      const response = await fetch(request.url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request.body) });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Unable to complete manager action');
+      await postManagerAction(request.url, request.body);
       onComplete(mode === 'CANCEL' ? `${appointment.code} cancelled.` : mode === 'CHANGE_SERVICE' ? `${appointment.code} service changed.` : mode === 'REASSIGN' ? `${appointment.code} reassigned.` : `Skip exclusion overridden for ${appointment.code}.`);
-    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to complete manager action'); } finally { setSaving(false); }
+    } catch (err) { setError(managerActionErrorMessage(err)); } finally { setSaving(false); }
   }
 
   const title = mode === 'CANCEL' ? 'Cancel appointment' : mode === 'CHANGE_SERVICE' ? 'Change service' : mode === 'REASSIGN' ? 'Reassign service' : 'Override skipped assignment';

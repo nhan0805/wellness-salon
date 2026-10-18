@@ -25,7 +25,17 @@ function normalizePin(value: string, maxLength: number) {
   return value.replace(/\D/g, '').slice(0, maxLength);
 }
 
-export function PinKeypad({ value, onChange, onComplete, label, hint, error, maxLength = 4, disabled = false, autoSubmit = false }: PinKeypadProps) {
+export function PinKeypad({
+  value,
+  onChange,
+  onComplete,
+  label,
+  hint,
+  error,
+  maxLength = 4,
+  disabled = false,
+  autoSubmit = false,
+}: PinKeypadProps) {
   const updateValue = (nextValue: string) => {
     const normalizedValue = normalizePin(nextValue, maxLength);
     const reachedMaxLength = value.length < maxLength && normalizedValue.length === maxLength;
@@ -78,18 +88,28 @@ export function PinKeypad({ value, onChange, onComplete, label, hint, error, max
           <span className="pin-keypad-label">{label}</span>
           {hint ? <span className="pin-keypad-hint">{hint}</span> : null}
         </div>
-        <span className="pin-keypad-count" aria-live="polite">{enteredLabel}</span>
+        <span className="pin-keypad-count" aria-live="polite">
+          {enteredLabel}
+        </span>
       </div>
 
       <div className="pin-keypad-digits" aria-label={enteredLabel} aria-live="polite">
         {Array.from({ length: maxLength }, (_, index) => (
-          <span className={`pin-keypad-digit${index < value.length ? ' is-filled' : ''}`} key={index} aria-hidden="true">
+          <span
+            className={`pin-keypad-digit${index < value.length ? ' is-filled' : ''}`}
+            key={index}
+            aria-hidden="true"
+          >
             {index < value.length ? '•' : ''}
           </span>
         ))}
       </div>
 
-      {error ? <span className="pin-keypad-error" id="pin-keypad-error" role="alert">{error}</span> : null}
+      {error ? (
+        <span className="pin-keypad-error" id="pin-keypad-error" role="alert">
+          {error}
+        </span>
+      ) : null}
 
       <div className="pin-keypad-grid" aria-label="PIN keypad buttons">
         {keypadRows.flat().map((digit) => (
@@ -104,20 +124,41 @@ export function PinKeypad({ value, onChange, onComplete, label, hint, error, max
             {digit}
           </button>
         ))}
-        <button className="pin-keypad-key pin-keypad-key-secondary" type="button" onClick={() => updateValue('')} disabled={disabled || !value} aria-label="Clear PIN">
+        <button
+          className="pin-keypad-key pin-keypad-key-secondary"
+          type="button"
+          onClick={() => updateValue('')}
+          disabled={disabled || !value}
+          aria-label="Clear PIN"
+        >
           <RotateCcw size={18} aria-hidden="true" />
           <span>Clear</span>
         </button>
-        <button className="pin-keypad-key" type="button" onClick={() => updateValue(`${value}0`)} disabled={disabled || value.length >= maxLength} aria-label="Enter 0">
+        <button
+          className="pin-keypad-key"
+          type="button"
+          onClick={() => updateValue(`${value}0`)}
+          disabled={disabled || value.length >= maxLength}
+          aria-label="Enter 0"
+        >
           0
         </button>
-        <button className="pin-keypad-key pin-keypad-key-secondary" type="button" onClick={() => updateValue(value.slice(0, -1))} disabled={disabled || !value} aria-label="Delete last digit">
+        <button
+          className="pin-keypad-key pin-keypad-key-secondary"
+          type="button"
+          onClick={() => updateValue(value.slice(0, -1))}
+          disabled={disabled || !value}
+          aria-label="Delete last digit"
+        >
           <Delete size={20} aria-hidden="true" />
           <span>Delete</span>
         </button>
       </div>
 
-      <span className="pin-keypad-footnote">{autoSubmit ? `Enter all ${maxLength} digits to confirm automatically. ` : ''}Use the number keys and Backspace on desktop.</span>
+      <span className="pin-keypad-footnote">
+        {autoSubmit ? `Enter all ${maxLength} digits to confirm automatically. ` : ''}Use the number
+        keys and Backspace on desktop.
+      </span>
     </div>
   );
 }

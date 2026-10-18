@@ -214,6 +214,32 @@ export async function withD1Lease<T>(operation: (database: D1DatabaseLike) => Pr
   return runD1Transaction(database, () => operation(database));
 }
 
+export async function withD1PrismaLease<T>(
+  operation: (runtime: { client: D1PrismaRuntime; database: D1DatabaseLike }) => Promise<T>,
+) {
+  const runtime = await getRuntime();
+  let operationError: unknown;
+  let release: (() => Promise<void>) | undefined;
+  try {
+    release = await acquireD1Lease(runtime.database);
+    return await operation(runtime);
+  } catch (error) {
+    operationError = error;
+    throw error;
+  } finally {
+    try {
+      if (release) await release();
+    } catch (error) {
+      if (!operationError) throw error;
+    }
+    try {
+      await runtime.client.$disconnect();
+    } catch (error) {
+      if (!operationError) throw error;
+    }
+  }
+}
+
 export async function runD1Batch(statements: D1Statement[]) {
   const database = await getD1Database();
   if (!database) throw new Error('D1 database binding is not available');

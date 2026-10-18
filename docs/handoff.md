@@ -1,6 +1,6 @@
 # Handoff
 
-Last updated: 2026-10-17
+Last updated: 2026-10-18
 
 ## Runtime
 
@@ -16,6 +16,13 @@ The deployed Worker is `https://wellness.n8l.workers.dev`. The latest recorded v
 - The canonical database-backed gate is `npm run test:e2e:d1`: build Worker artifact, apply all four D1 migrations, generate the 101-statement disposable bootstrap, and run the Worker Playwright suite.
 - The latest evidence includes 63/63 unit tests and 37/38 Worker/D1 cases, with one intentional desktop-project skip. Re-run the commands below after meaningful changes.
 - The Admin loading reliability follow-up adds bounded client deadlines, cancellation of superseded loads, stale-response guards, Retry/error states, and a section-aware Dashboard snapshot. Prisma/D1 work is request-scoped, the former cross-request Promise queue and compatibility workaround are removed, and the E2E harness fails on runtime cancellation/cross-request I/O logs. The latest verification is 63/63 unit tests plus 37 passed and one intentional skip in the Worker/D1 E2E gate.
+
+## 2026-10-18 Git-based release
+
+- The release updates the Worker/D1 read paths, completes the historical appointment reconciliation workflow, keeps four-digit PIN entry auto-submitting, and replaces the technical wrong-PIN response with `Incorrect PIN. Please try again.` without exposing a request reference to the user.
+- The historical production queue was independently verified at zero open records across unserved, assignment-gap, interrupted-service, and payment-review categories. Collect records were recorded as card payments with zero tip; review and unfinished `IN_SERVICE` records were cancelled with reason `ok`.
+- The temporary historical bulk endpoint and reconciliation script were removed after the one-time data operation. The GitHub Actions workflow is the authoritative deployment path for this release and runs only after the verified commit is pushed to `main`.
+- Local verification completed with `npm run lint`, `npm run typecheck`, the API-response unit test (4 passed), and `npm run test:e2e:d1` (41 passed, 1 intentional skip).
 
 ## Local workflow
 
@@ -57,7 +64,7 @@ Attendance uses a direct D1 read path for a small, predictable read. Dashboard r
 
 ## Git and deployment handoff
 
-`.github/workflows/ci.yml` runs verification for every push and deploys the Worker only after a successful push to `main`. This workspace has no in-tree `.git`; the attached metadata lives at `/private/tmp/wellness-salon-git`, with `origin` configured for `nhan0805/wellness-salon`. Push the verified commit to `main` to trigger CI and the production Worker job. Do not point local E2E at remote D1 and do not print `.env`.
+`.github/workflows/ci.yml` runs verification for every push and deploys the Worker only after a successful push to `main`. All deployment inputs must be committed and pushed through Git; verify the working tree is clean and the deployed revision matches the intended commit before release. This workspace has no in-tree `.git`; the attached metadata lives at `/private/tmp/wellness-salon-git`, with `origin` configured for `nhan0805/wellness-salon`. Push the verified commit to `main` to trigger CI and the production Worker job. Do not point local E2E at remote D1 and do not print `.env`.
 
 ## Environment and safety
 

@@ -193,6 +193,36 @@ test('past appointment actions stay separate across desktop, tablet, and phone v
     expect(statusMetrics.flexWrap).toBe('nowrap');
     expect(statusMetrics.whiteSpace).toBe('nowrap');
 
+    if (viewport.width <= 560) {
+      const ownershipMetrics = await page
+        .locator('.past-unresolved-table tbody tr')
+        .first()
+        .evaluate((row) => {
+          const card = row.getBoundingClientRect();
+          const assigned = row.querySelector<HTMLElement>("td[data-label='Assigned']");
+          const status = row.querySelector<HTMLElement>("td[data-label='Status']");
+          const assignedValue = assigned?.querySelector<HTMLElement>('span');
+          if (!assigned || !status || !assignedValue) throw new Error('Ownership cells did not render');
+          const assignedBox = assigned.getBoundingClientRect();
+          const statusBox = status.getBoundingClientRect();
+          const styles = getComputedStyle(assignedValue);
+          const computedLineHeight = Number.parseFloat(styles.lineHeight);
+          const fontSize = Number.parseFloat(styles.fontSize);
+          const lineHeight = Number.isFinite(computedLineHeight) ? computedLineHeight : fontSize * 1.2;
+          return {
+            cardWidth: card.width,
+            assignedWidth: assignedBox.width,
+            statusWidth: statusBox.width,
+            sameColumn: Math.abs(assignedBox.left - statusBox.left) < 1,
+            assignedLines: assignedValue.getBoundingClientRect().height / lineHeight,
+          };
+        });
+      expect(ownershipMetrics.assignedWidth).toBeGreaterThan(ownershipMetrics.cardWidth * 0.75);
+      expect(ownershipMetrics.statusWidth).toBeGreaterThan(ownershipMetrics.cardWidth * 0.75);
+      expect(ownershipMetrics.sameColumn).toBeTruthy();
+      expect(ownershipMetrics.assignedLines).toBeLessThan(1.6);
+    }
+
   }
 
   await page.locator('.past-unresolved-review-button').first().click();

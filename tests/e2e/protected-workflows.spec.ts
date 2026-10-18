@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { confirmStaffAction, enterPin, openAdminSection, signIn } from './helpers';
+import { enterPin, openAdminSection, signIn } from './helpers';
 
 async function clearUnfinishedE2EVisits(page: import('@playwright/test').Page) {
   const response = await page.request.get('/api/admin/appointments');
@@ -57,7 +57,6 @@ test('protected tablet workflow completes a turn and payment', async ({ page }) 
   if ((await attendanceButton.textContent())?.includes('Check in')) {
     await attendanceButton.click();
     await enterPin(page, '1234');
-    await confirmStaffAction(page);
   }
   await expect(jenny).toContainText(/Available|Serving a guest/);
 
@@ -73,7 +72,6 @@ test('protected tablet workflow completes a turn and payment', async ({ page }) 
     await expect(accept).toBeVisible();
     await accept.click();
     await enterPin(stationPage, '1234');
-    await confirmStaffAction(stationPage);
     const currentTurn = stationPage.locator('.current-turn-entry').filter({ hasText: code });
     await expect(currentTurn).toBeVisible();
 
@@ -81,7 +79,6 @@ test('protected tablet workflow completes a turn and payment', async ({ page }) 
     await expect(finish).toBeVisible();
     await finish.click();
     await enterPin(stationPage, '1234');
-    await confirmStaffAction(stationPage);
     await expect(currentTurn.getByText('Awaiting payment', { exact: true })).toBeVisible();
   } finally {
     await stationPage.close();
@@ -117,4 +114,59 @@ test('management tablet cancels a selected service with an audit reason', async 
   await page.getByLabel('Reason').fill('Customer changed plans before service');
   await page.getByRole('button', { name: 'Cancel appointment', exact: true }).click();
   await expect(page.getByText(`${code} cancelled.`, { exact: true })).toBeVisible();
+});
+
+test('management cancellation retries a transient D1 lock response', async ({ page }) => {
+  let cancelAttempts = 0;
+  await page.route('**/api/admin/appointments/cancel', async (route) => {
+    cancelAttempts += 1;
+    if (cancelAttempts === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'D1 command lock is busy; retry the request safely.' }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await signIn(page, 'ADMIN');
+  const code = await createKioskVisit(page, 'Cancellation Retry Guest');
+  await page.goto('/admin');
+  await openAdminSection(page, 'Appointments');
+  const row = page.locator('tbody tr').filter({ hasText: code });
+  await expect(row).toBeVisible();
+  await row
+    .getByRole('button', { name: `Open actions for appointment ${code}`, exact: true })
+    .click();
+  await page.getByRole('menuitem', { name: 'Cancel appointment', exact: true }).click();
+  await page.getByLabel('Reason').fill('Customer changed plans before service');
+  await page.getByRole('button', { name: 'Cancel appointment', exact: true }).click();
+
+  await expect(page.getByText(`${code} cancelled.`, { exact: true })).toBeVisible();
+  expect(cancelAttempts).toBe(2);
+});
+
+test('management cancellation explains malformed API responses without leaking browser parser errors', async ({ page }) => {
+  await page.route('**/api/admin/appointments/cancel', (route) =>
+    route.fulfill({ status: 502, contentType: 'text/html', body: '<!doctype html><p>upstream failure</p>' }),
+  );
+
+  await signIn(page, 'ADMIN');
+  const code = await createKioskVisit(page, 'Cancellation Response Guest');
+  await page.goto('/admin');
+  await openAdminSection(page, 'Appointments');
+  const row = page.locator('tbody tr').filter({ hasText: code });
+  await expect(row).toBeVisible();
+  await row
+    .getByRole('button', { name: `Open actions for appointment ${code}`, exact: true })
+    .click();
+  await page.getByRole('menuitem', { name: 'Cancel appointment', exact: true }).click();
+  await page.getByLabel('Reason').fill('Customer changed plans before service');
+  await page.getByRole('button', { name: 'Cancel appointment', exact: true }).click();
+
+  const error = page.locator('.appointment-action-modal .form-error');
+  await expect(error).toContainText('The server returned an invalid response');
+  await expect(error).not.toContainText('The string did not match the expected pattern');
 });
