@@ -1,14 +1,15 @@
 # Cloudflare Free Deployment Guide
 
 **Date:** 2026-10-19
-**Status:** Release commit `227a5dc` passed local and GitHub verification, migration `0005_free_quota_hardening.sql` was applied remotely, and the Worker deploy plus public/authenticated read-only smoke succeeded. Business mutation/scheduler evidence and final production approval remain intentionally owner-gated.
+**Status:** Release commit `9474c0e` passed local and GitHub verification, migration `0005_free_quota_hardening.sql` remains applied remotely, and the Worker deploy plus public/authenticated read-only smoke succeeded. Business mutation/scheduler evidence and final production approval remain intentionally owner-gated.
 
 ## Latest deployment record
 
 - Worker URL: `https://wellness.n8l.workers.dev`
-- Source commit: `227a5dc57de0a9b7085334bbbab03be44b6c390b`
+- Source commit: `9474c0e0cdad901e356227bddd98712c0c8daa14`
 - Trigger: `*/15 * * * *`
-- Deployed with `npm run deploy:vinext` after GitHub Actions run `39184956401` passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (41 passed, 1 intentional skip). The follow-up local WebKit gate also passed 61 tests with 2 intentional skips.
+- Deployed with `npm run deploy:vinext` after GitHub Actions run [39191668530](https://github.com/nhan0805/wellness-salon/actions/runs/39191668530) passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (41 passed, 1 intentional skip).
+- Cloudflare Version ID: `967a657b-d9b7-4e17-bd58-ce9c69e77393`.
 - Post-deploy read-only health check passed for `/api/health`.
 - `npm run smoke:remote` passed 19/19 public and authenticated admin read-only checks, including the initial SSE snapshot.
 - D1 migrations through `0005_free_quota_hardening.sql` are recorded remotely; the post-apply migration check reports no pending migrations.
