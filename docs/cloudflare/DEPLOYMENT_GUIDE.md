@@ -1,16 +1,16 @@
 # Cloudflare Free Deployment Guide
 
 **Date:** 2026-10-19
-**Status:** Warm Editorial Salon OS source commit `77e00a9` passed local and GitHub verification, migration `0005_free_quota_hardening.sql` remains applied remotely, and the Worker deploy plus public/authenticated read-only smoke succeeded. Business mutation/scheduler evidence and final production approval remain intentionally owner-gated.
+**Status:** Previous pastel UI baseline restored from source commit `bdaa0c7`, with the accepted operational/accessibility refinements retained. Migration `0005_free_quota_hardening.sql` remains applied remotely, and the Worker deploy plus public/authenticated read-only smoke succeeded. Business mutation/scheduler evidence and final production approval remain intentionally owner-gated.
 
 ## Latest deployment record
 
 - Worker URL: `https://wellness.n8l.workers.dev`
-- Source commit: `77e00a95b69cc3190eb2b1d855dbd8fa53f5cdce`
+- Source commit: `bdaa0c7b3f91e5d09634f9ec537a79c2f8b29ca8`
 - Trigger: `*/15 * * * *`
-- Deployed with `npm run deploy:vinext` after GitHub Actions run [39217555627](https://github.com/nhan0805/wellness-salon/actions/runs/39217555627) passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (41 passed, 1 intentional skip).
-- Cloudflare Version ID: `45f96ef2-2511-4a59-b14f-1660a9b0d880`.
-- The release includes the Warm Editorial Salon OS visual layer across Home, Kiosk, Board, Admin, and Sign-in; no API or D1 schema contract changed.
+- Deployed with `npm run deploy:vinext` after GitHub Actions run [39221692889](https://github.com/nhan0805/wellness-salon/actions/runs/39221692889) passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (41 passed, 1 intentional skip).
+- Cloudflare Version ID: `300c9ec4-81e8-4ff6-bfd5-d89bc9b10225`.
+- The release restores the previous pastel visual baseline across Home, Kiosk, Board, Admin, and Sign-in; accepted operational/accessibility refinements remain, and no API or D1 schema contract changed.
 - Post-deploy read-only health check passed for `/api/health`.
 - `npm run smoke:remote` passed 19/19 public and authenticated admin read-only checks, including the initial SSE snapshot.
 - D1 migrations through `0005_free_quota_hardening.sql` are recorded remotely; the post-apply migration check reports no pending migrations.
