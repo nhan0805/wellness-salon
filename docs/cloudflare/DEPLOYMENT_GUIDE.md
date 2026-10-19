@@ -1,7 +1,7 @@
 # Cloudflare Free Deployment Guide
 
 **Date:** 2026-10-19
-**Status:** Release commit `e4ec299` passed local verification and is ready for the Git-based production workflow. Remote migration `0005_free_quota_hardening.sql` and the resulting Worker deploy are the remaining release actions. Full remote auth/mutation/scheduler evidence and final production approval remain open.
+**Status:** Release commit `3e7f853` passed local and GitHub verification, migration `0005_free_quota_hardening.sql` was applied remotely, and the Worker deploy plus health check succeeded. Full remote auth/mutation/scheduler evidence and final production approval remain open.
 
 ## Latest deployment record
 
@@ -11,7 +11,7 @@
 - Trigger: `*/15 * * * *`
 - Deployed with `npm run deploy:vinext` on 2026-10-17 after GitHub Actions run `38992751463` passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (37 passed, 1 intentional skip).
 - Post-deploy read-only health check passed for `/api/health`.
-- D1 migrations through `0004_p0_hardening.sql` are already recorded remotely. `0005_free_quota_hardening.sql` is the reviewed pending migration for release commit `e4ec299`.
+- D1 migrations through `0005_free_quota_hardening.sql` are recorded remotely; the post-apply migration check reports no pending migrations.
 - The existing remote D1 schema/data were preserved; this deployment did not delete/reset D1, create a custom domain, or import production data.
 - This is a workers.dev deployment, not a claim that every production sign-off gate is complete.
 
@@ -39,7 +39,7 @@ The following steps are for the owner/operator after the D1 command port, tests,
 
 1. Authenticate to Cloudflare through the secure interactive Wrangler flow. Do not paste or request tokens in chat.
 2. Create or select the reviewed D1 database with the name wellness-salon and record the generated database ID. Do not import production data.
-3. Apply the reviewed migrations to the remote database before activating release commit `e4ec299`:
+3. Apply the reviewed migrations to the remote database before activating a future schema-dependent release:
 
 ~~~bash
 npx wrangler d1 migrations apply wellness-salon --remote --config=wrangler.production.jsonc
@@ -54,7 +54,7 @@ npx wrangler d1 execute wellness-salon --remote --file=/private/tmp/wellness-sal
 
 6. Upload runtime secrets using the current Wrangler secret command. At minimum: AUTH_SECRET and CRON_SECRET. Never store them in .env committed to the repository.
 7. The Worker configuration uses one `*/15 * * * *` UTC trigger and `PRODUCTION_TIMEZONE_CONFIRMED=true`. The scheduled handler reads the current D1 `ShopConfig.timezone` and `closing_time`, so an Admin UI timezone/closing-time change does not require a code change or trigger redeploy. It disables itself when ShopConfig is missing or invalid.
-8. **Pending for release `e4ec299`:** Push the verified commit to `main`; GitHub Actions is the authoritative deploy path and must deploy the Worker only after the verification gate passes. Use workers.dev only; no custom domain or real production data import is needed.
+8. **Completed 2026-10-19 for release `3e7f853`:** The verified commit was pushed to `main`; GitHub Actions run `39179544598` passed verification and deployed the Worker using workers.dev only. The post-deploy `/api/health` check returned HTTP 200 with `status: ok`; no custom domain or real production data import was used.
 9. **Partially complete:** The deployed URL passed health, service-catalog, board, and kiosk page smoke. Login/session/logout, public board redaction, kiosk mutation/idempotent replay, staff actions, admin payment confirmation, reports, audit history, and error-log verification still require an approved remote test scope.
 10. **Not run:** Verify the scheduler with Cloudflare's local scheduled-event endpoint and then with the deployed Worker. Confirm that a `21:00` close runs at the first quarter-hour after `21:05` local time and retention runs at `03:15` local time for the configured timezone.
 

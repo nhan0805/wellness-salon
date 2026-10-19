@@ -6,7 +6,7 @@ Last updated: 2026-10-19
 
 Wellness Salon is a tablet-first operations app for one nail shop. The only supported runtime is a Cloudflare Worker backed by D1 (SQLite). Local development and E2E use a disposable local D1 database; the Worker `DB` binding is required and a missing binding is a startup/health failure.
 
-The deployed Worker is `https://wellness.n8l.workers.dev`. The previous live version is `1a2b699a-e573-450c-bdd6-b82cda87e81e`; release commit `e4ec299` adds the Free-demo quota hardening and is pending the reviewed remote `0005_free_quota_hardening.sql` migration and GitHub Actions deployment. Local tests must never mutate remote D1.
+The deployed Worker is `https://wellness.n8l.workers.dev`. Release commit `3e7f853` was deployed by GitHub Actions run `39179544598`; remote migration `0005_free_quota_hardening.sql` is applied, and the post-deploy `/api/health` check returned HTTP 200 with `status: ok`. Local tests must never mutate remote D1.
 
 ## Current status
 
@@ -27,7 +27,7 @@ The deployed Worker is `https://wellness.n8l.workers.dev`. The previous live ver
 ## 2026-10-19 Free-demo quota hardening
 
 - Commit `e4ec299` adds bounded D1 routing/reconciliation batches, atomic kiosk rate limiting, indexed service-count filtering, chunked report refund lookups, counter-based appointment codes, lifecycle-aware SSE reconnects, catalog cache headers, and quiet routine-read observability.
-- Migration `0005_free_quota_hardening.sql` adds `service_count`, appointment counters, and a report-supporting audit index. Apply it to remote D1 before the Worker commit is activated.
+- Migration `0005_free_quota_hardening.sql` adds `service_count`, appointment counters, and a report-supporting audit index; it is applied to remote D1 for this release.
 
 ## Local workflow
 
