@@ -1,6 +1,6 @@
 # D1 Migration Plan
 
-**Date:** 2026-10-17
+**Date:** 2026-10-19
 **Status:** Separate D1 schema, five local migrations, Worker bridge, explicit critical-mutation branches, and clean bootstrap workflow are present. Migration `0005` adds the Free-plan quota hardening needed by the current Worker release.
 
 ## Source of truth and safety
