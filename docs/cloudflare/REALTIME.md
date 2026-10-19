@@ -1,7 +1,7 @@
 # Realtime on Workers
 
-**Date:** 2026-10-12  
-**Status:** SSE initial snapshot plus a 15-second bounded polling fallback is implemented; local route and browser recovery smoke passes, while deployed reconnect evidence remains pending.
+**Date:** 2026-10-19
+**Status:** SSE initial snapshot plus a 15-second bounded polling fallback is implemented; local Chromium/tablet/WebKit recovery and deployed read-only SSE initial-snapshot smoke pass. A physical Wi-Fi interruption remains a device-level check.
 
 ## Existing contract
 
@@ -17,7 +17,7 @@ The board uses SSE with reconnect/backoff and a bounded polling fallback. Respon
 
 ## Current evidence
 
-The local D1 runtime serves `/api/board` and public pages, and the browser resilience suite exercises SSE reconnect and board retry behavior. D1 HTTP smoke also verified public redaction and versioned snapshots. Cross-request event fan-out and deployed Worker reconnect behavior remain operator smoke gates.
+The local D1 runtime serves `/api/board` and public pages, and the browser resilience suite exercises SSE reconnect and board retry behavior in Chromium, tablet Chromium, and WebKit. D1 HTTP smoke also verified public redaction and versioned snapshots. The deployed Worker returned a valid SSE initial snapshot during the read-only remote smoke. Cross-request event fan-out is intentionally not assumed; a real Wi-Fi interruption still needs a physical device.
 
 ## Free-tier request budget
 

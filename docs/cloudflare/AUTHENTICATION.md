@@ -1,7 +1,7 @@
 # Authentication Portability
 
-**Date:** 2026-10-12  
-**Status:** Worker/D1 authentication path is locally verified; production sign-in remains gated by the remaining D1 command and remote smoke review.
+**Date:** 2026-10-19
+**Status:** Worker/D1 authentication path is locally verified and the deployed Worker passed admin login/session/logout plus authenticated read-only smoke. Business mutation and final production approval gates remain separate.
 
 ## Behavior preserved
 
@@ -27,7 +27,7 @@ pbkdf2-sha256$310000$<base64url salt>$<base64url digest>
 
 The Worker can verify this format without native modules or dynamic WASM compilation. Existing Argon2id PHC hashes remain readable for account migration and should be rotated when each account next changes its password or PIN. New bootstrap credentials use PBKDF2; no native Argon2 package is required.
 
-tests/unit/security.test.ts covers matching and non-matching PBKDF2 secrets and malformed hashes. The local D1 HTTP smoke also verified successful login, session retrieval, and generic failure handling.
+tests/unit/security.test.ts covers matching and non-matching PBKDF2 secrets and malformed hashes. The local D1 HTTP smoke and deployed read-only smoke verified successful login, session retrieval, logout, and generic failure handling without printing credentials.
 
 ## Fresh D1 bootstrap
 
@@ -37,4 +37,4 @@ Never put AUTH_SECRET, passwords, PINs, database credentials, or API tokens in r
 
 ## Release gate
 
-The local Worker/D1 auth boundary is no longer the blocker. Do not enable production sign-in until the remaining critical D1 mutation paths have explicit atomicity evidence, the approved timezone and secrets are supplied through the operator flow, and an authenticated smoke passes against the fresh remote D1 Worker.
+The local Worker/D1 auth boundary is no longer the blocker, the required Worker secret names are present, and authenticated read-only smoke passes against the deployed Worker. Keep the supervised-pilot gate until critical D1 mutation paths have explicit interruption/concurrency evidence and the owner approves production operation.

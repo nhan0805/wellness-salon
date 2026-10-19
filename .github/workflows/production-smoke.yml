@@ -1,0 +1,25 @@
+name: Production read-only smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Read-only workers.dev smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      REMOTE_SMOKE_BASE_URL: https://wellness.n8l.workers.dev
+      ADMIN_EMAIL: ${{ secrets.REMOTE_SMOKE_ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.REMOTE_SMOKE_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/run-remote-readonly-smoke.mjs

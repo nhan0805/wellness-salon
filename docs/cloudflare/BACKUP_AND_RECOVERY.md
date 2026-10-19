@@ -1,7 +1,7 @@
 # Backup and Recovery
 
-**Date:** 2026-10-13
-**Status:** Procedure documented; the remote D1 database exists and was preserved during the workers.dev deployment. No export or restore was run in this deployment.
+**Date:** 2026-10-19
+**Status:** The local export/restore rehearsal passes against disposable D1. A protected remote export is still an owner-approved operational action and was not copied into the repository.
 
 ## D1 backup policy
 
@@ -15,6 +15,14 @@ Confirm the current CLI syntax before execution. Never print credentials or expo
 
 ## Recovery rehearsal
 
+The repeatable local rehearsal applies all migrations, generates a synthetic bootstrap, exports the local D1 database with schema and data, restores it into a fresh local persistence directory, and compares representative row counts. It never targets remote D1:
+
+```bash
+npm run d1:recovery:rehearsal
+```
+
+Latest rehearsal result: PASS on 2026-10-19; `services=12`, `staff=6`, `auth_users=2`, and `shop_config=1` matched after restore.
+
 1. Export the remote D1 database before schema or application changes.
 2. Verify the export checksum and encrypted storage.
 3. Restore into a fresh disposable D1 database, never over the source as the first test.
@@ -24,5 +32,5 @@ Confirm the current CLI syntax before execution. Never print credentials or expo
 
 ## Current state
 
-The remote `wellness-salon` D1 database and required Wrangler secrets exist; its schema and operational row counts were checked read-only before deployment. No D1 export, backup bucket, restore rehearsal, or production-data reset was performed.
+The remote `wellness-salon` D1 database and required Wrangler secrets exist; its schema and operational row counts were checked read-only before deployment. `AUTH_SECRET` and `CRON_SECRET` are present as Worker secrets. No production-data export was downloaded by this task, no backup bucket was configured, and no production-data reset was performed. Before a schema change, the owner/operator must run the remote export with restricted file permissions and record its checksum outside Git.
 

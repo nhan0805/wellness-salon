@@ -11,6 +11,7 @@ const port = process.env.PLAYWRIGHT_PORT ?? '3001';
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;
 const useExistingServer = Boolean(process.env.PLAYWRIGHT_BASE_URL);
 const persistTo = process.env.D1_TEST_PERSIST_TO ?? '.wrangler/d1-test';
+const includeWebkit = process.env.PLAYWRIGHT_WEBKIT === '1';
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -21,11 +22,18 @@ export default defineConfig({
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL,
+    // Route-interception tests must see fetches made by the page. WebKit can
+    // register the PWA service worker early enough to otherwise bypass
+    // page.route(), making retry/error assertions observe the wrong request.
+    serviceWorkers: 'block',
     trace: 'on-first-retry',
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'], launchOptions } },
     { name: 'tablet', use: { ...devices['iPad (gen 7)'], browserName: 'chromium', launchOptions } },
+    ...(includeWebkit
+      ? [{ name: 'webkit', use: { ...devices['iPad (gen 7)'], browserName: 'webkit' as const } }]
+      : []),
   ],
   webServer: useExistingServer
     ? undefined

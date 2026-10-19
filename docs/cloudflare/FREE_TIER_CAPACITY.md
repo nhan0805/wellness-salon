@@ -1,7 +1,7 @@
 # Cloudflare Free-Tier Capacity
 
-**Date:** 2026-10-13  
-**Status:** Conservative single-salon model completed; production usage must still be observed on the deployed workers.dev Worker.
+**Date:** 2026-10-19
+**Status:** Conservative single-salon model completed; the deployed Worker now has a read-only smoke and scheduled observability runbook, while live quota/CPU metrics still require Cloudflare dashboard review.
 
 ## Published limits to design against
 
@@ -58,4 +58,6 @@ Stay on Free while observed daily metrics remain below the model with at least 3
 ## Safety response
 
 The app uses bounded retries, backpressure, page limits, stale-read tolerance where safe, and explicit degraded/read-only UI states. After deployment, inspect D1 row metrics and Workers logs daily during the first operating week; surface quota pressure before business commands fail. Do not create or upgrade a paid resource as part of this migration.
+
+The automated read-only checks and event/metric review procedure are documented in [OBSERVABILITY.md](OBSERVABILITY.md). They are intentionally not a substitute for Cloudflare account quota alerts.
 

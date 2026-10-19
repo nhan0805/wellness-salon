@@ -1,16 +1,16 @@
 # Cloudflare Free Deployment Guide
 
 **Date:** 2026-10-19
-**Status:** Release commit `3e7f853` passed local and GitHub verification, migration `0005_free_quota_hardening.sql` was applied remotely, and the Worker deploy plus health check succeeded. Full remote auth/mutation/scheduler evidence and final production approval remain open.
+**Status:** Release commit `ccaa647` passed local and GitHub verification, migration `0005_free_quota_hardening.sql` was applied remotely, and the Worker deploy plus public/authenticated read-only smoke succeeded. Business mutation/scheduler evidence and final production approval remain intentionally owner-gated.
 
 ## Latest deployment record
 
 - Worker URL: `https://wellness.n8l.workers.dev`
-- Worker version: `1a2b699a-e573-450c-bdd6-b82cda87e81e`
-- Source commit: `7fb7f55d6e288a37e2c2cb0eb17b62cb57163c31` (documentation sync on top of application commit `6f379c0`)
+- Source commit: `ccaa647409a2e739aa18995337a4d5b3ff8c1017`
 - Trigger: `*/15 * * * *`
-- Deployed with `npm run deploy:vinext` on 2026-10-17 after GitHub Actions run `38992751463` passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (37 passed, 1 intentional skip).
+- Deployed with `npm run deploy:vinext` after GitHub Actions run `39179862313` passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (41 passed, 1 intentional skip). The follow-up local WebKit gate also passed 61 tests with 2 intentional skips.
 - Post-deploy read-only health check passed for `/api/health`.
+- `npm run smoke:remote` passed 19/19 public and authenticated admin read-only checks, including the initial SSE snapshot.
 - D1 migrations through `0005_free_quota_hardening.sql` are recorded remotely; the post-apply migration check reports no pending migrations.
 - The existing remote D1 schema/data were preserved; this deployment did not delete/reset D1, create a custom domain, or import production data.
 - This is a workers.dev deployment, not a claim that every production sign-off gate is complete.
@@ -55,8 +55,8 @@ npx wrangler d1 execute wellness-salon --remote --file=/private/tmp/wellness-sal
 6. Upload runtime secrets using the current Wrangler secret command. At minimum: AUTH_SECRET and CRON_SECRET. Never store them in .env committed to the repository.
 7. The Worker configuration uses one `*/15 * * * *` UTC trigger and `PRODUCTION_TIMEZONE_CONFIRMED=true`. The scheduled handler reads the current D1 `ShopConfig.timezone` and `closing_time`, so an Admin UI timezone/closing-time change does not require a code change or trigger redeploy. It disables itself when ShopConfig is missing or invalid.
 8. **Completed 2026-10-19 for release `3e7f853`:** The verified commit was pushed to `main`; GitHub Actions run `39179544598` passed verification and deployed the Worker using workers.dev only. The post-deploy `/api/health` check returned HTTP 200 with `status: ok`; no custom domain or real production data import was used.
-9. **Partially complete:** The deployed URL passed health, service-catalog, board, and kiosk page smoke. Login/session/logout, public board redaction, kiosk mutation/idempotent replay, staff actions, admin payment confirmation, reports, audit history, and error-log verification still require an approved remote test scope.
-10. **Not run:** Verify the scheduler with Cloudflare's local scheduled-event endpoint and then with the deployed Worker. Confirm that a `21:00` close runs at the first quarter-hour after `21:05` local time and retention runs at `03:15` local time for the configured timezone.
+9. **Read-only complete:** The deployed URL passed health, service-catalog, board, kiosk page, SSE initial snapshot, login/session/logout, dashboard/config/catalog/staff/attendance/customer/appointment/report reads, and public redaction smoke. Business mutations remain excluded so the smoke cannot create real appointments or payments.
+10. **Operator gate:** Verify a single approved mutation flow, inspect the scheduled-event logs, and configure Cloudflare quota/error notifications. With `Asia/Ho_Chi_Minh` and default `21:00` closing, the current dynamic trigger evaluates closing at `21:15` local and retention at `03:15` local.
 
 ## Non-negotiable safeguards
 

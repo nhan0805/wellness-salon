@@ -1,7 +1,17 @@
 # Cloudflare Migration Test Report
 
-**Date:** 2026-10-17
-**Overall status:** Local Worker/D1 build and the canonical D1 E2E gate are verified. Worker version `1a2b699a-e573-450c-bdd6-b82cda87e81e` from documentation-sync commit `7fb7f55` is deployed to workers.dev, migrations `0003` and `0004` are applied to remote D1 with no pending migrations, and the post-deploy `/api/health` check returned `status: ok`; remote auth/mutation/scheduler evidence, failure-injection, capacity, and final production approval remain open.
+**Date:** 2026-10-19
+**Overall status:** Local Worker/D1 build, the Chromium/tablet/WebKit E2E gate, disposable D1 recovery rehearsal, and authenticated read-only production smoke are verified. Source commit `ccaa647` is deployed to workers.dev, all five migrations are applied to remote D1 with no pending migrations, and the post-deploy `/api/health` check returned `status: ok`; business mutation/scheduler evidence, failure-injection, live capacity, physical-device review, and final production approval remain open. The historical rows below retain their original dates; the follow-up section records the current evidence.
+
+## 2026-10-19 follow-up evidence
+
+| Check | Result |
+| --- | --- |
+| WebKit/iPad emulation | PASS; combined Chromium/tablet/WebKit gate passed 61 cases with two intentional skips. |
+| Disposable D1 export/restore | PASS; `npm run d1:recovery:rehearsal` restored `services=12`, `staff=6`, `auth_users=2`, and `shop_config=1`. |
+| Remote read-only smoke | PASS; `npm run smoke:remote` passed 19/19 public and authenticated admin checks, including the SSE initial snapshot. |
+| Worker secrets | PASS; `AUTH_SECRET` and `CRON_SECRET` are present as secret text names; values were not read or printed. |
+| Scheduled public smoke | ADDED; GitHub Actions runs the public read-only smoke every six hours. Authenticated checks are enabled only when optional repository secrets are configured. |
 
 ## Checks
 

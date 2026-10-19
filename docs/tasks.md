@@ -1,35 +1,34 @@
 # Tasks
 
-Last updated: 2026-10-15
+Last updated: 2026-10-19
 
 ## Backlog
 
-- Complete physical iPad/WebKit, distance readability, Dynamic Type/VoiceOver, real Wi-Fi interruption, offline submission, and modal interaction review.
-- Measure deployed Worker/D1 latency, lease-wait, network, and representative-history behavior; document D1 export/restore rollback.
+- Complete physical iPad, distance readability, Dynamic Type/VoiceOver, real Wi-Fi interruption, offline submission, and modal interaction review. WebKit emulation is now covered by `npm run test:e2e:d1:webkit`.
+- Measure deployed Worker/D1 quota/CPU/latency and representative-history behavior; local D1 export/restore is rehearsed, while protected remote backup remains operator-gated.
 - Fill the remaining scenario gaps: repeated staff actions, in-service/payment-pending cancellation boundaries, session revalidation, stale board versions, and broader closing/retention coverage.
-- Add scheduler retry/alerting guidance and a production deployment example once the deferred operations decision and secrets/domain are approved.
+- Configure scheduler retry/alerting in Cloudflare and keep the production deployment example aligned with [OBSERVABILITY.md](cloudflare/OBSERVABILITY.md).
 - Add production TLS certificate/domain configuration after a human approval artifact.
 - Add remaining Worker/D1 coverage for service-category lifecycle, payment adjustment/correction/refund history, and appointment turn history.
 - Complete D1 rollback/interruption tests and settle the final exact money representation; the critical command branches already use explicit `batch()`/guard/receipt semantics.
 - Broaden tests for the custom Worker account/session boundary, Worker cron authorization, realtime recovery, timezone/DST behavior, and deployed Free-tier capacity.
-- Restore the remote URL and authentication for the attached Git metadata so branch, diff, and release history can be pushed and audited.
 
 ## Planned
 
 - Run the physical tablet and real-network run sheet from `docs/implementation/TABLET_QA_PLAN.md`.
-- Verify the deployed Worker `/api/health`, closing endpoint, scheduler trigger, and D1 readiness without printing `.env`.
+- Verify the deployed Worker `/api/health`, read-only admin smoke, scheduler trigger, and D1 readiness without printing `.env`; use `npm run smoke:remote` for the safe automated scope.
 - Run `npm run test:e2e:d1` in CI/locally as the canonical database-backed gate; keep the active pipeline on disposable local D1 only.
 - Review production secret handling and ensure scheduler traffic uses a real secret manager.
 - Keep the local D1 workflow repeatable with `npm run test:e2e:d1`, `wrangler.local.jsonc`, the fresh migrations, and disposable bootstrap; do not create or reset additional remote resources without approval.
 
 ## In progress
 
-- Close physical-device, deployed-network, scheduler, and production-approval gates; keep the application at supervised-pilot status until those checks are complete.
+- Close physical-device, deployed-network, scheduler, quota-alert, and production-approval gates; keep the application at supervised-pilot status until those checks are complete.
 
 ## Blocked
 
-- Production TLS/domain/merchant, traffic-cutover, and rollback work remains blocked on human approval gates; the initial workers.dev deployment is already recorded.
-- D1 production cutover remains blocked on transaction/rollback, money, auth, full concurrency, and deployed Worker evidence; the local lease smoke and scoped workers.dev smoke are not release approval.
+- Production TLS/domain/merchant, traffic-cutover, and rollback work remains blocked on human approval gates; workers.dev is live and Git-based deployment is working.
+- D1 production mutation cutover remains blocked on interruption/rollback, money, full concurrency, deployed scheduler/capacity evidence, and owner approval; the read-only workers.dev smoke is not a mutation approval.
 
 ## Completed
 - [x] Bounded Admin loading: 10/15-second client deadlines, superseded-request cancellation, stale-response guards, Retry/error states, partial Dashboard refreshes, direct D1 Attendance reads, and an authenticated Attendance E2E smoke.

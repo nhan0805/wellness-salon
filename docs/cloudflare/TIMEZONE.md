@@ -1,7 +1,7 @@
 # Timezone and Scheduling
 
-**Date:** 2026-10-13  
-**Status:** Owner confirmed `Asia/Ho_Chi_Minh`; the Worker uses one UTC quarter-hour trigger and reads the current D1 timezone before deciding whether to run a job.
+**Date:** 2026-10-19
+**Status:** Owner confirmed `Asia/Ho_Chi_Minh`; the Worker uses one UTC quarter-hour trigger and reads the current D1 timezone before deciding whether to run a job. Local mapping/authorization tests and deployed read-only smoke pass; event-level scheduler execution remains operator-gated.
 
 ## Configuration rule
 
@@ -11,7 +11,7 @@ The prior Vietnam fallback was removed from runtime defaults. The owner has now 
 
 ## Required gate
 
-Before enabling production traffic/scheduler operations, the operator must validate and preserve `Asia/Ho_Chi_Minh` in the deployed D1 ShopConfig row. The Worker must refuse or safely disable scheduled jobs when the timezone is missing/invalid or when `PRODUCTION_TIMEZONE_CONFIRMED` is false. No password, token, or secret is requested in this document.
+Before unattended scheduler operations, the operator must validate and preserve `Asia/Ho_Chi_Minh` in the deployed D1 ShopConfig row, inspect one Cloudflare scheduled-event log, and configure an alert destination. The Worker must refuse or safely disable scheduled jobs when the timezone is missing/invalid or when `PRODUCTION_TIMEZONE_CONFIRMED` is false. No password, token, or secret is requested in this document.
 
 ## Covered behavior
 
@@ -21,7 +21,7 @@ The port must verify opening/closing boundaries, business dates, retention cutof
 
 - Added `DEFAULT_TIMEZONE = 'UTC'` as a documented bootstrap value.
 - Updated D1 schema, bootstrap, and empty-state defaults to avoid a hidden Vietnam production assumption.
-- The owner decision is complete and the deployed remote D1 catalog reports `Asia/Ho_Chi_Minh`; a scheduled-event execution check remains open.
+- The owner decision is complete and the deployed remote D1 catalog reports `Asia/Ho_Chi_Minh`; a scheduled-event execution check remains open and must be observed from Cloudflare's scheduler/event tooling rather than invoked as a production data mutation by an automated smoke.
 
 ## Scheduler behavior after a UI change
 

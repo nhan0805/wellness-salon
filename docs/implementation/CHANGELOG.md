@@ -1,5 +1,12 @@
 # Implementation changelog
 
+## 2026-10-19 — Operational verification and Free-demo runbook
+
+- Added public/authenticated read-only production smoke and a six-hour GitHub Actions smoke workflow.
+- Added disposable D1 export/restore rehearsal with representative row-count verification.
+- Added optional iPad/WebKit Playwright coverage and deterministic route interception by blocking service workers in E2E.
+- Synchronized Cloudflare capacity, backup/recovery, realtime, deployment, authentication, handoff, and release-gate documentation.
+
 ## 2026-10-18 — Historical reconciliation and PIN verification UX
 
 - Added the four-digit PIN auto-submit flow and changed an incorrect PIN response to `Incorrect PIN. Please try again.` while keeping technical request references out of the user-facing message.

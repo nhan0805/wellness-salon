@@ -1,10 +1,10 @@
 # Implementation progress
 
-Last updated: 2026-10-15
+Last updated: 2026-10-19
 
 ## Active target
 
-Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test target. Local E2E state is disposable. The Worker is deployed at `https://wellness.n8l.workers.dev`; read-only smoke passed, while authenticated remote behavior, failure-injection, capacity, and final production approval remain open.
+Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test target. Local E2E state is disposable. The Worker is deployed at `https://wellness.n8l.workers.dev`; public and authenticated read-only smoke passed, while business-mutation evidence, failure-injection, live capacity observation, physical-device review, and final production approval remain open.
 
 ## Delivered
 
@@ -16,6 +16,7 @@ Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test tar
 - Tablet/PWA layout, SSE reconnect, bounded polling, public redaction, service categories/icons, multi-skill routing, payment history, and audited corrections/refunds.
 - Admin loading resilience: 10/15-second client deadlines, superseded-request cancellation, stale-response protection, a section-aware Dashboard snapshot, narrow live projections, direct D1 Attendance reads, and response timing diagnostics.
 - Worker/D1 lifecycle hardening: Prisma clients and D1 bindings are request-scoped, the cross-request Prisma Promise queue and compatibility workaround are removed, and the E2E harness rejects runtime cancellation/cross-request I/O signatures.
+- Operational follow-up: the remote read-only smoke, disposable D1 export/restore rehearsal, six-hour public smoke workflow, and optional WebKit/iPad E2E project are now repeatable.
 
 ## Verification evidence
 
@@ -25,7 +26,10 @@ Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test tar
 | `npm run typecheck` | PASS on 2026-10-15 after D1 client generation |
 | `npm test` | 54/54 PASS |
 | `npm run build:vinext` | PASS in the recorded Worker gate |
-| `npm run test:e2e:d1` | 31 passed; one intentional skip |
+| `npm run test:e2e:d1` | 41 passed; one intentional skip |
+| `npm run test:e2e:d1:webkit` | 61 passed; two intentional skips across Chromium, tablet, and WebKit projects |
+| `npm run smoke:remote` | 19/19 public and authenticated read-only checks passed |
+| `npm run d1:recovery:rehearsal` | PASS; representative table counts matched after export/restore |
 | Local D1 migrations/bootstrap | PASS; two migrations and 101 bootstrap statements |
 | Local Worker route/command smoke | PASS for health, auth, kiosk, board, admin, payments, closing, retention, and resilience scope |
 | `npx cf deploy --dry-run` | PASS in the recorded deployment gate |
@@ -34,9 +38,9 @@ Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test tar
 ## Open gates
 
 - D1 crash/interruption and broader concurrent mutation assertions.
-- Deployed Worker auth/mutation/SSE/scheduler smoke and Free-tier CPU/latency observation.
-- Physical iPad/WebKit, real Wi-Fi interruption, offline submission, Dynamic Type, and VoiceOver review.
-- D1 export/restore rehearsal, scheduler alerting, production secrets/domain/TLS, and owner approval.
+- Approved deployed Worker mutation/scheduler smoke and Free-tier CPU/latency observation.
+- Physical iPad, real Wi-Fi interruption, offline submission, Dynamic Type, and VoiceOver review. WebKit emulation now passes locally.
+- Protected remote export/restore, scheduler alerting, domain/TLS, and owner approval.
 
 ## Operating rule
 

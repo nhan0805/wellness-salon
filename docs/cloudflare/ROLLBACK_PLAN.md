@@ -1,7 +1,7 @@
 # Rollback Plan
 
-**Date:** 2026-10-13
-**Status:** Prepared runbook; the first workers.dev deployment has occurred, while production traffic cutover remains blocked by incomplete evidence.
+**Date:** 2026-10-19
+**Status:** Prepared runbook; the Git-based workers.dev deployment and read-only smoke are current, while unattended production traffic cutover remains blocked by incomplete mutation/capacity/device evidence.
 
 ## Before production traffic cutover
 
@@ -18,5 +18,5 @@ The current application is not ready for a traffic cutover because remote D1 evi
 
 ## Repository rollback limitation
 
-This workspace does not contain usable writable Git metadata, so a feature branch or commit could not be created. The migration work is left as workspace changes. Do not use destructive resets or delete files to simulate rollback; preserve the current tree and use the documented forward/backup procedures.
+The workspace has no in-tree `.git`, but the attached external Git metadata at `/private/tmp/wellness-salon-git` is writable and the verified branch is pushed to `origin`. Roll back through a committed Git revision and the GitHub Actions workflow; do not use destructive resets or delete files to simulate rollback. Preserve the current tree and use the documented forward/backup procedures.
 

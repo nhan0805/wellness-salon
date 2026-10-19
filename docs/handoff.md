@@ -6,7 +6,7 @@ Last updated: 2026-10-19
 
 Wellness Salon is a tablet-first operations app for one nail shop. The only supported runtime is a Cloudflare Worker backed by D1 (SQLite). Local development and E2E use a disposable local D1 database; the Worker `DB` binding is required and a missing binding is a startup/health failure.
 
-The deployed Worker is `https://wellness.n8l.workers.dev`. Release commit `3e7f853` was deployed by GitHub Actions run `39179544598`; remote migration `0005_free_quota_hardening.sql` is applied, and the post-deploy `/api/health` check returned HTTP 200 with `status: ok`. Local tests must never mutate remote D1.
+The deployed Worker is `https://wellness.n8l.workers.dev`. Source commit `ccaa647` was deployed by GitHub Actions run `39179862313`; remote migration `0005_free_quota_hardening.sql` is applied, the post-deploy `/api/health` check returned HTTP 200 with `status: ok`, and the authenticated read-only smoke passed 19/19 checks. Local tests must never mutate remote D1.
 
 ## Current status
 
@@ -14,7 +14,7 @@ The deployed Worker is `https://wellness.n8l.workers.dev`. Release commit `3e7f8
 - The Worker auth boundary uses Web Crypto PBKDF2/HS256 and D1-backed session/lockout state. Bootstrap credentials remain environment-only.
 - Critical mutation paths use D1 batches, predicates, leases, command receipts, and audit rows. D1 is not treated as a rollback transaction boundary; interruption and concurrency evidence remain release gates.
 - The canonical database-backed gate is `npm run test:e2e:d1`: build Worker artifact, apply all five D1 migrations, generate the 101-statement disposable bootstrap, and run the Worker Playwright suite.
-- The latest evidence includes 67/67 unit/integration tests and 41/42 Worker/D1 cases, with one intentional desktop-project skip. Re-run the commands below after meaningful changes.
+- The latest evidence includes 67/67 unit/integration tests, 41 Worker/D1 cases with one intentional desktop-project skip, and 61 cases across the combined Chromium/tablet/WebKit gate with two intentional skips. The disposable D1 recovery rehearsal and 19/19 remote read-only smoke also pass. Re-run the commands below after meaningful changes.
 - The Admin loading reliability follow-up adds bounded client deadlines, cancellation of superseded loads, stale-response guards, Retry/error states, and a section-aware Dashboard snapshot. Prisma/D1 work is request-scoped, the former cross-request Promise queue and compatibility workaround are removed, and the E2E harness fails on runtime cancellation/cross-request I/O logs. The latest verification is 63/63 unit tests plus 37 passed and one intentional skip in the Worker/D1 E2E gate.
 
 ## 2026-10-18 Git-based release
@@ -28,6 +28,13 @@ The deployed Worker is `https://wellness.n8l.workers.dev`. Release commit `3e7f8
 
 - Commit `e4ec299` adds bounded D1 routing/reconciliation batches, atomic kiosk rate limiting, indexed service-count filtering, chunked report refund lookups, counter-based appointment codes, lifecycle-aware SSE reconnects, catalog cache headers, and quiet routine-read observability.
 - Migration `0005_free_quota_hardening.sql` adds `service_count`, appointment counters, and a report-supporting audit index; it is applied to remote D1 for this release.
+
+## 2026-10-19 Operational verification follow-up
+
+- Added `npm run smoke:remote` for public and authenticated admin read-only production checks; it does not create appointments or payments.
+- Added `npm run d1:recovery:rehearsal` for a disposable D1 export/restore rehearsal.
+- Added optional WebKit/iPad E2E coverage and blocked service workers in route-interception tests so Safari-like retry/error assertions are deterministic.
+- Added a six-hour public smoke workflow and [OBSERVABILITY.md](cloudflare/OBSERVABILITY.md) for quota, Worker log, D1 metrics, and scheduler review.
 
 ## Local workflow
 
@@ -77,10 +84,10 @@ Use `.env.example` as the variable inventory and keep actual `.env` values priva
 
 ## Open gates
 
-- Physical iPad/WebKit, real-network interruption, Dynamic Type/VoiceOver, and offline behavior.
+- Physical iPad, real-network interruption, Dynamic Type/VoiceOver, and offline behavior. WebKit emulation passes locally.
 - D1 interruption/failure-injection and broader concurrency evidence for queue, payment, closing, retention, and session paths.
-- Deployed Worker authentication/mutation/SSE/scheduler smoke and Free-tier capacity observation.
-- D1 export/restore rehearsal, production secret handling, domain/TLS, scheduler alerting, and final approval.
+- One approved deployed Worker business mutation, scheduled-event review, and Free-tier capacity observation. Read-only auth/SSE smoke passes.
+- Protected remote export/restore, production domain/TLS, scheduler alerting, money representation review, and final approval. Required Worker secret names are present.
 
 ## Framework note
 

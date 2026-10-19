@@ -1,7 +1,7 @@
 # D1 Concurrency and Invariants
 
-**Date:** 2026-10-13  
-**Status:** Critical D1 mutation branches now use explicit batch/guard/receipt orchestration; production still needs remote evidence and the final account/secret gate.
+**Date:** 2026-10-19
+**Status:** Critical D1 mutation branches use explicit batch/guard/receipt orchestration; local concurrency/replay smoke and deployed authenticated read-only smoke pass. Interruption/failure-injection, broader mutation concurrency, and live capacity evidence remain open.
 
 ## D1 constraint and current orchestration
 
@@ -17,7 +17,7 @@ The explicit D1 branches use D1Database.batch() plus predicates and replay recei
 - business-date direct writes use the same +00:00 DateTime representation as Prisma's D1 adapter;
 - exact money arithmetic is performed in integer minor units at validation and service boundaries.
 
-These branches are the only active write path. Local batch/guard/replay tests and HTTP smoke cover the critical command families, but remote D1 evidence and a production capacity observation remain deployment gates. Do not describe local smoke as a substitute for remote behavior or quota telemetry.
+These branches are the only active write path. Local batch/guard/replay tests and HTTP smoke cover the critical command families, and the deployed read-only smoke covers auth and read projections. Remote business mutation, interruption/rollback, and production capacity observation remain deployment gates. Do not describe local smoke or read-only smoke as a substitute for remote mutation behavior or quota telemetry.
 
 ## Required invariants
 

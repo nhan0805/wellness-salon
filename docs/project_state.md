@@ -1,10 +1,10 @@
 # Project state
 
-Last updated: 2026-10-17
+Last updated: 2026-10-19
 
 ## Cloudflare migration gate — current status
 
-The Cloudflare Free migration is at **local D1 readiness plus the latest workers.dev deployment and remote migration apply**. The official vinext path builds a Worker artifact; the separate D1 schema/migrations power local health, catalog, board, public pages, authentication, kiosk check-in, staff/appointment/admin/payment workflows, and job smoke. Worker version `1a2b699a-e573-450c-bdd6-b82cda87e81e` from documentation-sync commit `7fb7f55` on application commit `6f379c0` is live at `https://wellness.n8l.workers.dev`; migrations `0003` and `0004` are applied to remote D1 with no pending migrations and the post-deploy health check returned `status: ok`. Critical mutation branches now use explicit D1 batches and guards; crash/interruption, full concurrency, remote auth/mutation/SSE/scheduler evidence, and capacity evidence remain open. The owner-confirmed IANA timezone is `Asia/Ho_Chi_Minh`; final production cutover remains owner-gated.
+The Cloudflare Free migration is at **local D1 readiness plus the latest workers.dev deployment, remote migration apply, and authenticated read-only smoke**. The official vinext path builds a Worker artifact; the separate D1 schema/migrations power local health, catalog, board, public pages, authentication, kiosk check-in, staff/appointment/admin/payment workflows, and job smoke. Source commit `ccaa647` is live at `https://wellness.n8l.workers.dev`; all five migrations are applied to remote D1 with no pending migrations, the post-deploy health check returned `status: ok`, and `npm run smoke:remote` passed 19/19 checks. Critical mutation branches now use explicit D1 batches and guards; crash/interruption, full concurrency, business mutation/scheduler evidence, live capacity, physical-device QA, and final production cutover remain owner-gated. The owner-confirmed IANA timezone is `Asia/Ho_Chi_Minh`.
 
 Closing/retention jobs use one guarded `*/15 * * * *` Worker trigger and read the current Admin-configured D1 timezone/closing time before running. Invalid or missing configuration disables them safely; `UTC` remains only the explicit unconfigured bootstrap sentinel. See [`docs/cloudflare/FINAL_REPORT.md`](cloudflare/FINAL_REPORT.md) and the full [`docs/cloudflare/`](cloudflare/) runbook set.
 
@@ -14,11 +14,11 @@ Deliver a tablet-first nail-shop operations system that connects customer self-c
 
 ## Current milestone
 
-V1 functional baseline, iPad-first redesign, reliability hardening, and the follow-up catalog/payment traceability batch are implemented. Cloudflare Worker + D1 is the only runtime and test target; the workers.dev deployment is available for supervised verification, while remote production cutover remains blocked by the open D1 evidence and owner approval gates.
+V1 functional baseline, iPad-first redesign, reliability hardening, Free-tier quota hardening, and operational verification tooling are implemented. Cloudflare Worker + D1 is the only runtime and test target; the workers.dev deployment is available for supervised verification, while unattended production cutover remains blocked by the explicit evidence and owner approval gates.
 
 ## Current sprint
 
-Complete failure-injection/concurrency, scheduler, capacity, and remote Worker/D1 evidence for the explicit D1 command branches, settle money representation, and then request production approval.
+Complete failure-injection/concurrency, approved mutation/scheduler, live capacity, physical-device, and alerting evidence for the explicit D1 command branches, settle money representation, and then request production approval.
 
 ## Current task
 
@@ -89,7 +89,7 @@ Verify the canonical Worker/D1 runtime without weakening BR-01–BR-06, keep the
 
 ## Build and test status
 
-Latest local verification on 2026-10-17: lint and typecheck pass, `npm test` passes 63/63, and `npm run test:e2e:d1` passes 37 tests with one intentional skip after building the Worker and applying all four disposable D1 migrations/bootstrap. The new hardening, responsive, and retry paths pass. Local scheduler authorization, realtime recovery, and responsive queue checks pass. GitHub Actions run `38992751463` passed verification and deployed Worker version `1a2b699a-e573-450c-bdd6-b82cda87e81e`; remote D1 migration verification reports no pending migrations. Cloudflare CPU/quota metrics, full remote auth/mutation/scheduler evidence, and deployed latency evidence remain open. Local tests do not mutate remote D1.
+Latest local verification on 2026-10-19: lint, typecheck, 67/67 unit/integration tests, and the Worker/D1 gate pass 41 cases with one intentional skip. The combined Chromium/tablet/WebKit gate passes 61 cases with two intentional skips; the disposable D1 export/restore rehearsal passes; and `npm run smoke:remote` passes 19/19 public and authenticated admin read-only checks. GitHub Actions run `39179862313` deployed the current workers.dev source; remote D1 migration verification reports no pending migrations. Cloudflare CPU/quota metrics, approved business mutations, scheduler event evidence, physical-device QA, and deployed capacity observation remain open. Local tests do not mutate remote D1.
 
 Detailed evidence and scenario-level gaps are maintained in [`docs/implementation/FINAL_REPORT.md`](implementation/FINAL_REPORT.md), [`docs/implementation/RELEASE_CHECKLIST.md`](implementation/RELEASE_CHECKLIST.md), and [`docs/implementation/TEST_MATRIX.md`](implementation/TEST_MATRIX.md).
 
@@ -111,20 +111,20 @@ Verification evidence from the baseline and the 2026-10-10 hardening run:
 
 ## Open issues
 
-- Physical iPad/WebKit and real-network behavior remain unverified after the standalone PWA switch.
+- Physical iPad and real-network behavior remain unverified after the standalone PWA switch; WebKit emulation now passes locally.
 - A future restricted shell may not bind/probe a local web server; use the in-app browser or a Worker-compatible local process for runtime checks.
 - `POST /api/jobs/closing` requires `CRON_SECRET` or an admin session in every runtime.
 - `scripts/trigger-closing.sh` fails when `CRON_SECRET` is missing.
 - The D1 E2E gate now fails if Worker request-cancellation or cross-request I/O signatures appear. The request-context fix and Dashboard snapshot changes are covered by the latest 31-pass local gate; deployed latency/capacity evidence remains a separate release gate.
-- The workspace still has no `.git` directory; this snapshot is tracked through the attached external Git metadata at `/private/tmp/wellness-salon-git`, with the `origin` remote configured for `nhan0805/wellness-salon`. Push/deploy remains gated by the verified commit and GitHub Actions production checks.
+- The workspace still has no in-tree `.git` directory; this snapshot is tracked through the attached external Git metadata at `/private/tmp/wellness-salon-git`, with the `origin` remote configured for `nhan0805/wellness-salon`. Push/deploy is now working through the verified commit and GitHub Actions production checks.
 
 ## Technical debt
 
-- Complete physical iPad/WebKit, distance readability, Dynamic Type/VoiceOver, real Wi-Fi, offline submission, and modal interaction review.
-- Measure deployed Worker/D1 latency, lease-wait, network, and representative-history behavior; document D1 export/restore rollback.
+- Complete physical iPad, distance readability, Dynamic Type/VoiceOver, real Wi-Fi, offline submission, and modal interaction review. WebKit emulation is covered by the combined local gate.
+- Measure deployed Worker/D1 quota/CPU/latency, lease-wait, network, and representative-history behavior; local D1 export/restore rollback is rehearsed, while protected remote backup remains operator-gated.
 - Expand remaining scenario coverage listed in `docs/implementation/TEST_MATRIX.md`, especially repeated staff actions, session revalidation, stale board versions, and closing/retention paths.
 - Add dedicated DB/E2E coverage for the follow-up category, payment-history, refund, and turn-history paths before treating them as release-gated evidence.
-- Configure scheduler observability/retry/alerting only after the deferred operations decision is reopened.
+- Configure scheduler observability/retry/alerting in the Cloudflare account; the repository runbook and read-only smoke are now in place.
 - Add retention/cleanup policy execution and operator runbook details for expired `VerifiedStaffSession` and old `CommandReceipt` records.
 
 ## Next recommended task

@@ -1,8 +1,8 @@
-# Tablet viewport QA — 2026-10-10
+# Tablet viewport QA — 2026-10-19
 
 ## Scope
 
-The test app ran against disposable local D1 through the Worker-compatible runtime. Chromium viewport emulation was used at 810×1080 (portrait) and 1080×810 (landscape) for the kiosk, public board, sign-in, and authenticated admin dashboard.
+The test app ran against disposable local D1 through the Worker-compatible runtime. Chromium and WebKit viewport emulation were used at 810×1080 (portrait) and 1080×810 (landscape) for the kiosk, public board, sign-in, and authenticated admin dashboard.
 
 The screenshots were captured in `/private/tmp` during the audit:
 
@@ -47,6 +47,6 @@ The vertical page lengths are expected for tablet workflows: kiosk 1,118/1,131px
 
 ## Limitations and next validation
 
-- WebKit was unavailable in the local Playwright cache, so this is Chromium emulation rather than Safari/WebKit or physical iPad hardware.
+- WebKit emulation is now available and passes the combined Worker/D1 gate. It still does not replace physical iPad Safari hardware.
 - Dynamic Type/largest text, VoiceOver, real touch latency, safe-area behavior on a notched device, and Wi-Fi loss/reconnect were not tested.
 - The black circular Next.js development indicator visible in screenshots is tooling chrome, not application UI.

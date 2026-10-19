@@ -25,10 +25,11 @@ Use the salon Wi-Fi in both normal conditions and a controlled interruption. A 5
 ## Evidence already available
 
 - Chromium tablet emulation passed at 810×1080 and 1080×810 with no horizontal overflow and primary controls at least 44px; see [`VIEWPORT_QA.md`](VIEWPORT_QA.md).
+- The combined local Worker/D1 gate now runs the tablet project in Chromium and an optional iPad-sized WebKit project. The latest run passed 61 cases with two intentional skips; WebKit is emulation, not physical iPad evidence.
 - Browser resilience E2E passed 3/3 on the tablet project: transient SSE recovery, deterministic board snapshot network failure plus Retry recovery, and same-key kiosk retry; see [`tests/e2e/resilience.spec.ts`](../../tests/e2e/resilience.spec.ts).
 - Returning-guest kiosk E2E passed 2/2 for the approved full-name/read-only behavior; see [`tests/e2e/kiosk.spec.ts`](../../tests/e2e/kiosk.spec.ts).
 - The local pool-constrained HTTP profile passed 350/350 operations with zero errors using Prisma `connection_limit=3`/`pool_timeout=5`; this is not staging-network evidence.
-- Physical iPad/WebKit, distance readability, real Wi-Fi interruption, Dynamic Type, and offline submission are **NOT RUN** in this environment.
+- Physical iPad, distance readability, real Wi-Fi interruption, Dynamic Type, VoiceOver, and offline submission are **NOT RUN** in this environment. WebKit emulation is covered locally.
 
 ## Manual run sheet for the next device session
 

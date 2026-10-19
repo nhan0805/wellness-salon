@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-19 — Operational verification and Free-demo runbook
+
+- Added a public/authenticated read-only production smoke command and a six-hour GitHub Actions smoke workflow.
+- Added a disposable D1 export/restore rehearsal with representative row-count verification.
+- Added optional iPad/WebKit Playwright coverage and blocked service workers during route-interception tests.
+- Updated Cloudflare quota, backup/recovery, realtime, scheduler, deployment, authentication, handoff, and release-gate documentation with current evidence and explicit operator-only gates.
+
 ## Unreleased — 2026-10-17
 
 - Added D1 migration `0004_p0_hardening.sql` for historical currency snapshots and bounded kiosk rate limiting.

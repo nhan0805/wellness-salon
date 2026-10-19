@@ -12,6 +12,9 @@ The only active database-backed release path is Cloudflare Worker + D1. Local ve
 - [x] Admin reads and mutations have bounded client deadlines, cancellation/stale-response guards, visible Retry/error states, and partial Dashboard refresh handling.
 - [x] `npm run test:e2e:d1` is the repeatable local gate and does not target remote D1.
 - [x] No production D1 reset, custom domain, or remote data import was performed during local verification.
+- [x] `npm run d1:recovery:rehearsal` exports and restores representative disposable D1 data without touching production.
+- [x] `npm run smoke:remote` verifies public and authenticated admin read-only production paths without business mutations.
+- [x] The Worker/D1 E2E suite passes in Chromium, tablet Chromium, and WebKit; route-interception tests block the PWA service worker.
 
 ## Commands
 
@@ -27,10 +30,10 @@ npx cf deploy --dry-run
 ## Remaining approval gates
 
 - [ ] D1 interruption/failure-injection and broader concurrency matrix.
-- [ ] Authenticated remote Worker mutation, SSE recovery, scheduler, and capacity smoke.
-- [ ] D1 export/restore rehearsal and retention/closing operational review.
-- [ ] Physical iPad/WebKit, real-network, offline, accessibility, and PWA review.
-- [ ] Production secrets, domain/TLS, scheduler alerting, and owner approval.
+- [ ] One approved authenticated remote mutation flow, deployed SSE reconnect, scheduler event, and live capacity observation.
+- [x] Disposable D1 export/restore rehearsal; [ ] protected remote export/restore and retention/closing operational review.
+- [ ] Physical iPad, real-network interruption, offline, Dynamic Type/VoiceOver, and installed-PWA review. WebKit emulation is complete.
+- [x] Required Worker secrets are present (`AUTH_SECRET`, `CRON_SECRET`); [ ] domain/TLS, scheduler alerting, and final owner approval.
 
 ## Stop conditions
 

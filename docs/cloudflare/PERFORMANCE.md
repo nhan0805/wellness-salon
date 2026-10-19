@@ -1,7 +1,7 @@
 # Cloudflare Performance Plan
 
-**Date:** 2026-10-16
-**Status:** Worker/D1 functional E2E measured locally; production performance is still not established.
+**Date:** 2026-10-19
+**Status:** Worker/D1 functional E2E and a 19-check authenticated read-only production smoke are measured; production CPU/quota capacity is still not established.
 
 ## Implemented performance pass (2026-10-16)
 
@@ -20,6 +20,8 @@ The local production build reports a 244.86 KB raw / 37.13 KB gzip global CSS as
 - `DURATION_DESC` and payment-date appointment sorts still load matching IDs and sort in memory. Move these to indexed SQL/denormalized sort keys when appointment history grows materially.
 - Customer history and some service-count/search filters still have broad result scans. Keep the existing page limits and add query-level pagination/indexes before high-volume rollout.
 - Measure deployed Worker CPU, D1 latency, response sizes, and 15-second board fallback behavior on representative data. Local loopback E2E proves correctness, not production capacity.
+
+The 2026-10-19 read-only production sample returned HTTP 200 for all 19 checks. Observed wall-clock timings were approximately 66–861 ms, with health at the high end on a cold/remote request. This is a smoke sample, not an SLO or a substitute for Cloudflare CPU/D1 row metrics.
 
 ## Build evidence
 

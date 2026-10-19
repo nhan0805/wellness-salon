@@ -1,10 +1,10 @@
 # Implementation final report
 
-Last updated: 2026-10-15
+Last updated: 2026-10-19
 
 ## Decision
 
-Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development and database-backed verification use disposable local D1. The Worker is deployed at `https://wellness.n8l.workers.dev`; read-only health/catalog/page smoke passed, but full production approval remains open.
+Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development and database-backed verification use disposable local D1. The Worker is deployed at `https://wellness.n8l.workers.dev`; public and authenticated read-only production smoke passed, but full unattended production approval remains open.
 
 ## Delivered
 
@@ -25,7 +25,10 @@ Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development
 | `npm run typecheck` | PASS on 2026-10-15 after D1 client generation |
 | `npm test` | 54/54 PASS |
 | `npm run build:vinext` | PASS in the recorded Worker gate |
-| `npm run test:e2e:d1` | 31 passed; one intentional skip |
+| `npm run test:e2e:d1` | 41 passed; one intentional skip |
+| `npm run test:e2e:d1:webkit` | 61 passed; two intentional skips across Chromium, tablet, and WebKit |
+| `npm run smoke:remote` | 19/19 public and authenticated read-only checks passed |
+| `npm run d1:recovery:rehearsal` | PASS; representative counts matched after local export/restore |
 | Local D1 migrations/bootstrap | PASS; two migrations and 101 bootstrap statements |
 | Local Worker/D1 smoke | PASS for public routes, auth, kiosk, board, admin, payments, jobs, and resilience scope |
 | `npx cf deploy --dry-run` | PASS in the recorded deployment gate |
@@ -34,9 +37,9 @@ Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development
 ## Known limitations
 
 - D1 statements are not a rollback transaction boundary. Failure-injection and broader concurrent mutation evidence are still required.
-- Remote authenticated mutation, SSE recovery, scheduler-event, CPU/latency, and Free-tier capacity evidence is incomplete.
-- Physical iPad/WebKit, real Wi-Fi interruption, offline submission, Dynamic Type, VoiceOver, and full modal interaction review remain open.
-- D1 export/restore rehearsal, scheduler alerting, production secrets/domain/TLS, and owner approval remain open.
+- Remote business mutation, scheduler-event, CPU/latency, and Free-tier capacity evidence is incomplete; the deployed read-only SSE initial snapshot passes.
+- Physical iPad, real Wi-Fi interruption, offline submission, Dynamic Type, VoiceOver, and full modal interaction review remain open; WebKit emulation passes.
+- Disposable D1 export/restore rehearsal and required Worker secret presence pass. Protected remote export/restore, scheduler alerting, production domain/TLS, and owner approval remain open.
 
 ## Next actions
 
