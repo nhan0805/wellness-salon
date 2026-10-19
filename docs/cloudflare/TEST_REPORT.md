@@ -1,7 +1,7 @@
 # Cloudflare Migration Test Report
 
 **Date:** 2026-10-19
-**Overall status:** Local Worker/D1 build, the Chromium/tablet/WebKit E2E gate, disposable D1 recovery rehearsal, and authenticated read-only production smoke are verified. Source commit `ccaa647` is deployed to workers.dev, all five migrations are applied to remote D1 with no pending migrations, and the post-deploy `/api/health` check returned `status: ok`; business mutation/scheduler evidence, failure-injection, live capacity, physical-device review, and final production approval remain open. The historical rows below retain their original dates; the follow-up section records the current evidence.
+**Overall status:** Local Worker/D1 build, the Chromium/tablet/WebKit E2E gate, disposable D1 recovery rehearsal, and authenticated read-only production smoke are verified. Source commit `227a5dc` is deployed to workers.dev, all five migrations are applied to remote D1 with no pending migrations, and the post-deploy `/api/health` check returned `status: ok`; business mutation/scheduler evidence, failure-injection, live capacity, physical-device review, and final production approval remain open. The historical rows below retain their original dates; the follow-up section records the current evidence.
 
 ## 2026-10-19 follow-up evidence
 

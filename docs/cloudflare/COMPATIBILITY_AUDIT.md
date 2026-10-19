@@ -22,7 +22,7 @@ This audit covers the Cloudflare Workers Free + D1 runtime for Wellness Salon. W
 | D1 batch command paths | Partial / broadened | Critical branches now cover check-in, staff actions, payment lifecycle, appointment mutations, reconciliation, closing, retention, and admin CRUD with batches, guards, and receipts. Fault-injection, full concurrency, and remote rollback/retry evidence is still missing. |
 | Money handling | Partial | Validation and application arithmetic use integer minor units; the D1 schema still stores compatibility numeric columns and needs production accounting review. |
 | Timezone/scheduler | Compatible with a guarded dynamic trigger | Owner confirmed `Asia/Ho_Chi_Minh`. One `*/15 * * * *` UTC trigger reads the current D1 `ShopConfig` timezone/closing time, so the Admin UI remains authoritative; invalid or missing configuration fails closed. |
-| Production deployment | Supervised workers.dev deployment | GitHub Actions run `39179862313` deployed source commit `ccaa647`; `npm run smoke:remote` passed 19/19 public and authenticated admin read-only checks, including the initial SSE snapshot. Business mutation/scheduler event and capacity evidence remains open. |
+| Production deployment | Supervised workers.dev deployment | GitHub Actions run `39184956401` deployed source commit `227a5dc`; `npm run smoke:remote` passed 19/19 public and authenticated admin read-only checks, including the initial SSE snapshot. Business mutation/scheduler event and capacity evidence remains open. |
 | Production dependency audit | Pass | Build/seed-only dependencies were moved to devDependencies; the last successful `npm audit --omit=dev --omit=optional` reported 0 vulnerabilities. |
 
 ## Compatibility decision

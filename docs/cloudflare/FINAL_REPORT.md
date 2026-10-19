@@ -35,7 +35,7 @@
 
 ## Deployment state
 
-The Worker source commit `ccaa647` was deployed to `https://wellness.n8l.workers.dev` through GitHub Actions run `39179862313`, with the configured `*/15 * * * *` trigger. Read-only public and authenticated admin smoke passed, including the initial SSE snapshot. The existing remote D1 schema/data and Wrangler secrets were preserved; no D1 reset, custom domain, or production-data import was performed.
+The Worker source commit `227a5dc` was deployed to `https://wellness.n8l.workers.dev` through GitHub Actions run `39184956401`, with the configured `*/15 * * * *` trigger. Read-only public and authenticated admin smoke passed 19/19, including the initial SSE snapshot. The existing remote D1 schema/data and Wrangler secrets were preserved; no D1 reset, custom domain, or production-data import was performed.
 
 ## Recommendation
 
