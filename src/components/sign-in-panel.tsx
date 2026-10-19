@@ -3,7 +3,16 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ArrowRight, Eye, EyeOff, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
+import {
+  ArrowRight,
+  Clock3,
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  LockKeyhole,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
 
 export default function SignInPanel() {
   const router = useRouter();
@@ -54,6 +63,30 @@ export default function SignInPanel() {
       </header>
 
       <div className="sign-in-layout">
+        <section className="sign-in-intro" aria-labelledby="sign-in-welcome-title">
+          <div className="sign-in-kicker"><span aria-hidden="true" /> Salon operations</div>
+          <div className="sign-in-intro-copy">
+            <h1 id="sign-in-welcome-title">Keep every visit <em>in rhythm.</em></h1>
+            <p>
+              A calm workspace for the people who keep the salon moving — from the first check-in
+              to the final payment.
+            </p>
+          </div>
+          <div className="sign-in-intro-points" aria-label="Workspace benefits">
+            <div className="sign-in-intro-point">
+              <span className="sign-in-intro-point-icon"><Sparkles size={16} aria-hidden="true" /></span>
+              <span>Clear queues, shared context</span>
+            </div>
+            <div className="sign-in-intro-point">
+              <span className="sign-in-intro-point-icon"><Clock3 size={16} aria-hidden="true" /></span>
+              <span>Live updates for every station</span>
+            </div>
+            <div className="sign-in-intro-point">
+              <span className="sign-in-intro-point-icon"><ShieldCheck size={16} aria-hidden="true" /></span>
+              <span>Private by design</span>
+            </div>
+          </div>
+        </section>
         <section className="sign-in-side" aria-labelledby="sign-in-form-title">
           <div className="card sign-in-card">
             <div className="sign-in-card-header">

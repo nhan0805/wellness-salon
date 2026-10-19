@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased — 2026-10-19 — UI/UX operational refresh
+## Unreleased — 2026-10-19 — Warm Editorial Salon OS
 
+- Added a second visual redesign pass across Home, Kiosk, Board, Admin, and Sign-in: warm ivory canvas, deep plum anchors, terracotta actions, stronger editorial typography, and clearer surface hierarchy.
+- Added the split Home workspace gateway and branded Sign-in narrative panel without changing authentication, navigation, or API behavior.
+- Added `app/editorial-redesign.css` as an isolated visual layer and updated PWA/browser theme colors to match the new plum/ivory identity.
 - Deployed commit `9474c0e` through GitHub Actions run [39191668530](https://github.com/nhan0805/wellness-salon/actions/runs/39191668530); verification passed 41 Worker/D1 E2E cases with one intentional skip and post-deploy read-only smoke passed 19/19 checks.
 - Kept queue ticket identifiers on one scan line with deliberate narrow-viewport truncation and a full-value title hint.
 - Changed the kiosk action bar to stay in document flow on roomy desktop/tablet layouts and reserve clearance when it becomes sticky on compact screens.

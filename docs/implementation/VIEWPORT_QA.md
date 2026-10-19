@@ -22,6 +22,12 @@ The vertical page lengths are expected for tablet workflows: kiosk 1,118/1,131px
 
 ## Observations
 
+### Visual direction follow-up
+
+- The second pass uses the Warm Editorial Salon OS language across the reviewed routes: ivory canvas, deep plum operational anchors, terracotta primary actions, and distinct sage/lavender state surfaces.
+- Home now uses a split workspace gateway instead of a single centered card; Sign-in uses the same split visual/form rhythm so public and staff entry points feel like one product.
+- The responsive behavior remains contract-first: no horizontal overflow, no API/DB changes, and the existing queue/kiosk regression selectors continue to pass.
+
 ### Customer kiosk
 
 - Portrait shows all four service cards and the disabled Continue CTA in the initial viewport.

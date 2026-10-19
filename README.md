@@ -106,7 +106,7 @@ The repository keeps the current project context in the following files. Read th
 - [Final report](docs/implementation/FINAL_REPORT.md) — implementation handoff and measured verification.
 - [Release checklist](docs/implementation/RELEASE_CHECKLIST.md) — evidence versus release gates.
 - [Test matrix](docs/implementation/TEST_MATRIX.md) — scenario-level pass/partial/not-run status.
-- [UI/UX refresh](docs/implementation/UI_UX_REFRESH.md) — current operational design direction, responsive fixes and manual tablet gates.
+- [UI/UX refresh](docs/implementation/UI_UX_REFRESH.md) — Warm Editorial Salon OS direction, responsive fixes, accessibility decisions and manual tablet gates.
 - [Audit baseline](docs/audits/2026-10-10-nail-salon-mvp-audit.md) — read-only pre-hardening audit.
 
 ## Production notes / human gates
