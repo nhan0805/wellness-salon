@@ -1,20 +1,15 @@
 # UI/UX refresh — 2026-10-19
 
-## Warm Editorial Salon OS — visual redesign
+## Visual redesign rollback — 2026-10-19
 
-The follow-up pass intentionally changes the visual identity, not just spacing:
+The Warm Editorial Salon OS experiment was reverted after owner review. The app is back on the previous pastel visual baseline from the operational refresh, while keeping the functional improvements that were already accepted:
 
-- Replaced the repeated pastel-card treatment with a warm ivory canvas, deep plum navigation/stage surfaces, terracotta primary actions, sage success states, and lavender secondary states.
-- Rebuilt the Home entry card as a split workspace gateway with an editorial display face, a primary check-in action, and a distinct live-queue action.
-- Reworked the Kiosk header, progress rail, category tabs, service cards, selection tray, and confirmation surface so the flow reads as a premium service menu while staying touch-first.
-- Reworked the Board around a dark “current turn” stage, a calmer up-next rail, stronger ticket scan hierarchy, and a clear sync state.
-- Reworked Admin with a dark active navigation rail, warm workbench background, stronger topbar hierarchy, and bento-style KPI surfaces.
-- Added a branded split Sign-in experience with an operational narrative panel and kept the existing authentication form, focus behavior, error messaging, and route logic intact.
-- Added a local-only editorial display fallback and updated PWA/browser theme colors to plum/ivory. No remote font dependency was introduced.
+- queue ticket identifiers remain one scan line on narrow screens;
+- kiosk action-bar positioning and content clearance remain responsive;
+- staff verification countdown announcements remain screen-reader friendly;
+- the existing responsive/accessibility regression coverage remains in place.
 
-The implementation is isolated in `app/editorial-redesign.css`, imported after the existing refinement layer. This keeps the older route-era cascade stable while making the new visual decisions easy to iterate or replace.
-
-The visual redesign was checked with the UI/UX Pro Max design guidance and its local UX/accessibility references. The implementation keeps the project constraints: Lucide icons, no emoji UI, minimum touch targets, visible focus, reduced-motion fallback, and no API/database contract changes.
+The temporary `app/editorial-redesign.css` layer, split Home gateway, branded Sign-in narrative panel, and plum/ivory PWA theme were removed. No API, database, or authentication behavior changed.
 
 ## Mục tiêu
 
@@ -26,7 +21,6 @@ Giữ lại ngôn ngữ pastel ấm, dễ đọc của Wellness Salon nhưng là
 - Kiosk action bar nằm trong normal flow ở desktop/tablet có đủ chiều cao, chỉ sticky ở màn hình compact; khi sticky, catalog giữ thêm clearance để card cuối không bị che.
 - Countdown xác thực staff vẫn cập nhật trực quan mỗi giây nhưng screen reader chỉ nhận thông báo theo mốc phút, dưới một phút và hết hạn.
 - Tách lớp CSS refinement mới tại `app/operations-refinements.css` để các quyết định UI mới không tiếp tục làm phình cascade trong `app/globals.css`.
-- Tách lớp visual redesign mới tại `app/editorial-redesign.css` để thay đổi nhận diện không làm lẫn với các rule responsive vận hành.
 - Giữ motion pulse rất nhẹ cho trạng thái đang sync và tắt hoàn toàn khi `prefers-reduced-motion: reduce`.
 - Thêm regression assertion để mã ticket không quay lại trạng thái wrap dọc trên phone/tablet/landscape.
 - Giữ scheduler guard nhỏ ngay trong Worker entrypoint để Vinext dev runner không phụ thuộc resolver TypeScript ngoài app graph; production bundle và domain scheduler vẫn dùng cùng contract.

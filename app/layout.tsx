@@ -1,6 +1,5 @@
 import './globals.css';
 import './operations-refinements.css';
-import './editorial-redesign.css';
 import type { Metadata, Viewport } from 'next';
 import PWAProvider from '@/src/components/PWAProvider';
 import EnglishFormValidation from '@/src/components/english-form-validation';
@@ -27,7 +26,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#542B42',
+  themeColor: '#E8BFC5',
   colorScheme: 'light',
 };
 
