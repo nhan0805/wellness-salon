@@ -1,15 +1,16 @@
 # Cloudflare Free Deployment Guide
 
 **Date:** 2026-10-19
-**Status:** Release commit `9474c0e` passed local and GitHub verification, migration `0005_free_quota_hardening.sql` remains applied remotely, and the Worker deploy plus public/authenticated read-only smoke succeeded. Business mutation/scheduler evidence and final production approval remain intentionally owner-gated.
+**Status:** Warm Editorial Salon OS source commit `77e00a9` passed local and GitHub verification, migration `0005_free_quota_hardening.sql` remains applied remotely, and the Worker deploy plus public/authenticated read-only smoke succeeded. Business mutation/scheduler evidence and final production approval remain intentionally owner-gated.
 
 ## Latest deployment record
 
 - Worker URL: `https://wellness.n8l.workers.dev`
-- Source commit: `9474c0e0cdad901e356227bddd98712c0c8daa14`
+- Source commit: `77e00a95b69cc3190eb2b1d855dbd8fa53f5cdce`
 - Trigger: `*/15 * * * *`
-- Deployed with `npm run deploy:vinext` after GitHub Actions run [39191668530](https://github.com/nhan0805/wellness-salon/actions/runs/39191668530) passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (41 passed, 1 intentional skip).
-- Cloudflare Version ID: `967a657b-d9b7-4e17-bd58-ce9c69e77393`.
+- Deployed with `npm run deploy:vinext` after GitHub Actions run [39217555627](https://github.com/nhan0805/wellness-salon/actions/runs/39217555627) passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (41 passed, 1 intentional skip).
+- Cloudflare Version ID: `45f96ef2-2511-4a59-b14f-1660a9b0d880`.
+- The release includes the Warm Editorial Salon OS visual layer across Home, Kiosk, Board, Admin, and Sign-in; no API or D1 schema contract changed.
 - Post-deploy read-only health check passed for `/api/health`.
 - `npm run smoke:remote` passed 19/19 public and authenticated admin read-only checks, including the initial SSE snapshot.
 - D1 migrations through `0005_free_quota_hardening.sql` are recorded remotely; the post-apply migration check reports no pending migrations.
