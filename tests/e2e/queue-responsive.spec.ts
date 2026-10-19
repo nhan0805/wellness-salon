@@ -93,6 +93,7 @@ test('queue cards keep service labels readable on iPad portrait and landscape', 
         item: rect(item),
         number: rect(number),
         numberBackground: getComputedStyle(number).backgroundColor,
+        codeLineCount: codeRects.length,
         codeBottom: Math.max(...codeRects.map((bounds) => bounds.bottom)),
         serviceName: rect(serviceName),
         serviceLineHeight: lineHeight,
@@ -100,13 +101,13 @@ test('queue cards keep service labels readable on iPad portrait and landscape', 
         buttons: buttons.map(rect),
       };
     });
-
     expect(metrics.item.left).toBeGreaterThanOrEqual(0);
     expect(metrics.item.right).toBeLessThanOrEqual(metrics.viewportWidth + 1);
     expect(metrics.sideColumns, `${viewport.name} side rail should stay one column`).toBe(1);
     expect(metrics.serviceName.height, `${viewport.name} service name should not wrap per character`).toBeLessThanOrEqual(metrics.serviceLineHeight * 1.5);
     expect(metrics.buttons.every((button) => button.left >= metrics.action.left - 1 && button.right <= metrics.action.right + 1)).toBeTruthy();
     expect(metrics.numberBackground, `${viewport.name} queue code should keep its peach background`).toBe('rgb(255, 240, 232)');
+    expect(metrics.codeLineCount, `${viewport.name} queue code should stay on one scan line`).toBe(1);
     expect(metrics.codeBottom, `${viewport.name} queue code should stay inside its background`).toBeLessThanOrEqual(metrics.number.bottom + 1);
 
     if (viewport.name === 'landscape') {

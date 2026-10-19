@@ -43,6 +43,14 @@ function formatVerificationRemaining(expiresAt: number, now = Date.now()) {
   return `${minutes}:${seconds}`;
 }
 
+function formatVerificationAnnouncement(expiresAt: number, now = Date.now()) {
+  const totalSeconds = Math.max(0, Math.ceil((expiresAt - now) / 1000));
+  if (!totalSeconds) return 'Staff PIN verification has expired.';
+  if (totalSeconds <= 60) return 'Staff PIN verification expires in less than one minute.';
+  const minutes = Math.ceil(totalSeconds / 60);
+  return `Staff PIN verification is active for about ${minutes} minutes.`;
+}
+
 function StaffAttendancePanel({ staff, viewerRole, onAction }: { staff: Staff[]; viewerRole: BoardState['viewerRole']; onAction: (action: AttendanceAction, staffId: string) => void }) {
   const [searchQuery, setSearchQuery] = useState('');
   const presentCount = staff.filter((member) => member.isPresent).length;
@@ -413,7 +421,8 @@ export default function BoardPage() {
           </div>
           <div className="topbar-actions board-heading-actions">
             <span className={`board-last-updated board-sync-indicator board-sync-indicator-${syncStatus.toLowerCase()}`} role="status" aria-live="polite"><span className="board-sync-dot" aria-hidden="true" />{board.at ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: board.shop.timezone }).format(new Date(board.at))}` : 'Waiting for update'} · {syncStatus === 'POLLING' ? 'Syncing' : syncStatus === 'RECONNECTING' ? 'Reconnecting' : 'Stale'}</span>
-            {activeVerifiedStaff ? <span className="board-staff-verification" role="status" aria-live="polite"><ShieldCheck size={15} aria-hidden="true" /> {activeVerifiedStaff.staffName} verified <span aria-hidden="true">· {formatVerificationRemaining(activeVerifiedStaff.expiresAt, verificationNow)}</span></span> : null}
+            {activeVerifiedStaff ? <span className="board-staff-verification"><ShieldCheck size={15} aria-hidden="true" /> <span>{activeVerifiedStaff.staffName} verified</span> <span aria-hidden="true">· {formatVerificationRemaining(activeVerifiedStaff.expiresAt, verificationNow)}</span></span> : null}
+            {verifiedStaffSession ? <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{activeVerifiedStaff ? formatVerificationAnnouncement(activeVerifiedStaff.expiresAt, verificationNow) : 'Staff PIN verification has expired.'}</span> : null}
             <button className="button button-outline button-sm" onClick={loadBoard}><RefreshCcw size={15} aria-hidden="true" /> Refresh</button>
           </div>
         </div>
@@ -491,7 +500,9 @@ export default function BoardPage() {
                         : 'Assigned staff';
                   const totalDuration = services.reduce((total, service) => total + service.durationMin, 0);
                   return <div className="queue-item" key={appointment.id}>
-                    <div className="queue-number">{appointment.code}</div>
+                    <div className="queue-number" title={appointment.code} aria-label={`Ticket ${appointment.code}`}>
+                      {appointment.code}
+                    </div>
                     <div className="queue-item-body">
                       <strong>{appointment.customerName}</strong>
                       <div className="queue-service-list" id={`queue-services-${appointment.id}`} aria-label={`${services.length} services`}>

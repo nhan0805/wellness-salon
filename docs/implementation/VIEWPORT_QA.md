@@ -25,13 +25,14 @@ The vertical page lengths are expected for tablet workflows: kiosk 1,118/1,131px
 ### Customer kiosk
 
 - Portrait shows all four service cards and the disabled Continue CTA in the initial viewport.
-- Landscape shows the two-column catalog cleanly, but the second card row and Continue CTA continue below the 810px viewport. Validate whether the salon wants a sticky bottom CTA for landscape use.
+- Landscape shows the two-column catalog cleanly. The Continue action now stays in normal document flow at roomy tablet/desktop heights so it cannot obscure cards; compact heights retain a sticky action with reserved bottom clearance.
 - Service cards have clear icon/title/price/duration hierarchy and large touchable surfaces.
 
 ### Staff turn board
 
 - Portrait prioritizes Current turns and places Up next below it; this is readable but requires a vertical scroll to see the queue after the active panel.
 - Landscape uses a two-column current/up-next layout and makes the queue visible without horizontal scrolling.
+- Up-next ticket identifiers remain one horizontal scan unit on phone, portrait, and landscape layouts; narrow values use deliberate ellipsis instead of character-by-character wrapping.
 - The public state shown in the screenshot redacts customer identity to `Guest A001`, consistent with the privacy implementation.
 
 ### Sign-in

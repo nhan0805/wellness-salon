@@ -691,3 +691,14 @@ Kết quả local:
 - Docker production build: pass; container app healthy; `GET /api/health` trả `status: ok`; `/kiosk` và `/board` trả HTTP 200; `/admin` redirect tới sign-in đúng thiết kế.
 
 Các mục vẫn là release/runtime gate, không thể chứng minh chỉ bằng source local: physical iPad/WebKit/VoiceOver/distance touch QA, staging TLS/edge rate-limit/direct-port scan, scheduler/alerting, backup/restore/rollback rehearsal, production pool/SLO, và benchmark representative cho duration/payment sort, allocator, routing contention. Không nên coi các mục này là đã hoàn tất chỉ vì local test pass.
+
+## 13. UI/UX refresh follow-up — 2026-10-19
+
+Theo review UI/UX mới nhất, các finding giao diện còn tồn tại đã được xử lý trong source:
+
+- Queue ticket code không còn bị wrap thành từng ký tự; layout dùng một token scan line, tabular figures và title hint khi cần truncate.
+- Kiosk Continue action không còn phủ lên catalog ở desktop/tablet có đủ chiều cao; compact sticky mode có bottom clearance cho card và focus.
+- Staff verification countdown chỉ announce theo mốc có ý nghĩa cho screen reader, không cạnh tranh live-region mỗi giây.
+- UI refinement được tách vào `app/operations-refinements.css`; các token mới giữ palette pastel, touch rhythm, reduced motion và trạng thái realtime nhất quán.
+
+Các gate chưa thể kết luận bằng local browser vẫn giữ nguyên: iPad Safari/WebKit thật, VoiceOver, Dynamic Type, safe-area, touch latency và Wi-Fi loss/reconnect. `docs/implementation/UI_UX_REFRESH.md` là tài liệu source-of-truth cho hướng UI mới.

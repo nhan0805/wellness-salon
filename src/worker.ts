@@ -1,5 +1,49 @@
 import vinextWorker from 'vinext/server/fetch-handler';
-import { isValidIanaTimezone, scheduledJobForTick } from './domain/scheduler.ts';
+
+// Keep the Worker entrypoint self-contained for the Vinext dev runner. The
+// runner loads this module outside the normal app graph and currently cannot
+// resolve the TypeScript domain import reliably, while the production bundle
+// handles it correctly. These small guards mirror src/domain/scheduler.ts and
+// keep scheduled work behind the same timezone/cron checks in both modes.
+function localTimeParts(at: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    calendar: 'iso8601',
+    numberingSystem: 'latn',
+    hourCycle: 'h23',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(at);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return { hour: Number(values.hour), minute: Number(values.minute) };
+}
+
+function roundedClosingTriggerMinutes(closingTime: string) {
+  const match = /^(\d{2}):(\d{2})$/.exec(closingTime);
+  if (!match) return null;
+  const minutes = Number(match[1]) * 60 + Number(match[2]);
+  if (minutes > 1_439) return null;
+  return Math.ceil((minutes + 5) / 15) * 15 % 1_440;
+}
+
+function isValidIanaTimezone(timeZone: string) {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone }).format();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function scheduledJobForTick(at: Date, timeZone: string, closingTime: string) {
+  if (!isValidIanaTimezone(timeZone)) return null;
+  const local = localTimeParts(at, timeZone);
+  const localMinutes = local.hour * 60 + local.minute;
+  const closingTrigger = roundedClosingTriggerMinutes(closingTime);
+  if (closingTrigger !== null && localMinutes === closingTrigger) return 'closing' as const;
+  if (localMinutes === 3 * 60 + 15) return 'retention' as const;
+  return null;
+}
 
 type WorkerEnvironment = Record<string, unknown> & {
   CRON_SECRET?: string;

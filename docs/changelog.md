@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — 2026-10-19 — UI/UX operational refresh
+
+- Kept queue ticket identifiers on one scan line with deliberate narrow-viewport truncation and a full-value title hint.
+- Changed the kiosk action bar to stay in document flow on roomy desktop/tablet layouts and reserve clearance when it becomes sticky on compact screens.
+- Reduced screen-reader noise from staff PIN verification countdowns while keeping the visual timer live.
+- Added a separate `app/operations-refinements.css` layer for product-wide UI decisions, reduced-motion sync feedback, numeric typography, and responsive queue behavior.
+- Added a queue responsive regression assertion and kept the Worker scheduler guard self-contained so Vinext dev resolution does not depend on a TypeScript domain import.
+
 ## 2026-10-19 — Operational verification and Free-demo runbook
 
 - Added a public/authenticated read-only production smoke command and a six-hour GitHub Actions smoke workflow.

@@ -1,0 +1,179 @@
+/*
+ * Wellness Salon operational refinement layer.
+ *
+ * The legacy global stylesheet still contains several route-era overrides.
+ * Keeping the newest product-wide decisions here makes the cascade explicit
+ * while that file is gradually decomposed into smaller surface stylesheets.
+ */
+:root {
+  --ops-ticket-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  --ops-sticky-cta-clearance: 136px;
+  --ops-card-shadow: 0 10px 24px rgb(81 70 74 / 0.08);
+}
+
+html {
+  scroll-padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+
+.board-heading h1,
+.kiosk-copy h1,
+.dashboard-greeting h2,
+.section-heading h2 {
+  text-wrap: balance;
+}
+
+.service-price,
+.ticket-code,
+.kpi-value,
+.queue-number,
+.board-last-updated,
+.admin-live-status,
+.status-badge {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Queue tokens are operational identifiers, not prose. Keep them readable as
+   a single scan unit and expose the full value through the native title hint
+   when a narrow viewport requires truncation. */
+.board-shell .queue-item {
+  grid-template-columns: minmax(118px, 132px) minmax(0, 1fr) auto;
+}
+
+.board-shell .queue-number {
+  width: auto;
+  min-width: 118px;
+  max-width: 132px;
+  min-height: 52px;
+  padding-right: 9px;
+  padding-left: 9px;
+  font-family: var(--ops-ticket-font);
+  font-size: clamp(0.7rem, 0.67rem + 0.16vw, 0.82rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.board-shell .queue-item:focus-within {
+  border-color: rgb(143 83 96 / 0.48);
+  box-shadow: var(--ops-card-shadow), 0 0 0 3px rgb(143 83 96 / 0.1);
+}
+
+/* The service picker keeps its action bar in normal flow on roomy desktop and
+   tablet heights. It becomes sticky only where persistent access is useful,
+   with a reserved content inset so the last card can scroll above the bar. */
+.kiosk-service-picker-card .service-category-groups {
+  min-width: 0;
+}
+
+.kiosk-step-actions {
+  position: static;
+  bottom: auto;
+  margin-top: 28px;
+  box-shadow: var(--ops-card-shadow);
+}
+
+.kiosk-step-actions .button-primary {
+  min-height: var(--touch-primary);
+}
+
+@media (max-width: 720px), (max-height: 680px) {
+  .kiosk-step-actions {
+    position: sticky;
+    bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .kiosk-service-picker-card .service-category-groups {
+    padding-bottom: var(--ops-sticky-cta-clearance);
+    scroll-margin-bottom: var(--ops-sticky-cta-clearance);
+  }
+}
+
+@media (max-width: 720px) {
+  .kiosk-step-actions {
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .board-shell .queue-service-row.is-next {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 2px;
+  }
+
+  .board-shell .queue-service-row.is-next .queue-service-name {
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .board-shell .queue-item {
+    grid-template-columns: minmax(104px, 112px) minmax(0, 1fr);
+  }
+
+  .board-shell .queue-number {
+    min-width: 104px;
+    max-width: 112px;
+    padding-right: 7px;
+    padding-left: 7px;
+    font-size: 0.66rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .board-shell .queue-item {
+    grid-template-columns: minmax(86px, 96px) minmax(0, 1fr);
+  }
+
+  .board-shell .queue-number {
+    min-width: 86px;
+    max-width: 96px;
+    padding-right: 4px;
+    padding-left: 4px;
+    font-size: 0.56rem;
+  }
+}
+
+/* Make horizontal data regions behave like deliberate surfaces instead of
+   accidental overflow, while preserving the existing tablet card layouts. */
+.admin-table-wrap {
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+  scroll-padding-inline: 16px;
+}
+
+.table-overflow-region:focus-visible {
+  outline-color: rgb(143 83 96 / 0.42);
+  outline-offset: 3px;
+}
+
+/* A quiet pulse communicates that the board is connected without adding a
+   decorative animation to the content itself. Reduced-motion users get the
+   static state from the base rule. */
+@keyframes ops-live-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px rgb(220 214 247 / 0.72);
+  }
+
+  50% {
+    box-shadow: 0 0 0 7px rgb(220 214 247 / 0.24);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .board-sync-indicator-polling .board-sync-dot,
+  .admin-live-dot {
+    animation: ops-live-pulse 2.8s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-sync-indicator-polling .board-sync-dot,
+  .admin-live-dot {
+    animation: none;
+  }
+}

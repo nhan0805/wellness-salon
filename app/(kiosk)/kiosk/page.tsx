@@ -454,7 +454,7 @@ export default function KioskPage() {
             </div>
           ) : null}
           {step === 1 ? (
-            <section aria-labelledby="kiosk-title">
+            <section className="kiosk-service-picker-card" aria-labelledby="kiosk-title">
               <div className="kiosk-copy">
                 <div className="eyebrow">Services</div>
                 <h1 id="kiosk-title" tabIndex={-1}>Choose your services</h1>

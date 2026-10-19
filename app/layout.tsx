@@ -1,4 +1,5 @@
 import './globals.css';
+import './operations-refinements.css';
 import type { Metadata, Viewport } from 'next';
 import PWAProvider from '@/src/components/PWAProvider';
 import EnglishFormValidation from '@/src/components/english-form-validation';
