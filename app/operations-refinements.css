@@ -236,6 +236,12 @@ html {
   align-items: start;
 }
 
+.staff-form .staff-form-profile-column {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
 .staff-form .staff-name-field {
   align-self: start;
   align-content: start;
@@ -253,6 +259,27 @@ html {
 
 .staff-form .skill-fieldset .field-hint {
   margin: -2px 0 2px;
+}
+
+.staff-form .staff-form-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.staff-form .staff-form-skill-count {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+  padding: 0 10px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .assignment-availability-fieldset {
@@ -355,6 +382,194 @@ html {
   .assignment-availability-switch span,
   .assignment-availability-switch span::after {
     transition: none;
+  }
+}
+
+/* Staff editing demo: keep the tablet modal compact without changing the
+   shared mobile form rules. The form body owns scrolling and the actions stay
+   visible while the PIN keypad remains touch-friendly. */
+@media (min-width: 768px) {
+  .staff-record-modal {
+    display: flex;
+    width: min(calc(100% - 32px), 900px);
+    max-height: calc(100dvh - 32px);
+    flex-direction: column;
+    overflow: hidden;
+    padding: 24px 28px 0;
+  }
+
+  .staff-record-modal .modal-header {
+    flex: 0 0 auto;
+    margin-bottom: 16px;
+  }
+
+  .staff-record-modal .modal-header p {
+    max-width: 720px;
+  }
+
+  .staff-record-modal > .staff-form {
+    display: grid;
+    min-height: 0;
+    gap: 16px;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding: 0 4px 0 0;
+    scrollbar-gutter: stable;
+  }
+
+  .staff-record-modal .staff-form-top-grid {
+    grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
+    gap: 18px;
+  }
+
+  .staff-record-modal .assignment-availability-fieldset {
+    min-height: 0;
+  }
+
+  .staff-record-modal .pin-keypad {
+    gap: 10px;
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .staff-record-modal .pin-keypad-digits {
+    gap: 8px;
+  }
+
+  .staff-record-modal .pin-keypad-digit {
+    width: 40px;
+    height: 44px;
+    border-radius: 12px;
+    font-size: 1.25rem;
+  }
+
+  .staff-record-modal .pin-keypad-grid {
+    gap: 7px;
+  }
+
+  .staff-record-modal .pin-keypad-key {
+    min-height: 50px;
+    border-radius: 12px;
+    font-size: 1.08rem;
+  }
+
+  .staff-record-modal .skill-fieldset {
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    background: var(--color-background);
+    padding: 14px 16px;
+  }
+
+  .staff-record-modal .skill-fieldset .checkbox-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .staff-record-modal .skill-fieldset .checkbox-option {
+    min-height: 48px;
+    padding: 8px 10px;
+  }
+
+  .staff-record-modal .form-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: 0 -4px;
+    border-top: 1px solid var(--color-border);
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.82), #fff 28%);
+    box-shadow: 0 -10px 18px rgb(255 255 255 / 0.92);
+    padding: 14px 4px 4px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 860px) {
+  .staff-record-modal {
+    width: min(calc(100% - 24px), 760px);
+    padding-right: 22px;
+    padding-left: 22px;
+  }
+
+  .staff-record-modal .staff-form-top-grid {
+    grid-template-columns: minmax(0, 0.95fr) minmax(300px, 1.05fr);
+    gap: 14px;
+  }
+
+  .staff-record-modal .pin-keypad-key {
+    min-height: 48px;
+  }
+}
+
+/* The mobile version keeps the same hierarchy in one column and gives the
+   form its own scroll area so the save action remains reachable. */
+@media (max-width: 767px) {
+  .staff-record-modal {
+    display: flex;
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    flex-direction: column;
+    overflow: hidden;
+    padding: 20px 18px 0;
+  }
+
+  .staff-record-modal .modal-header {
+    flex: 0 0 auto;
+    margin-bottom: 16px;
+  }
+
+  .staff-record-modal .modal-header h2 {
+    font-size: 1.25rem;
+  }
+
+  .staff-record-modal .modal-header p {
+    font-size: 0.84rem;
+  }
+
+  .staff-record-modal > .staff-form {
+    display: grid;
+    min-height: 0;
+    gap: 14px;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding: 0 2px 0 0;
+    scrollbar-gutter: stable;
+  }
+
+  .staff-record-modal .staff-form-top-grid {
+    gap: 14px;
+  }
+
+  .staff-record-modal .assignment-availability-fieldset,
+  .staff-record-modal .skill-fieldset {
+    border-radius: 14px;
+  }
+
+  .staff-record-modal .skill-fieldset {
+    border: 1px solid var(--color-border);
+    background: var(--color-background);
+    padding: 12px;
+  }
+
+  .staff-record-modal .skill-fieldset .checkbox-option {
+    min-height: 48px;
+  }
+
+  .staff-record-modal .pin-keypad {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .staff-record-modal .pin-keypad-key {
+    min-height: 54px;
+  }
+
+  .staff-record-modal .form-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: 0 -2px;
+    border-top: 1px solid var(--color-border);
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.84), #fff 28%);
+    box-shadow: 0 -10px 18px rgb(255 255 255 / 0.92);
+    padding: 12px 2px 2px;
   }
 }
 

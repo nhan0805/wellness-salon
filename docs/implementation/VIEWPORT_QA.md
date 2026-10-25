@@ -67,5 +67,6 @@ The Worker/D1 Playwright gate also checks the reported regression sizes:
 | 375×812, 768×1024, 1024×768 | Past appointments needing review | Phone cards and tablet table keep Review/History visible and separate |
 | 1440×900 at CSS zoom 90% | Past appointments needing review | The table wrapper owns horizontal scrolling; the page itself does not overflow |
 | Tablet Admin and Board | Kiosk entry | Each route exposes a separate-tab Kiosk link without replacing the current workflow |
+| 375×812 and 768×1024 | Staff edit modal | Full Name stays a one-line text input; tablet uses the two-column profile/PIN layout, mobile uses one column with sticky actions and no document overflow |
 
 The regression assertions also cover keyboard focus for the Staff availability “+N more” control, compact Full Name input semantics, and persistence of Skills plus Assignment availability. Physical-device Safari, Dynamic Type, VoiceOver, and real touch latency remain outside this automated viewport check.

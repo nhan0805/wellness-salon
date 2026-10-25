@@ -794,8 +794,9 @@ export function AdminManagement({
       {modal?.type === 'staff' ? (
         <RecordModal
           title={modal.record ? 'Edit staff member' : 'Add staff member'}
-          description="Initials are generated from the name. Staff need at least one skill before they can be assigned an appointment."
+          description="Initials come from the name. Select at least one service before assigning appointments."
           error={formError}
+          className="staff-record-modal"
           wide
           onClose={() => setModal(null)}
         >
@@ -1734,18 +1735,44 @@ function StaffForm({
       }}
     >
       <div className="admin-form-grid admin-form-grid-two staff-form-top-grid">
-        <div className="field staff-name-field">
-          <label htmlFor="staff-name">Full name</label>
-          <input
-            id="staff-name"
-            type="text"
-            value={values.name}
-            onChange={(event) => setValues({ ...values, name: event.target.value })}
-            autoComplete="name"
-            required
-            minLength={2}
-            maxLength={80}
-          />
+        <div className="staff-form-profile-column">
+          <div className="field staff-name-field">
+            <label htmlFor="staff-name">Full name</label>
+            <input
+              id="staff-name"
+              type="text"
+              value={values.name}
+              onChange={(event) => setValues({ ...values, name: event.target.value })}
+              autoComplete="name"
+              required
+              minLength={2}
+              maxLength={80}
+            />
+          </div>
+          {record ? (
+            <fieldset className="assignment-availability-fieldset">
+              <legend>Assignment availability</legend>
+              <label className="assignment-availability-toggle">
+                <span className="assignment-availability-copy">
+                  <strong>Available for new assignments</strong>
+                  <small id="staff-assignment-availability-hint">
+                    When on, this staff member can receive new service assignments.
+                  </small>
+                </span>
+                <span className="assignment-availability-switch">
+                  <input
+                    id="staff-assignment-availability"
+                    type="checkbox"
+                    role="switch"
+                    checked={values.isActive}
+                    aria-describedby="staff-assignment-availability-hint"
+                    onChange={(event) => setValues({ ...values, isActive: event.target.checked })}
+                  />
+                  <span aria-hidden="true" />
+                </span>
+              </label>
+            </fieldset>
+          ) : null}
         </div>
         <PinKeypad
           value={values.pin}
@@ -1761,7 +1788,12 @@ function StaffForm({
         />
       </div>
       <fieldset className="skill-fieldset">
-        <legend>Skills</legend>
+        <legend className="staff-form-section-heading">
+          <span>Skills</span>
+          <span className="staff-form-skill-count" aria-live="polite">
+            {values.skillIds.length} selected
+          </span>
+        </legend>
         <p className="field-hint">Services this staff member can perform.</p>
         <div className="checkbox-grid">
           {skills.map((skill) => (
@@ -1776,30 +1808,6 @@ function StaffForm({
           ))}
         </div>
       </fieldset>
-      {record ? (
-        <fieldset className="assignment-availability-fieldset">
-          <legend>Assignment availability</legend>
-          <label className="assignment-availability-toggle">
-            <span className="assignment-availability-copy">
-              <strong>Available for new assignments</strong>
-              <small id="staff-assignment-availability-hint">
-                When on, this staff member can receive new service assignments.
-              </small>
-            </span>
-            <span className="assignment-availability-switch">
-              <input
-                id="staff-assignment-availability"
-                type="checkbox"
-                role="switch"
-                checked={values.isActive}
-                aria-describedby="staff-assignment-availability-hint"
-                onChange={(event) => setValues({ ...values, isActive: event.target.checked })}
-              />
-              <span aria-hidden="true" />
-            </span>
-          </label>
-        </fieldset>
-      ) : null}
       {localError ? (
         <p className="form-error" role="alert">
           {localError}

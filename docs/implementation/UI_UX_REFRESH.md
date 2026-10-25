@@ -23,6 +23,7 @@ Giữ lại ngôn ngữ pastel ấm, dễ đọc của Wellness Salon nhưng là
 - Tách lớp CSS refinement mới tại `app/operations-refinements.css` để các quyết định UI mới không tiếp tục làm phình cascade trong `app/globals.css`.
 - Giữ motion pulse rất nhẹ cho trạng thái đang sync và tắt hoàn toàn khi `prefers-reduced-motion: reduce`.
 - Thêm regression assertion để mã ticket không quay lại trạng thái wrap dọc trên phone/tablet/landscape.
+- Staff edit modal dùng layout riêng cho tablet và mobile: tablet đặt profile/assignment availability cạnh PIN keypad, Skills thành lưới ba cột; mobile chuyển về một cột, có vùng cuộn nội bộ và footer action sticky. Full Name là input một dòng, còn availability là switch riêng có mô tả ngắn.
 - Giữ scheduler guard nhỏ ngay trong Worker entrypoint để Vinext dev runner không phụ thuộc resolver TypeScript ngoài app graph; production bundle và domain scheduler vẫn dùng cùng contract.
 
 ## Quy ước thiết kế

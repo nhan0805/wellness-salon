@@ -6,6 +6,7 @@
 - Contained the historical review table at 90% zoom and made mobile Up next Accept/Skip actions stack cleanly at 320px, 360px, and 390px.
 - Added separate-tab Kiosk links from Admin and Board/Station, plus responsive regression coverage for both entry points.
 - Refined the staff form with a compact single-line Full Name input and a separate Assignment availability switch while preserving existing `isActive` and routing semantics.
+- Reworked the Staff edit modal for tablet and mobile: the tablet view uses a compact profile/PIN split with a three-column Skills grid, while mobile uses a single-column flow with an internal scroll area and sticky actions. The existing staff save contract and availability meaning are unchanged.
 - Reduced duplicate board bootstrap reads, narrowed board D1 projections, and stopped unused report aggregation on Admin Appointments. Deployed CPU evidence remains an operator/dashboard gate.
 - Updated the deploy gate dependencies to patched Next.js 16.4.3, Zod 4.6.7, and fast-uri 3.1.9; production dependency audit now reports zero vulnerabilities.
 - Final local verification for this follow-up: 67/67 `npm test`, lint, typecheck, build, and 47 Worker/D1 E2E cases passed with one intentional skip. No deployment was performed.
