@@ -1,4 +1,4 @@
-# Tablet viewport QA — 2026-10-19
+# Tablet and mobile viewport QA — 2026-10-25
 
 ## Scope
 
@@ -56,3 +56,16 @@ The vertical page lengths are expected for tablet workflows: kiosk 1,118/1,131px
 - WebKit emulation is now available and passes the combined Worker/D1 gate. It still does not replace physical iPad Safari hardware.
 - Dynamic Type/largest text, VoiceOver, real touch latency, safe-area behavior on a notched device, and Wi-Fi loss/reconnect were not tested.
 - The black circular Next.js development indicator visible in screenshots is tooling chrome, not application UI.
+
+## 2026-10-25 responsive regressions
+
+The Worker/D1 Playwright gate also checks the reported regression sizes:
+
+| Viewport or condition | Surface | Result |
+| --- | --- | --- |
+| 320×740, 360×800, 390×844 | Board Up next service actions | Accept and Skip stack as separate touch targets; no document-level horizontal overflow |
+| 375×812, 768×1024, 1024×768 | Past appointments needing review | Phone cards and tablet table keep Review/History visible and separate |
+| 1440×900 at CSS zoom 90% | Past appointments needing review | The table wrapper owns horizontal scrolling; the page itself does not overflow |
+| Tablet Admin and Board | Kiosk entry | Each route exposes a separate-tab Kiosk link without replacing the current workflow |
+
+The regression assertions also cover keyboard focus for the Staff availability “+N more” control, compact Full Name input semantics, and persistence of Skills plus Assignment availability. Physical-device Safari, Dynamic Type, VoiceOver, and real touch latency remain outside this automated viewport check.

@@ -1,17 +1,17 @@
 # Implementation test matrix
 
-The active database-backed gate is `npm run test:e2e:d1`. It builds the Worker artifact, creates disposable local D1 state, applies all five migrations and the 101-statement bootstrap, and runs the Worker Playwright suite. `npm run test:e2e:d1:webkit` adds the iPad/WebKit project.
+The active database-backed gate is `npm run test:e2e:d1`. It builds the Worker artifact, creates disposable local D1 state, applies all five migrations and the 101-statement bootstrap, and runs the Worker Playwright suite. `npm run test:e2e:d1:webkit` adds the iPad/WebKit project. The current follow-up was verified on 2026-10-25.
 
 ## Functional coverage
 
 | Area | Covered behavior | Current status |
 | --- | --- | --- |
 | Kiosk | Service selection, validation, check-in, explicit same-day visits, returning-customer lookup, idempotent replay | PASS in local Worker/D1 smoke and E2E |
-| Public board | Queue/current/up-next display, redaction, SSE snapshot, polling recovery, tablet layout | PASS with physical-device follow-up |
+| Public board | Queue/current/up-next display, redaction, SSE snapshot, polling recovery, tablet layout, 320/360/390px queue action layout | PASS with physical-device follow-up |
 | Staff actions | Attendance, accept, finish, skip/reason, support, continuation, availability guards | PASS in local D1 smoke; broader concurrent taps remain open |
 | Routing | Required-skill intersection, fairness, exact-service exclusions, manager override, waiting state | PASS in unit and local D1 smoke |
 | Admin catalog | Categories, services, icons, skills, active/archive guards | PASS in local D1 smoke and authenticated remote read smoke |
-| Admin records | Customers, staff, accounts, attendance, session revocation safeguards | PASS in local D1 smoke and authenticated remote read smoke |
+| Admin records | Customers, staff, accounts, attendance, session revocation safeguards, compact Full Name/Skills/Assignment availability persistence | PASS in local D1 smoke and authenticated remote read smoke |
 | Payments | Card/cash confirmation, tips, cash details, idempotency, adjustment/correction/refund records, audit history | PASS in local smoke; physical keypad and broader API matrix remain open |
 | Reports/history | Revenue split, reconciliation, appointment turn history, audit snapshots | PASS for local read/smoke scope; broader fixture coverage remains open |
 | Jobs | Closing blockers/success, retention authorization, Worker cron mapping | PASS locally; deployed event-level check remains open |
@@ -36,6 +36,9 @@ The active database-backed gate is `npm run test:e2e:d1`. It builds the Worker a
 | Scenario | Status |
 | --- | --- |
 | Chromium tablet 810×1080 and 1080×810 | PASS |
+| Queue 320×740, 360×800, 390×844 | PASS; no document overflow and Accept/Skip do not overlap |
+| Historical review 90% zoom at 1440px | PASS; table wrapper owns horizontal scroll |
+| Admin/Board Kiosk entry | PASS; separate-tab links preserve the current workflow |
 | Primary controls at least 44px and no reviewed horizontal overflow | PASS |
 | iPad/WebKit emulation | PASS: combined gate includes 61 passing cases with two intentional skips |
 | Physical iPad | NOT RUN |
@@ -47,10 +50,10 @@ The active database-backed gate is `npm run test:e2e:d1`. It builds the Worker a
 | Command | Outcome |
 | --- | --- |
 | `npm run lint` | PASS in the recorded local gate |
-| `npm run typecheck` | PASS on 2026-10-14 |
+| `npm run typecheck` | PASS on 2026-10-25 |
 | `npm test` | PASS: 67/67 |
-| `npm run build:vinext` | PASS in the recorded Worker gate |
-| `npm run test:e2e:d1` | PASS: 41 passed, 1 intentional skip |
+| `npm run build:vinext` | PASS on 2026-10-25 |
+| `npm run test:e2e:d1` | PASS: 47 passed, 1 intentional skip |
 | `npm run d1:recovery:rehearsal` | PASS: representative local tables restored with matching counts |
 | `npm run smoke:remote` | PASS: 19/19 read-only production checks |
 | `npx cf deploy --dry-run` | PASS in the recorded deployment gate |

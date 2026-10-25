@@ -3,6 +3,19 @@
 **Date:** 2026-10-19
 **Overall status:** Local Worker/D1 build, the Chromium/tablet/WebKit E2E gate, disposable D1 recovery rehearsal, and authenticated read-only production smoke are verified. Source commit `227a5dc` is deployed to workers.dev, all five migrations are applied to remote D1 with no pending migrations, and the post-deploy `/api/health` check returned `status: ok`; business mutation/scheduler evidence, failure-injection, live capacity, physical-device review, and final production approval remain open. The historical rows below retain their original dates; the follow-up section records the current evidence.
 
+## 2026-10-25 local follow-up evidence
+
+| Check | Result |
+| --- | --- |
+| `npm run lint` | PASS; no lint errors. |
+| `npm run typecheck` | PASS; D1 Prisma client generated before checking. |
+| `npm test` | PASS; 21 files and 67 tests passed. |
+| `npm run build` | PASS; Worker/vinext output prepared successfully. |
+| `npm run test:e2e:d1` | PASS; 47 Playwright cases passed and one desktop-project case was intentionally skipped. |
+| Responsive fixes | PASS locally at 320/360/390px queue sizes and 90% zoom historical review; Admin/Board Kiosk entry and staff-form persistence regressions pass. |
+| Cloudflare CPU investigation | Code-level causes and safeguards documented in [PERFORMANCE.md](PERFORMANCE.md); deployed per-invocation CPU, D1 row/latency, and quota evidence still require dashboard/log access. |
+| Deployment | Not performed for this follow-up; no remote D1 was targeted. |
+
 ## 2026-10-19 follow-up evidence
 
 | Check | Result |

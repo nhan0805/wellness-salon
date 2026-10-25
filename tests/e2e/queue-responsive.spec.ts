@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 
 const viewports = [
+  { name: 'phone-320', width: 320, height: 740 },
+  { name: 'phone-360', width: 360, height: 800 },
+  { name: 'phone-390', width: 390, height: 844 },
   { name: 'phone', width: 366, height: 267 },
   { name: 'portrait', width: 810, height: 1080 },
   { name: 'landscape', width: 1080, height: 810 },
@@ -88,6 +91,7 @@ test('queue cards keep service labels readable on iPad portrait and landscape', 
 
       return {
         viewportWidth: window.innerWidth,
+        documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         sideColumns: sideColumns.length,
         rowColumns: rowColumns.length,
         item: rect(item),
@@ -103,9 +107,24 @@ test('queue cards keep service labels readable on iPad portrait and landscape', 
     });
     expect(metrics.item.left).toBeGreaterThanOrEqual(0);
     expect(metrics.item.right).toBeLessThanOrEqual(metrics.viewportWidth + 1);
+    expect(metrics.documentOverflow, `${viewport.name} should not overflow the document`).toBe(0);
+    expect(metrics.action.left).toBeGreaterThanOrEqual(0);
+    expect(metrics.action.right).toBeLessThanOrEqual(metrics.viewportWidth + 1);
     expect(metrics.sideColumns, `${viewport.name} side rail should stay one column`).toBe(1);
     expect(metrics.serviceName.height, `${viewport.name} service name should not wrap per character`).toBeLessThanOrEqual(metrics.serviceLineHeight * 1.5);
     expect(metrics.buttons.every((button) => button.left >= metrics.action.left - 1 && button.right <= metrics.action.right + 1)).toBeTruthy();
+    for (let index = 0; index < metrics.buttons.length; index += 1) {
+      for (let nextIndex = index + 1; nextIndex < metrics.buttons.length; nextIndex += 1) {
+        const first = metrics.buttons[index];
+        const second = metrics.buttons[nextIndex];
+        const overlaps =
+          first.left < second.right &&
+          first.right > second.left &&
+          first.top < second.bottom &&
+          first.bottom > second.top;
+        expect(overlaps, `${viewport.name} queue actions should not overlap`).toBeFalsy();
+      }
+    }
     expect(metrics.numberBackground, `${viewport.name} queue code should keep its peach background`).toBe('rgb(255, 240, 232)');
     expect(metrics.codeLineCount, `${viewport.name} queue code should stay on one scan line`).toBe(1);
     expect(metrics.codeBottom, `${viewport.name} queue code should stay inside its background`).toBeLessThanOrEqual(metrics.number.bottom + 1);

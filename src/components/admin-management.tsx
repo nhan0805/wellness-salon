@@ -1714,7 +1714,7 @@ function StaffForm({
     }));
   return (
     <form
-      className="form-grid"
+      className="form-grid staff-form"
       onSubmit={async (event) => {
         event.preventDefault();
         if (!record && values.pin.length !== 4) {
@@ -1733,11 +1733,12 @@ function StaffForm({
         await onSubmit(values);
       }}
     >
-      <div className="admin-form-grid admin-form-grid-two">
-        <div className="field">
+      <div className="admin-form-grid admin-form-grid-two staff-form-top-grid">
+        <div className="field staff-name-field">
           <label htmlFor="staff-name">Full name</label>
           <input
             id="staff-name"
+            type="text"
             value={values.name}
             onChange={(event) => setValues({ ...values, name: event.target.value })}
             autoComplete="name"
@@ -1761,6 +1762,7 @@ function StaffForm({
       </div>
       <fieldset className="skill-fieldset">
         <legend>Skills</legend>
+        <p className="field-hint">Services this staff member can perform.</p>
         <div className="checkbox-grid">
           {skills.map((skill) => (
             <label className="checkbox-option" key={skill.id}>
@@ -1775,14 +1777,28 @@ function StaffForm({
         </div>
       </fieldset>
       {record ? (
-        <label className="checkbox-option">
-          <input
-            type="checkbox"
-            checked={values.isActive}
-            onChange={(event) => setValues({ ...values, isActive: event.target.checked })}
-          />
-          <span>Available for new assignments</span>
-        </label>
+        <fieldset className="assignment-availability-fieldset">
+          <legend>Assignment availability</legend>
+          <label className="assignment-availability-toggle">
+            <span className="assignment-availability-copy">
+              <strong>Available for new assignments</strong>
+              <small id="staff-assignment-availability-hint">
+                When on, this staff member can receive new service assignments.
+              </small>
+            </span>
+            <span className="assignment-availability-switch">
+              <input
+                id="staff-assignment-availability"
+                type="checkbox"
+                role="switch"
+                checked={values.isActive}
+                aria-describedby="staff-assignment-availability-hint"
+                onChange={(event) => setValues({ ...values, isActive: event.target.checked })}
+              />
+              <span aria-hidden="true" />
+            </span>
+          </label>
+        </fieldset>
       ) : null}
       {localError ? (
         <p className="form-error" role="alert">

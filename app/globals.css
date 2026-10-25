@@ -922,6 +922,8 @@ textarea:focus-visible {
 
 .board-shell {
   min-height: 100dvh;
+  width: 100%;
+  max-width: 100%;
   background: var(--color-background);
 }
 .board-main {
@@ -4115,7 +4117,9 @@ html {
   font-size: 16px;
 }
 body {
-  min-width: 320px;
+  /* Let the layout use the full 320px CSS viewport even when a desktop
+     browser reserves a few pixels for its vertical scrollbar. */
+  min-width: 0;
   overflow-x: hidden;
   background: var(--color-background);
 }

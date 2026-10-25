@@ -1,5 +1,16 @@
 # Implementation changelog
 
+## 2026-10-25 — Queue, historical review, kiosk, and staff-form refinements
+
+- Made the Staff availability “+N more” affordance a keyboard-accessible control that opens the Staff attendance tab and reports the hidden count from the same filtered staff data.
+- Contained the historical review table’s wide layout inside its scroll region so 90% browser zoom cannot create page-level overflow or hide Review/History actions.
+- Stacked Up next Accept/Skip actions below 600px so the controls remain separate and touch-safe at 320px, 360px, and 390px.
+- Added separate-tab Kiosk entry points from both the Admin and Board/Station workflows without replacing their current state.
+- Changed the staff Full Name control to a compact single-line input and separated Assignment availability into a labeled switch with explanatory copy while preserving the existing `isActive` persistence and assignment rules.
+- Reduced normal board bootstrap/query work and removed unused Admin Appointments report aggregation; production CPU still requires Cloudflare dashboard/log evidence.
+
+Responsive and persistence coverage was added to the Worker/D1 Playwright gate. Final local verification: lint, typecheck, `npm test` (67/67), build, and `npm run test:e2e:d1` (47 passed, 1 intentional skip).
+
 ## 2026-10-19 — Operational verification and Free-demo runbook
 
 - Added public/authenticated read-only production smoke and a six-hour GitHub Actions smoke workflow.

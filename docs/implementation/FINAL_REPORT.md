@@ -1,6 +1,6 @@
 # Implementation final report
 
-Last updated: 2026-10-19
+Last updated: 2026-10-25
 
 ## Decision
 
@@ -16,16 +16,17 @@ Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development
 - Audit-backed idempotency, payment correction/refund records, public data redaction, and Worker cron timezone handling.
 - Admin loading resilience with bounded client deadlines, cancellation/stale-response guards, a section-aware Dashboard snapshot, narrow live projections, direct D1 Attendance reads, response timing diagnostics, and an Attendance Worker/D1 E2E smoke.
 - Request-safe Worker/D1 lifecycle: no module-global Prisma client/binding/Promise queue, default Cloudflare cross-request handling, and an E2E guard for runtime cancellation/cross-request I/O errors.
+- 2026-10-25 follow-up: fixed Staff availability expansion, historical review overflow, mobile queue actions, Admin/Board Kiosk entry points, and staff-form layout/semantics. Reduced duplicate board bootstrap/projection work and unused Admin Appointments reports without changing assignment or payment rules.
 
 ## Evidence
 
 | Check | Result |
 | --- | --- |
 | `npm run lint` | PASS in the recorded local gate |
-| `npm run typecheck` | PASS on 2026-10-15 after D1 client generation |
-| `npm test` | 54/54 PASS |
-| `npm run build:vinext` | PASS in the recorded Worker gate |
-| `npm run test:e2e:d1` | 41 passed; one intentional skip |
+| `npm run typecheck` | PASS on 2026-10-25 after D1 client generation |
+| `npm test` | 67/67 PASS |
+| `npm run build:vinext` | PASS on 2026-10-25 |
+| `npm run test:e2e:d1` | 47 passed; one intentional skip |
 | `npm run test:e2e:d1:webkit` | 61 passed; two intentional skips across Chromium, tablet, and WebKit |
 | `npm run smoke:remote` | 19/19 public and authenticated read-only checks passed |
 | `npm run d1:recovery:rehearsal` | PASS; representative counts matched after local export/restore |

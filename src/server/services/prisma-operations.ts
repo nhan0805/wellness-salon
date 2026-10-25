@@ -477,9 +477,21 @@ const dashboardAppointmentInclude = {
   payment: { select: { amount: true, tip: true, method: true, confirmedAt: true } },
 };
 
-// The board polls frequently from every shared tablet. Keep its read payload
-// limited to fields that mapAppointment and the board UI actually consume.
-const boardAppointmentInclude = {
+// The board polls frequently from every shared tablet. Keep both scalar and
+// relation projections limited to fields that mapAppointment and the board UI
+// actually consume. In particular, an `include` on services would pull every
+// appointment-service column back through Prisma's D1 adapter on every board
+// bootstrap.
+const boardAppointmentSelect = {
+  id: true,
+  code: true,
+  serviceNameSnapshot: true,
+  durationMinSnapshot: true,
+  amount: true,
+  status: true,
+  primaryStaffId: true,
+  createdAt: true,
+  completedAt: true,
   customer: { select: { name: true, phone: true } },
   service: { select: { id: true, name: true, durationMin: true } },
   primaryStaff: { select: { id: true, name: true, initials: true } },
@@ -500,7 +512,16 @@ const boardAppointmentInclude = {
   },
   services: {
     orderBy: { sequence: 'asc' as const },
-    include: {
+    select: {
+      id: true,
+      serviceId: true,
+      sequence: true,
+      serviceNameSnapshot: true,
+      durationMinSnapshot: true,
+      amount: true,
+      status: true,
+      primaryStaffId: true,
+      completedAt: true,
       primaryStaff: { select: { id: true, name: true, initials: true } },
       turns: {
         orderBy: { createdAt: 'asc' as const },
@@ -520,7 +541,12 @@ const boardAppointmentInclude = {
       turnExclusions: {
         where: { overriddenAt: null },
         orderBy: { createdAt: 'asc' as const },
-        include: { staff: { select: { id: true, name: true } } },
+        select: {
+          staffId: true,
+          reason: true,
+          createdAt: true,
+          staff: { select: { id: true, name: true } },
+        },
       },
     },
   },
@@ -638,10 +664,20 @@ const manualCheckoutBlockingAppointmentStatuses: AppointmentStatus[] = [
 async function staffForBusinessDate(tx: D1PrismaRuntime | Prisma.TransactionClient, date: Date) {
   return tx.staff.findMany({
     where: { isActive: true },
-    include: {
-      skills: { include: { skill: true } },
-      attendance: { where: { businessDate: date } },
-      serviceState: true,
+    select: {
+      id: true,
+      name: true,
+      initials: true,
+      isActive: true,
+      skills: { select: { skill: { select: { name: true } } } },
+      attendance: { where: { businessDate: date }, select: { status: true } },
+      serviceState: {
+        select: {
+          availability: true,
+          lastServiceFinishedAt: true,
+          lastAssignedAt: true,
+        },
+      },
       appointments: {
         where: { businessDate: date, status: { in: staffBusyAppointmentStatuses } },
         select: { id: true },
@@ -919,7 +955,7 @@ async function getDbBoardStateWithClient(
           in: [AppointmentStatus.IN_SERVICE, AppointmentStatus.PAYMENT_PENDING],
         },
       },
-      include: boardAppointmentInclude,
+      select: boardAppointmentSelect,
       orderBy: { createdAt: 'asc' },
     }),
     client.appointment.findMany({
@@ -927,7 +963,7 @@ async function getDbBoardStateWithClient(
         businessDate,
         status: { in: [AppointmentStatus.ASSIGNED, AppointmentStatus.WAITING] },
       },
-      include: boardAppointmentInclude,
+      select: boardAppointmentSelect,
       orderBy: { createdAt: 'asc' },
       take: 4,
     }),

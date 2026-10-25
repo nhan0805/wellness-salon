@@ -1,7 +1,7 @@
 # Cloudflare Free-Tier Capacity
 
-**Date:** 2026-10-19
-**Status:** Conservative single-salon model completed; the deployed Worker now has a read-only smoke and scheduled observability runbook, while live quota/CPU metrics still require Cloudflare dashboard review.
+**Date:** 2026-10-25
+**Status:** Conservative single-salon model completed; the Worker now has a read-only smoke, scheduled observability runbook, and a code-level board/admin CPU reduction, while live quota/CPU metrics still require Cloudflare dashboard review.
 
 ## Published limits to design against
 
@@ -44,6 +44,8 @@ The per-request D1 estimates are deliberately rounded high: 45 rows for a board 
 | C | 200 | ~21,048 | ~1.63M | ~13,025 | Requests 79%; reads 67%; writes 87% headroom |
 
 The fixed polling workload dominates this small-salon model. The request and D1 projections remain below the published Free limits even at Scenario C, but they are not a promise about arbitrary traffic: multiple continuously open boards, very large reports, repeated refreshes, or a changed polling interval can consume the margin quickly. The application keeps the board fallback at 15 seconds and ignores SSE keepalives instead of turning them into extra database reads.
+
+The current board startup accepts the SSE snapshot as the normal first read and invokes `GET /api/board` only as a 2.5-second fallback when SSE cannot bootstrap. Subsequent board polls use the cheap D1 version check when the snapshot is unchanged. Admin Appointments no longer requests unused report aggregates, and board projections select only the fields consumed by the queue. These are code-level reductions; they do not change the Free-plan limits or replace deployed CPU measurement.
 
 ## Measured artifact and unmeasured runtime values
 

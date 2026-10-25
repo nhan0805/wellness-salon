@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, ClipboardList, Clock3, LogIn, LogOut, MessageSquareWarning, Plus, RefreshCcw, Scissors, Search, ShieldCheck, Sparkles, UserCheck, Users, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, ClipboardList, Clock3, ExternalLink, LogIn, LogOut, MessageSquareWarning, Plus, RefreshCcw, Scissors, Search, ShieldCheck, Sparkles, UserCheck, Users, X } from 'lucide-react';
 import { InitialsAvatar } from '@/src/components/ui';
 import { AccountMenu } from '@/src/components/account-menu';
 import { PinKeypad } from '@/src/components/pin-keypad';
@@ -72,7 +72,7 @@ function StaffAttendancePanel({ staff, viewerRole, onAction }: { staff: Staff[];
   </section>;
 }
 
-function StaffAvailabilityRail({ staff }: { staff: Staff[] }) {
+function StaffAvailabilityRail({ staff, onShowAll }: { staff: Staff[]; onShowAll: () => void }) {
   const presentCount = staff.filter((member) => member.isPresent).length;
   const availableCount = staff.filter((member) => member.isPresent && member.availability === 'AVAILABLE').length;
   const visibleStaff = staff
@@ -106,7 +106,7 @@ function StaffAvailabilityRail({ staff }: { staff: Staff[] }) {
       <Users size={20} aria-hidden="true" />
       <span>No staff checked in yet.</span>
     </div>}
-    {presentCount > visibleStaff.length ? <span className="staff-availability-more">+{presentCount - visibleStaff.length} more on the Staff tab</span> : null}
+    {presentCount > visibleStaff.length ? <button type="button" className="staff-availability-more" onClick={onShowAll} aria-label={`View ${presentCount - visibleStaff.length} more checked-in staff members in Staff attendance`}>+{presentCount - visibleStaff.length} more on the Staff tab</button> : null}
   </section>;
 }
 
@@ -132,7 +132,7 @@ export default function BoardPage() {
   const requestControllerRef = useRef<AbortController | null>(null);
   const actionSubmitInFlightRef = useRef(false);
   const latestVersionRef = useRef(0);
-  const hasApiSnapshotRef = useRef(false);
+  const hasBoardSnapshotRef = useRef(false);
   const lastSuccessAtRef = useRef<number>(0);
 
   const availableStaff = board.staff.filter((member) => member.isPresent && member.availability === 'AVAILABLE');
@@ -172,10 +172,10 @@ export default function BoardPage() {
     let timedOut = false;
     let timeoutId: number | undefined;
     try {
-      // The SSE bootstrap can arrive before this request and its payload may
-      // already have the same version. Keep the first API response full so
-      // auth-specific viewer metadata can never be skipped by a 304.
-      const since = hasApiSnapshotRef.current && latestVersionRef.current > 0
+      // The SSE bootstrap includes the authenticated viewer metadata. Once any
+      // snapshot is present, use the cheap version-aware API path instead of
+      // rebuilding the full relation graph.
+      const since = hasBoardSnapshotRef.current && latestVersionRef.current > 0
         ? `?since=${latestVersionRef.current}`
         : '';
       const request = fetch(`/api/board${since}`, {
@@ -192,6 +192,7 @@ export default function BoardPage() {
       const response = await Promise.race([request, timeout]);
       if (response.status === 304) {
         if (requestSequence !== requestSequenceRef.current) return;
+        hasBoardSnapshotRef.current = true;
         setBoardLoaded(true);
         setBoardError('');
         setSyncStatus('POLLING');
@@ -202,7 +203,7 @@ export default function BoardPage() {
       if (requestSequence !== requestSequenceRef.current) return;
       if (nextBoard.version < latestVersionRef.current) return;
       latestVersionRef.current = nextBoard.version;
-      hasApiSnapshotRef.current = true;
+      hasBoardSnapshotRef.current = true;
       setBoard(nextBoard);
       setBoardLoaded(true);
       setBoardError('');
@@ -244,6 +245,7 @@ export default function BoardPage() {
           const nextBoard = payload.payload;
           if (nextBoard.version < latestVersionRef.current) return;
           latestVersionRef.current = nextBoard.version;
+          hasBoardSnapshotRef.current = true;
           setBoard(nextBoard);
           setBoardLoaded(true);
           setBoardError('');
@@ -275,13 +277,13 @@ export default function BoardPage() {
       connect();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    const initialLoad = window.setTimeout(() => { void loadBoard(); }, 0);
-    // A newly checked-in visit can be routed by the same command that created
-    // it. Give the board one short convergence refresh after the initial SSE
-    // snapshot, then stay on the low-frequency fallback below. This preserves
-    // fast queue actions without returning to a 3-second D1 polling loop.
-    const convergenceRefresh = window.setTimeout(() => { void loadBoard(); }, 1_000);
     connect();
+    // SSE carries the initial authenticated snapshot. Keep the API request as
+    // a bounded fallback for browsers or networks where SSE cannot bootstrap;
+    // this avoids two full board reads on every normal page load.
+    const initialLoadFallback = window.setTimeout(() => {
+      if (!hasBoardSnapshotRef.current) void loadBoard();
+    }, 2_500);
     const poll = window.setInterval(() => {
       if (document.visibilityState === 'visible') void loadBoard();
     }, BOARD_POLL_INTERVAL_MS);
@@ -292,8 +294,7 @@ export default function BoardPage() {
       disposed = true;
       source?.close();
       clearReconnectTimer();
-      window.clearTimeout(initialLoad);
-      window.clearTimeout(convergenceRefresh);
+      window.clearTimeout(initialLoadFallback);
       window.clearInterval(poll);
       window.clearInterval(staleCheck);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -399,6 +400,11 @@ export default function BoardPage() {
     window.requestAnimationFrame(() => document.getElementById(nextTab + '-tab')?.focus());
   }
 
+  function showStaffTab() {
+    setActiveTab('staff');
+    window.requestAnimationFrame(() => document.getElementById('staff-tab')?.focus());
+  }
+
   return (
     <main className={`board-shell page-root board-sync-${syncStatus.toLowerCase()}`}>
       <header className="app-topbar">
@@ -408,7 +414,8 @@ export default function BoardPage() {
         </Link>
         <div className="topbar-actions">
           {board.viewerRole === 'ADMIN' ? <Link className="button button-admin-nav" href="/admin"><span className="nav-action-icon"><ArrowLeft size={18} aria-hidden="true" /></span><span>Admin</span></Link> : null}
-          {board.viewer ? <AccountMenu viewer={board.viewer} callbackUrl="/sign-in" /> : board.viewerRole ? <SignOutButton callbackUrl="/sign-in" className="button button-outline button-sm" /> : <SafariLoginLink className="button button-quiet button-sm" href="/sign-in"><LogIn size={16} aria-hidden="true" /> Log in</SafariLoginLink>}
+          <Link className="button button-board-nav kiosk-nav-link" href="/kiosk" target="_blank" rel="noopener noreferrer" aria-label="Open customer kiosk in a new tab"><span className="nav-action-icon"><ExternalLink size={18} aria-hidden="true" /></span><span>Kiosk</span></Link>
+          {board.viewer ? <AccountMenu viewer={board.viewer} callbackUrl="/sign-in" /> : board.viewerRole ? <SignOutButton callbackUrl="/sign-in" className="button button-outline button-sm" /> : <SafariLoginLink className="button button-quiet button-sm" href="/sign-in" aria-label="Log in"><LogIn size={16} aria-hidden="true" /><span className="mobile-hide-on-small">Log in</span></SafariLoginLink>}
         </div>
       </header>
 
@@ -532,7 +539,7 @@ export default function BoardPage() {
               </div>
             </section>
 
-            <StaffAvailabilityRail staff={board.staff} />
+            <StaffAvailabilityRail staff={board.staff} onShowAll={showStaffTab} />
 
           </div>
         </div> : <div id="staff-panel" role="tabpanel" aria-labelledby="staff-tab"><StaffAttendancePanel staff={board.staff} viewerRole={board.viewerRole} onAction={(action, staffId) => openAction(action, undefined, staffId)} /></div>}

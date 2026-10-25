@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-19
+Last updated: 2026-10-25
 
 ## Active target
 
@@ -17,20 +17,21 @@ Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test tar
 - Admin loading resilience: 10/15-second client deadlines, superseded-request cancellation, stale-response protection, a section-aware Dashboard snapshot, narrow live projections, direct D1 Attendance reads, and response timing diagnostics.
 - Worker/D1 lifecycle hardening: Prisma clients and D1 bindings are request-scoped, the cross-request Prisma Promise queue and compatibility workaround are removed, and the E2E harness rejects runtime cancellation/cross-request I/O signatures.
 - Operational follow-up: the remote read-only smoke, disposable D1 export/restore rehearsal, six-hour public smoke workflow, and optional WebKit/iPad E2E project are now repeatable.
+- 2026-10-25 UI/CPU follow-up: Staff availability expansion, contained historical review scrolling, 320/360/390px queue actions, Admin/Board Kiosk entry points, and staff-form semantics/persistence are covered by the local gate. Board bootstrap/projection and Admin Appointments report work were reduced without changing business rules.
 
 ## Verification evidence
 
 | Check | Result |
 | --- | --- |
 | `npm run lint` | PASS in the recorded local gate |
-| `npm run typecheck` | PASS on 2026-10-15 after D1 client generation |
-| `npm test` | 54/54 PASS |
-| `npm run build:vinext` | PASS in the recorded Worker gate |
-| `npm run test:e2e:d1` | 41 passed; one intentional skip |
+| `npm run typecheck` | PASS on 2026-10-25 after D1 client generation |
+| `npm test` | 67/67 PASS |
+| `npm run build:vinext` | PASS on 2026-10-25 |
+| `npm run test:e2e:d1` | 47 passed; one intentional skip |
 | `npm run test:e2e:d1:webkit` | 61 passed; two intentional skips across Chromium, tablet, and WebKit projects |
 | `npm run smoke:remote` | 19/19 public and authenticated read-only checks passed |
 | `npm run d1:recovery:rehearsal` | PASS; representative table counts matched after export/restore |
-| Local D1 migrations/bootstrap | PASS; two migrations and 101 bootstrap statements |
+| Local D1 migrations/bootstrap | PASS; five migrations and 101 bootstrap statements |
 | Local Worker route/command smoke | PASS for health, auth, kiosk, board, admin, payments, closing, retention, and resilience scope |
 | `npx cf deploy --dry-run` | PASS in the recorded deployment gate |
 | Remote workers.dev read-only smoke | PASS for health, catalog, board, and kiosk |

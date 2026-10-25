@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — 2026-10-25 — Queue, kiosk, and staff-form follow-up
+
+- Fixed the Staff availability “+N more” control so it opens the Staff attendance tab, keeps the hidden count aligned with the filtered data, and remains keyboard accessible.
+- Contained the historical review table at 90% zoom and made mobile Up next Accept/Skip actions stack cleanly at 320px, 360px, and 390px.
+- Added separate-tab Kiosk links from Admin and Board/Station, plus responsive regression coverage for both entry points.
+- Refined the staff form with a compact single-line Full Name input and a separate Assignment availability switch while preserving existing `isActive` and routing semantics.
+- Reduced duplicate board bootstrap reads, narrowed board D1 projections, and stopped unused report aggregation on Admin Appointments. Deployed CPU evidence remains an operator/dashboard gate.
+- Final local verification for this follow-up: 67/67 `npm test`, lint, typecheck, build, and 47 Worker/D1 E2E cases passed with one intentional skip. No deployment was performed.
+
 ## Unreleased — 2026-10-19 — Restore previous salon UI
 
 - Reverted the Warm Editorial visual experiment after owner review and restored the previous pastel visual baseline.

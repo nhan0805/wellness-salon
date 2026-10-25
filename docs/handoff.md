@@ -1,6 +1,6 @@
 # Handoff
 
-Last updated: 2026-10-19
+Last updated: 2026-10-25
 
 ## Runtime
 
@@ -14,8 +14,15 @@ The deployed Worker is `https://wellness.n8l.workers.dev`. Source commit `227a5d
 - The Worker auth boundary uses Web Crypto PBKDF2/HS256 and D1-backed session/lockout state. Bootstrap credentials remain environment-only.
 - Critical mutation paths use D1 batches, predicates, leases, command receipts, and audit rows. D1 is not treated as a rollback transaction boundary; interruption and concurrency evidence remain release gates.
 - The canonical database-backed gate is `npm run test:e2e:d1`: build Worker artifact, apply all five D1 migrations, generate the 101-statement disposable bootstrap, and run the Worker Playwright suite.
-- The latest evidence includes 67/67 unit/integration tests, 41 Worker/D1 cases with one intentional desktop-project skip, and 61 cases across the combined Chromium/tablet/WebKit gate with two intentional skips. The disposable D1 recovery rehearsal and 19/19 remote read-only smoke also pass. Re-run the commands below after meaningful changes.
+- The latest evidence includes 67/67 unit/integration tests, 47 Worker/D1 cases with one intentional desktop-project skip, and 61 cases across the combined Chromium/tablet/WebKit gate with two intentional skips. The disposable D1 recovery rehearsal and 19/19 remote read-only smoke also pass. Re-run the commands below after meaningful changes.
 - The Admin loading reliability follow-up adds bounded client deadlines, cancellation of superseded loads, stale-response guards, Retry/error states, and a section-aware Dashboard snapshot. Prisma/D1 work is request-scoped, the former cross-request Promise queue and compatibility workaround are removed, and the E2E harness fails on runtime cancellation/cross-request I/O logs. The latest verification is 63/63 unit tests plus 37 passed and one intentional skip in the Worker/D1 E2E gate.
+
+## 2026-10-25 Local responsive and CPU follow-up
+
+- The board Staff availability overflow action now opens the Staff attendance tab and is keyboard accessible; the board queue actions and tab labels remain inside 320px, 360px, and 390px viewports.
+- Historical review actions remain available inside a contained table scroll region at 90% browser zoom. Admin and Board/Station both open the customer Kiosk in a separate tab, and the staff form regression confirms Full Name, Skills, and Assignment availability persist.
+- The code audit covered `/api/sse/board`, `/api/board`, `/api/admin/dashboard`, and `/api/admin/appointments/past-unresolved`. It removed duplicate normal board bootstrap reads, narrowed board projections, and skipped unused Appointments report aggregation. Cloudflare dashboard/log access is still required to prove deployed CPU per invocation and D1 row/latency metrics.
+- Final local checks for this follow-up: `npm run lint`, `npm run typecheck`, `npm test` (67/67), `npm run build`, and `npm run test:e2e:d1` (47 passed, 1 intentional skip). No deployment or remote D1 mutation was performed.
 
 ## 2026-10-18 Git-based release
 

@@ -16,6 +16,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   CreditCard,
+  ExternalLink,
   Hand,
   History,
   LayoutDashboard,
@@ -440,8 +441,11 @@ export default function AdminPage() {
       // section changes, and explicit retries; background polling only needs
       // the live queue to avoid re-running the heaviest report queries every
       // 15 seconds.
-      const shouldLoadReports =
-        !background && (section === 'overview' || section === 'appointments');
+      // The Appointments surface consumes the paginated appointment snapshot,
+      // not the revenue report. Keeping reports out of this request avoids a
+      // second, unrelated day/month aggregation while the history and past-
+      // unresolved reads are loading.
+      const shouldLoadReports = !background && section === 'overview';
       const shouldLoadConfig = !background && section === 'overview';
       const include = [
         shouldLoadLive ? 'live' : '',
@@ -1425,6 +1429,12 @@ export default function AdminPage() {
                 <ClipboardList size={18} aria-hidden="true" />
               </span>
               <span>Queue board</span>
+            </Link>
+            <Link className="button button-board-nav kiosk-nav-link" href="/kiosk" target="_blank" rel="noopener noreferrer" aria-label="Open customer kiosk in a new tab">
+              <span className="nav-action-icon">
+                <ExternalLink size={18} aria-hidden="true" />
+              </span>
+              <span>Kiosk</span>
             </Link>
           </div>
           <AccountMenu viewer={accountViewer} callbackUrl="/admin/sign-in" />

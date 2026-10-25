@@ -120,6 +120,9 @@ test('past appointment actions stay separate across desktop, tablet, and phone v
     { width: 1440, height: 900 },
   ]) {
     await page.setViewportSize(viewport);
+    await page.evaluate((zoomed) => {
+      document.documentElement.style.zoom = zoomed ? '90%' : '';
+    }, viewport.width === 1440);
     await expect
       .poll(() =>
         page.evaluate(
@@ -127,6 +130,13 @@ test('past appointment actions stay separate across desktop, tablet, and phone v
         ),
       )
       .toBe(0);
+    // CSS zoom is used only for the overflow assertion. Reset it before
+    // measuring touch-target dimensions so the checks remain in CSS pixels.
+    if (viewport.width === 1440) {
+      await page.evaluate(() => {
+        document.documentElement.style.zoom = '';
+      });
+    }
     await expect(page.locator('.past-unresolved-card')).toBeVisible();
     await expect(page.locator('.past-unresolved-table-wrap')).toBeVisible();
 

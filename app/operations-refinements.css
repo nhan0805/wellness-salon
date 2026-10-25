@@ -123,6 +123,52 @@ html {
   }
 }
 
+/* On phones the queue card no longer has enough inline measure for two
+   96px actions beside the service label. Stack the actions in normal flow so
+   Accept and Skip remain separate, full-width touch targets at 320–390px. */
+@media (max-width: 600px) {
+  .board-shell .queue-service-action {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .board-shell .queue-service-action-label,
+  .board-shell .queue-service-action .queue-action {
+    grid-column: 1;
+  }
+
+  .board-shell .queue-service-action .queue-action {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+.staff-availability-more {
+  border: 0;
+  background: transparent;
+  color: var(--ops-muted);
+  padding: 2px 0;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: rgb(143 83 96 / 0.35);
+  text-underline-offset: 3px;
+}
+
+.staff-availability-more:hover,
+.staff-availability-more:focus-visible {
+  color: var(--color-primary-strong);
+}
+
+/* At the narrowest board width, the two tab labels may have only a small
+   text column beside their icon. Let the semantic label pieces shrink and
+   wrap instead of widening the document past the viewport. */
+.board-shell .board-tab-copy > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 @media (max-width: 420px) {
   .board-shell .queue-item {
     grid-template-columns: minmax(86px, 96px) minmax(0, 1fr);
@@ -137,6 +183,29 @@ html {
   }
 }
 
+@media (max-width: 340px) {
+  /* Preserve a single readable service scan line at the narrowest supported
+     width by giving the service copy a few more pixels beside the ticket. */
+  .board-shell .queue-item {
+    grid-template-columns: minmax(76px, 82px) minmax(0, 1fr);
+  }
+
+  .board-shell .queue-number {
+    min-width: 76px;
+    max-width: 82px;
+    padding-right: 3px;
+    padding-left: 3px;
+    font-size: 0.54rem;
+  }
+
+  .board-shell .queue-service-row.is-next .queue-service-name {
+    font-size: 0.72rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 /* Make horizontal data regions behave like deliberate surfaces instead of
    accidental overflow, while preserving the existing tablet card layouts. */
 .admin-table-wrap {
@@ -148,6 +217,145 @@ html {
 .table-overflow-region:focus-visible {
   outline-color: rgb(143 83 96 / 0.42);
   outline-offset: 3px;
+}
+
+/* Desktop/tablet historical rows retain their wide scan order, but the
+   wrapper—not the document—owns the overflow. This is especially important
+   when browser zoom changes the effective CSS viewport width. */
+@media (min-width: 1101px) {
+  .past-unresolved-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+/* Staff editing: the PIN keypad determines the height of the top grid. Keep
+   the name field aligned to its own label and input instead of stretching it
+   into a textarea-like panel. */
+.staff-form .staff-form-top-grid {
+  align-items: start;
+}
+
+.staff-form .staff-name-field {
+  align-self: start;
+  align-content: start;
+}
+
+.staff-form .staff-name-field input {
+  height: 48px;
+  min-height: 48px;
+  max-height: 48px;
+}
+
+.staff-form .skill-fieldset {
+  gap: 8px;
+}
+
+.staff-form .skill-fieldset .field-hint {
+  margin: -2px 0 2px;
+}
+
+.assignment-availability-fieldset {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-background);
+  padding: 14px 16px;
+}
+
+.assignment-availability-fieldset legend {
+  padding: 0 4px;
+  color: var(--color-foreground);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.assignment-availability-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  cursor: pointer;
+}
+
+.assignment-availability-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.assignment-availability-copy strong {
+  color: var(--color-foreground);
+  font-size: 0.9rem;
+}
+
+.assignment-availability-copy small {
+  color: var(--color-muted-foreground);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.assignment-availability-switch {
+  position: relative;
+  flex: 0 0 50px;
+  width: 50px;
+  height: 30px;
+}
+
+.assignment-availability-switch input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.assignment-availability-switch span {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-muted);
+  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease;
+}
+
+.assignment-availability-switch span::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-card);
+  box-shadow: var(--shadow-sm);
+  content: '';
+  transition: transform var(--motion-fast) ease;
+}
+
+.assignment-availability-switch input:checked + span {
+  border-color: var(--color-primary-dark);
+  background: var(--color-primary);
+}
+
+.assignment-availability-switch input:checked + span::after {
+  transform: translateX(20px);
+}
+
+.assignment-availability-switch input:focus-visible + span {
+  outline: 3px solid rgb(143 83 96 / 0.3);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assignment-availability-switch span,
+  .assignment-availability-switch span::after {
+    transition: none;
+  }
 }
 
 /* A quiet pulse communicates that the board is connected without adding a
