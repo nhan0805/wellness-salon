@@ -41,11 +41,11 @@
     "@prisma/adapter-d1": "6.19.3",
     "hash-wasm": "^4.12.0",
     "lucide-react": "0.468.0",
-    "next": "^16.4.0",
+    "next": "^16.4.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-server-dom-webpack": "19.3.0",
-    "zod": "3.23.8"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@prisma/client": "6.19.3",
@@ -64,7 +64,7 @@
     "cf": "1.0.0-beta.14",
     "dotenv": "^16.6.1",
     "eslint": "^9.39.1",
-    "eslint-config-next": "^16.4.0",
+    "eslint-config-next": "^16.4.3",
     "jsdom": "25.0.1",
     "prettier": "3.4.2",
     "prisma": "^6.19.3",

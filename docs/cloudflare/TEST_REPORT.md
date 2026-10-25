@@ -11,6 +11,7 @@
 | `npm run typecheck` | PASS; D1 Prisma client generated before checking. |
 | `npm test` | PASS; 21 files and 67 tests passed. |
 | `npm run build` | PASS; Worker/vinext output prepared successfully. |
+| `npm audit --omit=dev --omit=optional --audit-level=high` | PASS; production dependency audit reports zero vulnerabilities after the Next/Zod/fast-uri patch. |
 | `npm run test:e2e:d1` | PASS; 47 Playwright cases passed and one desktop-project case was intentionally skipped. |
 | Responsive fixes | PASS locally at 320/360/390px queue sizes and 90% zoom historical review; Admin/Board Kiosk entry and staff-form persistence regressions pass. |
 | Cloudflare CPU investigation | Code-level causes and safeguards documented in [PERFORMANCE.md](PERFORMANCE.md); deployed per-invocation CPU, D1 row/latency, and quota evidence still require dashboard/log access. |

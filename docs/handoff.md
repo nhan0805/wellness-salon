@@ -22,7 +22,7 @@ The deployed Worker is `https://wellness.n8l.workers.dev`. Source commit `227a5d
 - The board Staff availability overflow action now opens the Staff attendance tab and is keyboard accessible; the board queue actions and tab labels remain inside 320px, 360px, and 390px viewports.
 - Historical review actions remain available inside a contained table scroll region at 90% browser zoom. Admin and Board/Station both open the customer Kiosk in a separate tab, and the staff form regression confirms Full Name, Skills, and Assignment availability persist.
 - The code audit covered `/api/sse/board`, `/api/board`, `/api/admin/dashboard`, and `/api/admin/appointments/past-unresolved`. It removed duplicate normal board bootstrap reads, narrowed board projections, and skipped unused Appointments report aggregation. Cloudflare dashboard/log access is still required to prove deployed CPU per invocation and D1 row/latency metrics.
-- Final local checks for this follow-up: `npm run lint`, `npm run typecheck`, `npm test` (67/67), `npm run build`, and `npm run test:e2e:d1` (47 passed, 1 intentional skip). No deployment or remote D1 mutation was performed.
+- Final local checks for this follow-up: `npm run lint`, `npm run typecheck`, `npm test` (67/67), `npm run build`, production `npm audit` (0 vulnerabilities), and `npm run test:e2e:d1` (47 passed, 1 intentional skip). No deployment or remote D1 mutation was performed before the Git-based release workflow.
 
 ## 2026-10-18 Git-based release
 

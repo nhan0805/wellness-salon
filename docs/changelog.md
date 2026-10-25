@@ -7,6 +7,7 @@
 - Added separate-tab Kiosk links from Admin and Board/Station, plus responsive regression coverage for both entry points.
 - Refined the staff form with a compact single-line Full Name input and a separate Assignment availability switch while preserving existing `isActive` and routing semantics.
 - Reduced duplicate board bootstrap reads, narrowed board D1 projections, and stopped unused report aggregation on Admin Appointments. Deployed CPU evidence remains an operator/dashboard gate.
+- Updated the deploy gate dependencies to patched Next.js 16.4.3, Zod 4.6.7, and fast-uri 3.1.9; production dependency audit now reports zero vulnerabilities.
 - Final local verification for this follow-up: 67/67 `npm test`, lint, typecheck, build, and 47 Worker/D1 E2E cases passed with one intentional skip. No deployment was performed.
 
 ## Unreleased — 2026-10-19 — Restore previous salon UI

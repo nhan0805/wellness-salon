@@ -8,6 +8,7 @@
 - Added separate-tab Kiosk entry points from both the Admin and Board/Station workflows without replacing their current state.
 - Changed the staff Full Name control to a compact single-line input and separated Assignment availability into a labeled switch with explanatory copy while preserving the existing `isActive` persistence and assignment rules.
 - Reduced normal board bootstrap/query work and removed unused Admin Appointments report aggregation; production CPU still requires Cloudflare dashboard/log evidence.
+- Updated the production dependency gate to Next.js 16.4.3, Zod 4.6.7, and fast-uri 3.1.9 so the production audit passes without a force-upgrade.
 
 Responsive and persistence coverage was added to the Worker/D1 Playwright gate. Final local verification: lint, typecheck, `npm test` (67/67), build, and `npm run test:e2e:d1` (47 passed, 1 intentional skip).
 
