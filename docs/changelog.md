@@ -1,13 +1,13 @@
 # Changelog
 
-## Unreleased — 2026-10-28 — Data snapshots, scheduler, and security hardening
+## 2026-10-28 — Data snapshots, scheduler, and security hardening — `2ca86e8`
 
 - Added appointment customer-name snapshots and completed currency propagation for appointment, service, payment, payment-item, and service-change writes; historical visits no longer follow later customer/configuration edits.
 - Changed customer history to expose gross, refund, and net payment/tip totals from audited refund events.
 - Fixed Worker closing-date calculation near midnight and made closing/retention collisions run sequentially under the shared D1 lease while still attempting both jobs.
 - Rotated kiosk/board idempotency keys when submitted payloads change, preserving safe retries for unchanged payloads and server-side conflicts for changed payloads.
 - Added bounded JSON parsing, opt-in forwarded-header trust for origin/rate-limit identity, D1 lease-loss detection, and removed `unsafe-eval` from the CSP.
-- Added four unit regressions for scheduler collisions/business dates and forwarded-header origin checks. Migration `0006` is local/unreleased; no remote deployment or D1 mutation was performed.
+- Added four unit regressions for scheduler collisions/business dates and forwarded-header origin checks. Migration `0006` was applied to remote D1 before GitHub Actions deployed the Worker; post-deploy smoke passed 19/19.
 
 ## Unreleased — 2026-10-25 — Queue, kiosk, and staff-form follow-up
 

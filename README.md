@@ -8,15 +8,15 @@ Cloudflare Workers + D1 (SQLite, canonical runtime and test target), Next.js App
 
 ## Cloudflare Free migration status
 
-The latest Git-based release is commit `9474c0e`, deployed through GitHub Actions run [39191668530](https://github.com/nhan0805/wellness-salon/actions/runs/39191668530) to [wellness.n8l.workers.dev](https://wellness.n8l.workers.dev). Remote D1 migration `0005_free_quota_hardening.sql` is applied and the post-deploy `/api/health` check returned HTTP 200 with `status: ok`; the post-deploy read-only smoke passed 19/19 checks. The Cloudflare Worker + D1 path is the canonical runtime and test target for this handoff. Full production approval remains gated by mutation/failure-injection/concurrency evidence, live capacity metrics, physical-device review, scheduler alerting, and final owner approval. The owner has confirmed `Asia/Ho_Chi_Minh`; the existing remote D1 data and secrets were preserved and no custom domain or production-data import was used.
+The latest Git-based release is commit `2ca86e8437cc929982c66f84310f9c35d3e5ceef`, deployed through GitHub Actions run [40666796400](https://github.com/nhan0805/wellness-salon/actions/runs/40666796400) to [wellness.n8l.workers.dev](https://wellness.n8l.workers.dev). Remote D1 migration `0006_appointment_customer_name_snapshot.sql` is applied, the post-deploy `/api/health` check returned HTTP 200 with `status: ok`, and the post-deploy read-only smoke passed 19/19 checks. Cloudflare Version ID is `75bde7fd-c449-4e5e-a1ba-9cab5a704320`. The Cloudflare Worker + D1 path is the canonical runtime and test target for this handoff. Full production approval remains gated by mutation/failure-injection/concurrency evidence, live capacity metrics, physical-device review, scheduler alerting, and final owner approval. The owner has confirmed `Asia/Ho_Chi_Minh`; the existing remote D1 data and secrets were preserved and no custom domain or production-data import was used.
 
-The 2026-10-19 release is commit `9474c0e`. It was deployed through `.github/workflows/ci.yml` in GitHub Actions run `39191668530` after the verification gate passed; use that deployment as the production source of truth. Direct deployment from an uncommitted local tree is not part of the release flow.
+The 2026-10-28 release is commit `2ca86e8437cc929982c66f84310f9c35d3e5ceef`. It was deployed through `.github/workflows/ci.yml` after the verification gate passed; use GitHub Actions run `40666796400` and Cloudflare Version ID `75bde7fd-c449-4e5e-a1ba-9cab5a704320` as the deployment record. Direct deployment from an uncommitted local tree is not part of the release flow.
 
 This release hardens the Free demo path with a dedicated atomic kiosk rate-limit table, bounded reconciliation/routing batches, indexed service-count filtering, chunked refund-report lookups, a bounded appointment-code counter, visibility-aware board reconnects, a maximum SSE lifetime, catalog cache headers, and lower-volume routine-read logging. Migration `0005_free_quota_hardening.sql` is applied to the reviewed remote D1.
 
-## Local unreleased hardening — 2026-10-28
+## 2026-10-28 hardening release
 
-The current workspace contains unreleased follow-up changes that have not been deployed or applied to remote D1. They add migration `0006_appointment_customer_name_snapshot.sql` for per-visit customer-name snapshots, complete currency propagation across D1 write paths, make customer history net refunds, fix near-midnight and colliding Worker jobs, rotate UI idempotency keys when the payload changes, bound JSON request bodies, opt forwarded headers into an explicit trust setting, preserve D1 lease-loss detection, and remove `unsafe-eval` from the CSP. Remote production remains on the reviewed `0005` state until a Git-based release is approved.
+This release adds migration `0006_appointment_customer_name_snapshot.sql` for per-visit customer-name snapshots, completes currency propagation across D1 write paths, makes customer history net refunds, fixes near-midnight and colliding Worker jobs, rotates UI idempotency keys when the payload changes, bounds JSON request bodies, opts forwarded headers into an explicit trust setting, preserves D1 lease-loss detection, and removes `unsafe-eval` from the CSP. The migration was applied to remote D1 before the Worker deployment.
 
 Local Cloudflare checks:
 
@@ -55,7 +55,7 @@ npx prisma validate --schema prisma/d1/schema.prisma
 npm run build
 ```
 
-Kết quả kiểm chứng ngày 28/10/2026: lint, typecheck, build Worker, 71/71 unit/integration tests, D1 Worker E2E 47 PASS với 1 skip có chủ đích, và gate Chromium/tablet/WebKit 70 PASS với 2 skip có chủ đích. Các lệnh local chạy trên disposable D1 với cả sáu migration; không triển khai hoặc mutate remote D1 trong lượt hardening này. Cloudflare CPU production, scheduler event, physical-device và capacity evidence vẫn cần dashboard/log hoặc kiểm thử vận hành riêng.
+Kết quả kiểm chứng ngày 28/10/2026: lint, typecheck, build Worker, 71/71 unit/integration tests, D1 Worker E2E 47 PASS với 1 skip có chủ đích, gate Chromium/tablet/WebKit 70 PASS với 2 skip có chủ đích, và remote read-only smoke 19/19 PASS sau deploy. Các lệnh local chạy trên disposable D1 với cả sáu migration; migration production và Worker được triển khai qua GitHub Actions. Cloudflare CPU production, scheduler event, physical-device và capacity evidence vẫn cần dashboard/log hoặc kiểm thử vận hành riêng.
 
 ## Chạy app
 

@@ -1,9 +1,9 @@
 # Cloudflare Migration Test Report
 
-**Date:** 2026-10-19
-**Overall status:** Local Worker/D1 build, the Chromium/tablet/WebKit E2E gate, disposable D1 recovery rehearsal, and authenticated read-only production smoke are verified. Source commit `227a5dc` is deployed to workers.dev, the reviewed remote D1 remains at migration `0005` with no pending migrations, and the post-deploy `/api/health` check returned `status: ok`; local unreleased migration `0006` and the 2026-10-28 code hardening have not been deployed or applied remotely. Business mutation/scheduler evidence, failure-injection, live capacity, physical-device review, and final production approval remain open. The historical rows below retain their original dates; follow-up sections record current evidence.
+**Date:** 2026-10-28
+**Overall status:** Local Worker/D1 build, the Chromium/tablet/WebKit E2E gate, disposable D1 verification, GitHub Actions deployment, and authenticated read-only production smoke are verified. Source commit `2ca86e8437cc929982c66f84310f9c35d3e5ceef` is deployed to workers.dev as Cloudflare Version ID `75bde7fd-c449-4e5e-a1ba-9cab5a704320`, remote D1 migration `0006` is applied with no pending migrations, and the post-deploy `/api/health` check returned `status: ok`; business mutation/scheduler evidence, failure-injection, live capacity, physical-device review, and final production approval remain open. The historical rows below retain their original dates; follow-up sections record current evidence.
 
-## 2026-10-28 local hardening follow-up
+## 2026-10-28 release verification
 
 | Check | Result |
 | --- | --- |
@@ -12,7 +12,7 @@
 | `npm test` | PASS; 21 files and 71 tests passed. |
 | `npm run test:e2e:d1` | PASS; 47 Playwright cases passed and one desktop-project case was intentionally skipped; all six migrations applied to disposable local D1. |
 | `npm run test:e2e:d1:webkit` | PASS; 70 Playwright cases passed and two queue-layout cases were intentionally skipped across Chromium, tablet, and WebKit. |
-| Remote deployment/D1 | Not performed; remote release remains on `0005`, and no `.env` values were printed. |
+| Remote deployment/D1 | PASS; migration `0006` applied before GitHub Actions run `40666796400`, Worker deployed from commit `2ca86e8`, and no `.env` values were printed. |
 
 ## 2026-10-25 local follow-up evidence
 

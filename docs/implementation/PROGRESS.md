@@ -4,7 +4,7 @@ Last updated: 2026-10-28
 
 ## Active target
 
-Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test target. Local E2E state is disposable. The Worker is deployed at `https://wellness.n8l.workers.dev`; public and authenticated read-only smoke passed, while business-mutation evidence, failure-injection, live capacity observation, physical-device review, and final production approval remain open.
+Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test target. Local E2E state is disposable. The Worker is deployed at `https://wellness.n8l.workers.dev` from commit `2ca86e8437cc929982c66f84310f9c35d3e5ceef`; public and authenticated read-only smoke passed 19/19, while business-mutation evidence, failure-injection, live capacity observation, physical-device review, and final production approval remain open.
 
 ## Delivered
 
@@ -18,6 +18,7 @@ Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test tar
 - Worker/D1 lifecycle hardening: Prisma clients and D1 bindings are request-scoped, the cross-request Prisma Promise queue and compatibility workaround are removed, and the E2E harness rejects runtime cancellation/cross-request I/O signatures.
 - Operational follow-up: the remote read-only smoke, disposable D1 export/restore rehearsal, six-hour public smoke workflow, and optional WebKit/iPad E2E project are now repeatable.
 - 2026-10-25 UI/CPU follow-up: Staff availability expansion, contained historical review scrolling, 320/360/390px queue actions, Admin/Board Kiosk entry points, and staff-form semantics/persistence are covered by the local gate. Board bootstrap/projection and Admin Appointments report work were reduced without changing business rules.
+- 2026-10-28 release: deployed the customer-name/currency snapshots, net-refund history, scheduler, idempotency, request-body, proxy-trust, D1 lease, and CSP hardening after the six-migration Worker/D1 gate passed.
 
 ## Verification evidence
 

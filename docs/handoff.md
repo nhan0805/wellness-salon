@@ -1,20 +1,20 @@
 # Handoff
 
-Last updated: 2026-10-25
+Last updated: 2026-10-28
 
 ## Runtime
 
 Wellness Salon is a tablet-first operations app for one nail shop. The only supported runtime is a Cloudflare Worker backed by D1 (SQLite). Local development and E2E use a disposable local D1 database; the Worker `DB` binding is required and a missing binding is a startup/health failure.
 
-The deployed Worker is `https://wellness.n8l.workers.dev`. Source commit `227a5dc` was deployed by GitHub Actions run `39184956401`; remote migration `0005_free_quota_hardening.sql` is applied, the post-deploy `/api/health` check returned HTTP 200 with `status: ok`, and the authenticated/public read-only smoke passed 19/19 checks. Local tests must never mutate remote D1.
+The deployed Worker is `https://wellness.n8l.workers.dev`. Source commit `2ca86e8437cc929982c66f84310f9c35d3e5ceef` was deployed by GitHub Actions run `40666796400` as Cloudflare Version ID `75bde7fd-c449-4e5e-a1ba-9cab5a704320`; remote migration `0006_appointment_customer_name_snapshot.sql` is applied, the post-deploy `/api/health` check returned HTTP 200 with `status: ok`, and the authenticated/public read-only smoke passed 19/19 checks. Local tests must never mutate remote D1.
 
 ## Current status
 
 - Kiosk, public turn board, protected staff actions, admin queue/payment/reports, customer/staff/service/account management, appointment history, and audited payment correction/refund records are implemented.
 - The Worker auth boundary uses Web Crypto PBKDF2/HS256 and D1-backed session/lockout state. Bootstrap credentials remain environment-only.
 - Critical mutation paths use D1 batches, predicates, leases, command receipts, and audit rows. D1 is not treated as a rollback transaction boundary; interruption and concurrency evidence remain release gates.
-- The canonical database-backed gate is `npm run test:e2e:d1`: build Worker artifact, apply all five D1 migrations, generate the 101-statement disposable bootstrap, and run the Worker Playwright suite.
-- The latest evidence includes 67/67 unit/integration tests, 47 Worker/D1 cases with one intentional desktop-project skip, and 61 cases across the combined Chromium/tablet/WebKit gate with two intentional skips. The disposable D1 recovery rehearsal and 19/19 remote read-only smoke also pass. Re-run the commands below after meaningful changes.
+- The canonical database-backed gate is `npm run test:e2e:d1`: build Worker artifact, apply all six D1 migrations, generate the 101-statement disposable bootstrap, and run the Worker Playwright suite.
+- The latest evidence includes 71/71 unit/integration tests, 47 Worker/D1 cases with one intentional desktop-project skip, and 70 cases across the combined Chromium/tablet/WebKit gate with two intentional skips. The 19/19 remote read-only smoke also passes after the Git-based release. Re-run the commands below after meaningful changes.
 - The Admin loading reliability follow-up adds bounded client deadlines, cancellation of superseded loads, stale-response guards, Retry/error states, and a section-aware Dashboard snapshot. Prisma/D1 work is request-scoped, the former cross-request Promise queue and compatibility workaround are removed, and the E2E harness fails on runtime cancellation/cross-request I/O logs. The latest verification is 63/63 unit tests plus 37 passed and one intentional skip in the Worker/D1 E2E gate.
 
 ## 2026-10-25 Local responsive and CPU follow-up

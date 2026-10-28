@@ -1,19 +1,19 @@
 # Cloudflare Free Deployment Guide
 
-**Date:** 2026-10-19
-**Status:** Previous pastel UI baseline restored from source commit `bdaa0c7`, with the accepted operational/accessibility refinements retained. Migration `0005_free_quota_hardening.sql` remains applied remotely, and the Worker deploy plus public/authenticated read-only smoke succeeded. Business mutation/scheduler evidence and final production approval remain intentionally owner-gated.
+**Date:** 2026-10-28
+**Status:** Hardening release `2ca86e8437cc929982c66f84310f9c35d3e5ceef` is deployed through GitHub Actions run `40666796400`. Migration `0006_appointment_customer_name_snapshot.sql` is applied remotely, and the Worker deploy plus public/authenticated read-only smoke succeeded. Business mutation/scheduler evidence and final production approval remain intentionally owner-gated.
 
 ## Latest deployment record
 
 - Worker URL: `https://wellness.n8l.workers.dev`
-- Source commit: `bdaa0c7b3f91e5d09634f9ec537a79c2f8b29ca8`
+- Source commit: `2ca86e8437cc929982c66f84310f9c35d3e5ceef`
 - Trigger: `*/15 * * * *`
-- Deployed with `npm run deploy:vinext` after GitHub Actions run [39221692889](https://github.com/nhan0805/wellness-salon/actions/runs/39221692889) passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (41 passed, 1 intentional skip).
-- Cloudflare Version ID: `300c9ec4-81e8-4ff6-bfd5-d89bc9b10225`.
-- The release restores the previous pastel visual baseline across Home, Kiosk, Board, Admin, and Sign-in; accepted operational/accessibility refinements remain, and no API or D1 schema contract changed.
+- Deployed with `npm run deploy:vinext` after GitHub Actions run [40666796400](https://github.com/nhan0805/wellness-salon/actions/runs/40666796400) passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (47 passed, 1 intentional skip).
+- Cloudflare Version ID: `75bde7fd-c449-4e5e-a1ba-9cab5a704320`.
+- The release adds customer-name/currency snapshots, net-refund history, scheduler boundary/collision handling, payload-aware idempotency, bounded request bodies, explicit proxy trust, D1 lease-loss guards, and CSP hardening.
 - Post-deploy read-only health check passed for `/api/health`.
 - `npm run smoke:remote` passed 19/19 public and authenticated admin read-only checks, including the initial SSE snapshot.
-- D1 migrations through `0005_free_quota_hardening.sql` are recorded remotely; the post-apply migration check reports no pending migrations.
+- D1 migrations through `0006_appointment_customer_name_snapshot.sql` are recorded remotely; the post-apply migration check reports no pending migrations.
 - The existing remote D1 schema/data were preserved; this deployment did not delete/reset D1, create a custom domain, or import production data.
 - This is a workers.dev deployment, not a claim that every production sign-off gate is complete.
 

@@ -2,13 +2,13 @@
 
 Last updated: 2026-10-28
 
-## 2026-10-28 local hardening follow-up
+## 2026-10-28 hardening release
 
-The workspace now contains unreleased changes for visit-level customer-name/currency snapshots, net-of-refund customer history, Worker scheduler boundary/collision handling, payload-aware idempotency keys, bounded JSON bodies, explicit forwarded-header trust, D1 lease-loss guards, and CSP hardening. Local disposable D1 uses migration `0006_appointment_customer_name_snapshot.sql`; the reviewed remote Worker/D1 deployment remains on migration `0005` because no deployment or remote D1 mutation was performed in this follow-up.
+The release adds visit-level customer-name/currency snapshots, net-of-refund customer history, Worker scheduler boundary/collision handling, payload-aware idempotency keys, bounded JSON bodies, explicit forwarded-header trust, D1 lease-loss guards, and CSP hardening. Local and remote D1 use migration `0006_appointment_customer_name_snapshot.sql`; the Worker was deployed from Git commit `2ca86e8437cc929982c66f84310f9c35d3e5ceef`.
 
 ## Cloudflare migration gate — current status
 
-The Cloudflare Free migration is at **local D1 readiness plus the latest workers.dev deployment, remote migration apply, and authenticated read-only smoke**. The official vinext path builds a Worker artifact; the separate D1 schema/migrations power local health, catalog, board, public pages, authentication, kiosk check-in, staff/appointment/admin/payment workflows, and job smoke. Source commit `227a5dc` is live at `https://wellness.n8l.workers.dev`; all five migrations are applied to remote D1 with no pending migrations, the post-deploy health check returned `status: ok`, and `npm run smoke:remote` passed 19/19 checks. Critical mutation branches now use explicit D1 batches and guards; crash/interruption, full concurrency, business mutation/scheduler evidence, live capacity, physical-device QA, and final production cutover remain owner-gated. The owner-confirmed IANA timezone is `Asia/Ho_Chi_Minh`.
+The Cloudflare Free migration is at **local D1 readiness plus the latest workers.dev deployment, remote migration apply, and authenticated read-only smoke**. The official vinext path builds a Worker artifact; the separate D1 schema/migrations power local health, catalog, board, public pages, authentication, kiosk check-in, staff/appointment/admin/payment workflows, and job smoke. Source commit `2ca86e8437cc929982c66f84310f9c35d3e5ceef` is live at `https://wellness.n8l.workers.dev`; all six migrations are applied to remote D1 with no pending migrations, the post-deploy health check returned `status: ok`, and `npm run smoke:remote` passed 19/19 checks. Critical mutation branches now use explicit D1 batches and guards; crash/interruption, full concurrency, business mutation/scheduler evidence, live capacity, physical-device QA, and final production cutover remain owner-gated. The owner-confirmed IANA timezone is `Asia/Ho_Chi_Minh`.
 
 Closing/retention jobs use one guarded `*/15 * * * *` Worker trigger and read the current Admin-configured D1 timezone/closing time before running. Invalid or missing configuration disables them safely; `UTC` remains only the explicit unconfigured bootstrap sentinel. See [`docs/cloudflare/FINAL_REPORT.md`](cloudflare/FINAL_REPORT.md) and the full [`docs/cloudflare/`](cloudflare/) runbook set.
 

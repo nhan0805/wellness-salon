@@ -17,7 +17,7 @@ Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development
 - Admin loading resilience with bounded client deadlines, cancellation/stale-response guards, a section-aware Dashboard snapshot, narrow live projections, direct D1 Attendance reads, response timing diagnostics, and an Attendance Worker/D1 E2E smoke.
 - Request-safe Worker/D1 lifecycle: no module-global Prisma client/binding/Promise queue, default Cloudflare cross-request handling, and an E2E guard for runtime cancellation/cross-request I/O errors.
 - 2026-10-25 follow-up: fixed Staff availability expansion, historical review overflow, mobile queue actions, Admin/Board Kiosk entry points, and staff-form layout/semantics. Reduced duplicate board bootstrap/projection work and unused Admin Appointments reports without changing assignment or payment rules.
-- 2026-10-28 follow-up: added visit-level customer-name/currency snapshots, net-of-refund customer history, scheduler boundary/collision handling, payload-aware idempotency-key rotation, bounded JSON parsing, explicit proxy-header trust, D1 lease-loss guards, and CSP removal of `unsafe-eval`. These changes are local and unreleased; remote D1 remains on migration `0005`.
+- 2026-10-28 release `2ca86e8437cc929982c66f84310f9c35d3e5ceef`: added visit-level customer-name/currency snapshots, net-of-refund customer history, scheduler boundary/collision handling, payload-aware idempotency-key rotation, bounded JSON parsing, explicit proxy-header trust, D1 lease-loss guards, and CSP removal of `unsafe-eval`. Migration `0006` was applied before GitHub Actions run `40666796400` deployed the Worker; Cloudflare Version ID is `75bde7fd-c449-4e5e-a1ba-9cab5a704320`.
 
 ## Evidence
 
@@ -30,6 +30,7 @@ Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development
 | `npm run test:e2e:d1` | 47 passed; one intentional skip |
 | `npm run test:e2e:d1:webkit` | 70 passed; two intentional skips across Chromium, tablet, and WebKit |
 | `npm run smoke:remote` | 19/19 public and authenticated read-only checks passed |
+| GitHub Actions release | PASS; verify and deploy jobs passed for commit `2ca86e8` |
 | `npm run d1:recovery:rehearsal` | PASS; representative counts matched after local export/restore |
 | Local D1 migrations/bootstrap | PASS; six migrations and 101 bootstrap statements |
 | Local Worker/D1 smoke | PASS for public routes, auth, kiosk, board, admin, payments, jobs, and resilience scope |

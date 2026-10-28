@@ -1,7 +1,7 @@
 # D1 Migration Plan
 
 **Date:** 2026-10-19
-**Status:** Separate D1 schema, six local migrations, Worker bridge, explicit critical-mutation branches, and clean bootstrap workflow are present. Migration `0005` remains the latest applied migration on the reviewed remote D1 for the deployed release; local migration `0006` is unreleased and must be applied only through the Git-based deployment workflow after review.
+**Status:** Separate D1 schema, six migrations, Worker bridge, explicit critical-mutation branches, and clean bootstrap workflow are present. Migration `0006_appointment_customer_name_snapshot.sql` is applied on the remote D1 and was released only after the committed Git-based deployment workflow passed.
 
 ## Source of truth and safety
 
