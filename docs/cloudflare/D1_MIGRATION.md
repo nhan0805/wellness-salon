@@ -9,6 +9,8 @@
 
 Production starts with a reviewed D1 database state. The migration excludes real production-data import; local E2E state is disposable and remote D1 state must be backed up before reviewed changes.
 
+For a brand-new Cloudflare account, use the [beginner Word deployment guide](DEPLOY_NEW_CLOUDFLARE_ACCOUNT_GUIDE.docx). Create a new `wellness-salon` database, replace `database_id` in both Wrangler configuration files, apply all six migrations with `--remote`, and review the bootstrap SQL before applying it. The database ID and remote URL recorded in older deployment reports are account-specific and must not be copied to a new account.
+
 ## D1 representations
 
 | Application value | D1 representation |

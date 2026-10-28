@@ -8,6 +8,8 @@ Wellness Salon is a tablet-first operations app for one nail shop. The only supp
 
 The deployed Worker is `https://wellness.n8l.workers.dev`. Source commit `2ca86e8437cc929982c66f84310f9c35d3e5ceef` was deployed by GitHub Actions run `40666796400` as Cloudflare Version ID `75bde7fd-c449-4e5e-a1ba-9cab5a704320`; remote migration `0006_appointment_customer_name_snapshot.sql` is applied, the post-deploy `/api/health` check returned HTTP 200 with `status: ok`, and the authenticated/public read-only smoke passed 19/19 checks. Local tests must never mutate remote D1.
 
+For a newly registered Cloudflare account, use [`docs/cloudflare/DEPLOY_NEW_CLOUDFLARE_ACCOUNT_GUIDE.docx`](cloudflare/DEPLOY_NEW_CLOUDFLARE_ACCOUNT_GUIDE.docx). The URL and D1 details above describe the existing account only and must not be reused for a fresh account.
+
 ## Current status
 
 - Kiosk, public turn board, protected staff actions, admin queue/payment/reports, customer/staff/service/account management, appointment history, and audited payment correction/refund records are implemented.

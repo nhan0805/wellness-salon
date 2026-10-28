@@ -8,6 +8,12 @@ Cloudflare Workers + D1 (SQLite, canonical runtime and test target), Next.js App
 
 ## Cloudflare Free migration status
 
+### Deploy vào tài khoản Cloudflare mới
+
+Nếu bạn đang dùng một tài khoản Cloudflare mới đăng ký, hãy đọc [hướng dẫn Word từng bước](docs/cloudflare/DEPLOY_NEW_CLOUDFLARE_ACCOUNT_GUIDE.docx). Tài liệu này giải thích cách tạo Workers subdomain, tạo D1 mới, thay `database_id`, chạy migration/bootstrap, cấu hình GitHub Actions, thêm Worker secrets và kiểm tra `/api/health`.
+
+Các URL, database ID và deployment record bên dưới thuộc tài khoản Cloudflare hiện tại của project, không phải giá trị mẫu để copy sang account mới. Khi chuyển account, phải tạo D1 mới và dùng giá trị do account mới cấp.
+
 The latest Git-based release is commit `2ca86e8437cc929982c66f84310f9c35d3e5ceef`, deployed through GitHub Actions run [40666796400](https://github.com/nhan0805/wellness-salon/actions/runs/40666796400) to [wellness.n8l.workers.dev](https://wellness.n8l.workers.dev). Remote D1 migration `0006_appointment_customer_name_snapshot.sql` is applied, the post-deploy `/api/health` check returned HTTP 200 with `status: ok`, and the post-deploy read-only smoke passed 19/19 checks. Cloudflare Version ID is `75bde7fd-c449-4e5e-a1ba-9cab5a704320`. The Cloudflare Worker + D1 path is the canonical runtime and test target for this handoff. Full production approval remains gated by mutation/failure-injection/concurrency evidence, live capacity metrics, physical-device review, scheduler alerting, and final owner approval. The owner has confirmed `Asia/Ho_Chi_Minh`; the existing remote D1 data and secrets were preserved and no custom domain or production-data import was used.
 
 The 2026-10-28 release is commit `2ca86e8437cc929982c66f84310f9c35d3e5ceef`. It was deployed through `.github/workflows/ci.yml` after the verification gate passed; use GitHub Actions run `40666796400` and Cloudflare Version ID `75bde7fd-c449-4e5e-a1ba-9cab5a704320` as the deployment record. Direct deployment from an uncommitted local tree is not part of the release flow.

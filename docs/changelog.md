@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-28 — New Cloudflare account deployment documentation
+
+- Added `docs/cloudflare/DEPLOY_NEW_CLOUDFLARE_ACCOUNT_GUIDE.docx`, a beginner-facing Word guide for creating a new Workers subdomain and D1 database, configuring Wrangler and GitHub Actions, applying migrations/bootstrap, adding secrets, and verifying the deployed app.
+- Linked the guide from the README, Cloudflare deployment, D1 migration, authentication, project-state, and handoff documents.
+- Clarified that the existing `wellness.n8l.workers.dev` URL, remote D1 ID, deployment record, and secrets are account-specific historical data and must not be copied into a new Cloudflare account.
+
 ## 2026-10-28 — Data snapshots, scheduler, and security hardening — `2ca86e8`
 
 - Added appointment customer-name snapshots and completed currency propagation for appointment, service, payment, payment-item, and service-change writes; historical visits no longer follow later customer/configuration edits.

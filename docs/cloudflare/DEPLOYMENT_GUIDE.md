@@ -3,7 +3,13 @@
 **Date:** 2026-10-28
 **Status:** Hardening release `2ca86e8437cc929982c66f84310f9c35d3e5ceef` is deployed through GitHub Actions run `40666796400`. Migration `0006_appointment_customer_name_snapshot.sql` is applied remotely, and the Worker deploy plus public/authenticated read-only smoke succeeded. Business mutation/scheduler evidence and final production approval remain intentionally owner-gated.
 
-## Latest deployment record
+## Fresh account deployment guide
+
+For a brand-new Cloudflare account, follow the [beginner Word guide](DEPLOY_NEW_CLOUDFLARE_ACCOUNT_GUIDE.docx). It is the operator-facing sequence for creating a new Workers subdomain and D1 database, replacing the account-specific database ID, applying migrations and bootstrap SQL, configuring GitHub Actions, adding Worker secrets, and verifying the new URL.
+
+The deployment record below is historical for the existing `wellness.n8l.workers.dev` account. Do not reuse its Worker URL, D1 database ID, secrets, or remote data when setting up a different Cloudflare account.
+
+## Latest deployment record for the existing account
 
 - Worker URL: `https://wellness.n8l.workers.dev`
 - Source commit: `2ca86e8437cc929982c66f84310f9c35d3e5ceef`

@@ -33,6 +33,8 @@ tests/unit/security.test.ts covers matching and non-matching PBKDF2 secrets and 
 
 npm run db:seed:d1:sql runs scripts/seed-d1-bootstrap.ts. It requires owner-supplied environment values, validates the IANA timezone and four-digit staff PIN, emits only idempotent SQL, and intentionally creates no demo appointments or imported production data. Review the generated SQL file before applying it with Wrangler.
 
+The complete beginner sequence for a new Cloudflare account is in the [Word deployment guide](DEPLOY_NEW_CLOUDFLARE_ACCOUNT_GUIDE.docx). It keeps bootstrap credentials in interactive local environment variables, writes the SQL artifact outside the repository, and applies it only to the newly reviewed remote D1 database.
+
 Never put AUTH_SECRET, passwords, PINs, database credentials, or API tokens in repository files or command output. Use Wrangler's secure secret flow for runtime secrets after the production approval gate.
 
 ## Release gate

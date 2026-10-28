@@ -12,6 +12,8 @@ The Cloudflare Free migration is at **local D1 readiness plus the latest workers
 
 Closing/retention jobs use one guarded `*/15 * * * *` Worker trigger and read the current Admin-configured D1 timezone/closing time before running. Invalid or missing configuration disables them safely; `UTC` remains only the explicit unconfigured bootstrap sentinel. See [`docs/cloudflare/FINAL_REPORT.md`](cloudflare/FINAL_REPORT.md) and the full [`docs/cloudflare/`](cloudflare/) runbook set.
 
+The repository now includes a beginner-facing [Word deployment guide](cloudflare/DEPLOY_NEW_CLOUDFLARE_ACCOUNT_GUIDE.docx) for moving this app to a newly registered Cloudflare account. The existing `wellness.n8l.workers.dev` deployment record remains historical; a new account requires a new D1 database, new account-specific configuration, and new secrets.
+
 ## Current project goal
 
 Deliver a tablet-first nail-shop operations system that connects customer self-check-in, a staff turn board, admin payment confirmation, and end-of-day reporting in one codebase.
