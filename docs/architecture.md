@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-10-13
+Last updated: 2026-10-28
 
 ## System overview
 
@@ -105,7 +105,7 @@ The Worker runtime owns durable D1 state through the `DB` binding; Worker auth u
 
 When a request includes an `Origin`, mutations accept the request origin/configured `NEXTAUTH_URL` or equivalent local host/port in development. Requests without an `Origin` are allowed to support server-side cron calls; production scheduler access therefore depends on `CRON_SECRET`. `ShopConfig` is authoritative for business timezone, opening/closing, currency, routing mode, and session TTL; environment values are bootstrap fallbacks.
 
-The board client opens the public SSE stream and polls `GET /api/board` every 5 seconds. SSE currently provides the initial snapshot and keepalives; the polling path detects database changes such as a new kiosk check-in without reloading the page. The board UI separates queue operations and staff attendance into tabs; attendance uses prominent labeled actions while preserving the same protected PIN flow. Each `Up next` card renders the appointment's full ordered `AppointmentService` bundle, including completed/next/queued progress and combined duration; routing still advances one service at a time.
+The board client opens the public SSE stream and polls `GET /api/board` every 15 seconds. SSE currently provides the initial snapshot and keepalives; the polling path detects database changes such as a new kiosk check-in without reloading the page. The board UI separates queue operations and staff attendance into tabs; attendance uses prominent labeled actions while preserving the same protected PIN flow. Each `Up next` card renders the appointment's full ordered `AppointmentService` bundle, including completed/next/queued progress and combined duration; routing still advances one service at a time.
 
 ## Domain and state model
 
@@ -125,7 +125,7 @@ Supporting staff is attached to an appointment and does not create a second paym
 
 - Catalog: `ServiceCategory`, `Service`, `ServiceSkill`, `ShopConfig`. Categories are ordered, archivable catalog presentation data; they do not affect routing. A service has one category, an icon, and one or more required skills, and routing only considers staff who have all of them. The kiosk groups active services by category, then creates an ordered appointment bundle.
 - People/auth: `Staff`, `StaffSkill`, `AuthUser`, `Customer`.
-- Operations: `Appointment`, ordered `AppointmentService` bundle, `Turn`, append-only `TurnEvent` history, `AppointmentSupportingStaff`, `Attendance`, `StaffServiceState`.
+- Operations: `Appointment` with immutable customer-name, service, amount, and currency snapshots, ordered `AppointmentService` bundle, `Turn`, append-only `TurnEvent` history, `AppointmentSupportingStaff`, `Attendance`, `StaffServiceState`.
 - Money/audit/idempotency: `Payment`, `PaymentItem`, `AuditEvent`, `CommandReceipt`. Payment adjustments, corrections, and refunds update the current payment state only through admin commands and retain previous/current details in audit events; no card data or gateway transaction is stored.
 - Session bridge: `VerifiedStaffSession` maps a station user to a short-lived verified staff PIN session.
 
@@ -148,7 +148,7 @@ The D1 path starts assignment/check-in and other shop mutations with conditional
 - Payment history is audit-backed rather than a separate adjustment table: current payment values remain queryable for reports, while adjustment/correction/refund events retain reason, actor, and previous/current or refunded amounts.
 - Payment confirmation uses the shared `AmountKeypad` for final amount, card/cash tip, and cash received; the keypad expands on focus/click and is collapsed by default. Initial confirmation keeps the original amount in the audit metadata for traceability but does not require a reason; later adjustment/correction/refund commands remain reasoned and audited.
 - Critical APIs emit request IDs and structured completion timings; rejected commands, board snapshot version/time, and closing/retention outcomes are available for deployment logging.
-- Closing and retention are protected job endpoints. The application does not run an internal scheduler; deployment operators own scheduling, retries, alerting, and secret rotation.
+- Closing and retention are protected job endpoints. The Worker scheduled handler evaluates the configured quarter-hour tick, passes the correct closing business date, and runs colliding jobs sequentially because both use the shop-wide D1 lease. Deployment operators still own cron enablement, retries, alerting, and secret rotation.
 
 ## Security design
 
@@ -159,6 +159,7 @@ The D1 path starts assignment/check-in and other shop mutations with conditional
 - The public board read endpoints intentionally expose operational turn codes, redacted guest labels, service details, and staff availability needed for the floor display; customer phone numbers and names stay hidden, while mutations remain protected by station/admin auth and staff verification.
 - Admin management mutations require an admin role, validate all body fields with Zod, enforce trusted origins, and append audit events. Staff initials are derived server-side from the staff name; customer records with appointment history are not hard-deleted; skills in use cannot be deleted; staff and services are deactivated/archived; and the last active admin/current admin session cannot be removed from admin access.
 - `proxy.ts` sets CSP, frame/content/referrer/permissions headers and HSTS in production.
+- JSON request bodies are bounded before validation; forwarded host/protocol/IP headers are trusted only when the build-time `TRUST_PROXY_HEADERS=true` setting is explicitly enabled by a rewriting ingress (Cloudflare's `CF-Connecting-IP` remains the canonical edge address). The CSP does not allow `unsafe-eval`.
 - Secrets are environment variables and must be rotated through the deployment secret store.
 
 ## Deployment architecture
@@ -181,6 +182,7 @@ See `.env.example`, `wrangler.local.jsonc`, and `wrangler.production.jsonc`.
 | `AUTH_COOKIE_SECURE` | Explicit secure-cookie override. | `false` locally |
 | `AUTH_TRUST_HOST` | Auth.js trusted-host setting. | `true` |
 | `NEXTAUTH_URL` | Canonical local/configured origin. | `http://127.0.0.1:3001` |
+| `TRUST_PROXY_HEADERS` | Opt-in trust for ingress-rewritten `X-Forwarded-Host`/`X-Forwarded-Proto` during origin checks. | `false` |
 | `SHOP_TIMEZONE` | Bootstrap fallback only when `ShopConfig` has not been seeded. | `Asia/Ho_Chi_Minh` |
 | `CRON_SECRET` | Required scheduler authorization for closing and retention jobs. | Set through `.env` |
 

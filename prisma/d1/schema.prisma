@@ -196,6 +196,7 @@ model Appointment {
   id                  String                       @id @default(cuid())
   code                String
   customerId          String                       @map("customer_id")
+  customerNameSnapshot String                      @map("customer_name_snapshot")
   serviceId           String                       @map("service_id")
   serviceNameSnapshot String                       @map("service_name_snapshot")
   durationMinSnapshot Int                          @map("duration_min_snapshot")

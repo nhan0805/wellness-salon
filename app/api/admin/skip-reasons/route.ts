@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminActor } from '@/src/server/admin-auth';
-import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
+import { hasTrustedOrigin, jsonError, readJsonBodyOrNull } from '@/src/server/request-security';
 import { adminSkipReasonCreateSchema, adminSkipReasonUpdateSchema } from '@/src/server/validation';
 import { createDbAdminSkipReason, deleteDbAdminSkipReason, getDbAdminSkipReasons, updateDbAdminSkipReason } from '@/src/server/services/admin-operations';
 import { observeApiRequest } from '@/src/server/observability';
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     if (!hasTrustedOrigin(request)) return jsonError('Invalid request origin', 403);
     const actor = await getAdminActor();
     if (!actor) return jsonError('Admin authorization required', 403);
-    const parsed = adminSkipReasonCreateSchema.safeParse(await request.json().catch(() => null));
+    const parsed = adminSkipReasonCreateSchema.safeParse(await readJsonBodyOrNull(request));
     if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? 'Invalid skip reason', 422);
     try {
       return NextResponse.json({ skipReason: await createDbAdminSkipReason({ ...parsed.data, adminId: actor.id }) }, { status: 201 });
@@ -34,7 +34,7 @@ export async function PATCH(request: Request) {
     if (!hasTrustedOrigin(request)) return jsonError('Invalid request origin', 403);
     const actor = await getAdminActor();
     if (!actor) return jsonError('Admin authorization required', 403);
-    const parsed = adminSkipReasonUpdateSchema.safeParse(await request.json().catch(() => null));
+    const parsed = adminSkipReasonUpdateSchema.safeParse(await readJsonBodyOrNull(request));
     if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? 'Invalid skip reason', 422);
     try {
       return NextResponse.json({ skipReason: await updateDbAdminSkipReason({ ...parsed.data, adminId: actor.id }) });

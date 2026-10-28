@@ -258,6 +258,7 @@ function mapStaff(row: {
 function mapAppointment(row: {
   id: string;
   code: string;
+  customerNameSnapshot: string;
   customer: { name: string; phone: string };
   service: { id: string; name: string; durationMin: number };
   serviceNameSnapshot: string;
@@ -355,7 +356,7 @@ function mapAppointment(row: {
   return {
     id: row.id,
     code: row.code,
-    customerName: row.customer.name,
+    customerName: row.customerNameSnapshot || row.customer.name,
     phone: row.customer.phone,
     serviceId: currentService?.serviceId ?? row.service.id,
     serviceName: currentService?.serviceName ?? row.serviceNameSnapshot,
@@ -485,6 +486,7 @@ const dashboardAppointmentInclude = {
 const boardAppointmentSelect = {
   id: true,
   code: true,
+  customerNameSnapshot: true,
   serviceNameSnapshot: true,
   durationMinSnapshot: true,
   amount: true,
@@ -1352,6 +1354,7 @@ export async function getDbAppointmentTurnHistory(appointmentId: string) {
       id: true,
       code: true,
       status: true,
+      customerNameSnapshot: true,
       customer: { select: { name: true, phone: true } },
       services: {
         orderBy: { sequence: 'asc' },
@@ -1392,7 +1395,7 @@ export async function getDbAppointmentTurnHistory(appointmentId: string) {
     appointment: {
       id: appointment.id,
       code: appointment.code,
-      customerName: appointment.customer.name,
+      customerName: appointment.customerNameSnapshot || appointment.customer.name,
       phone: appointment.customer.phone,
       status: appointment.status,
     },
@@ -2131,12 +2134,13 @@ async function changeDbAppointmentServiceD1(
       d1Statement(
         database,
         `UPDATE appointment_services
-         SET service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, amount = ?, status = ?, primary_staff_id = ?
+         SET service_id = ?, service_name_snapshot = ?, duration_min_snapshot = ?, amount = ?, currency = ?, status = ?, primary_staff_id = ?
          WHERE id = ? AND service_id = ? AND status = ?`,
         nextService.id,
         nextService.name,
         nextService.durationMin,
         moneyFromMinorUnits(toMinorUnits(nextService.price)),
+        current.appointment.currency,
         needsReroute ? AppointmentStatus.WAITING : current.status,
         needsReroute ? null : current.primaryStaffId,
         current.id,
@@ -2200,8 +2204,8 @@ async function changeDbAppointmentServiceD1(
       d1Statement(
         database,
         `INSERT INTO service_change_events
-         (id, appointment_id, appointment_service_id, old_service_id, old_service_name, old_duration_min, old_amount, new_service_id, new_service_name, new_duration_min, new_amount, reason, actor_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, appointment_id, appointment_service_id, old_service_id, old_service_name, old_duration_min, old_amount, new_service_id, new_service_name, new_duration_min, new_amount, currency, reason, actor_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         randomId(),
         current.appointmentId,
         current.id,
@@ -2213,6 +2217,7 @@ async function changeDbAppointmentServiceD1(
         nextService.name,
         nextService.durationMin,
         moneyFromMinorUnits(toMinorUnits(nextService.price)),
+        current.appointment.currency,
         reason,
         input.adminId,
         nowIso,
@@ -2427,10 +2432,10 @@ async function createDbCheckInD1Attempt(input: {
       d1Statement(database, `INSERT INTO customers (id, phone, phone_normalized, name, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(phone_normalized) DO UPDATE SET phone = excluded.phone, updated_at = excluded.updated_at`, customerId, input.phone, phoneNormalized, input.name.trim(), nowIso, nowIso),
-      d1Statement(database, `INSERT INTO appointments (id, code, customer_id, service_id, service_name_snapshot, duration_min_snapshot, status, primary_staff_id, amount, service_count, business_date, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`, appointmentId, code, customerId, orderedServices[0].id, orderedServices[0].name, orderedServices[0].durationMin, AppointmentStatus.CREATED, totalAmount, orderedServices.length, businessDateIso, nowIso),
-      ...orderedServices.map((service, index) => d1Statement(database, `INSERT INTO appointment_services (id, appointment_id, service_id, sequence, service_name_snapshot, duration_min_snapshot, amount, status, primary_staff_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`, randomId(), appointmentId, service.id, index + 1, service.name, service.durationMin, moneyFromMinorUnits(toMinorUnits(service.price)), AppointmentStatus.CREATED)),
+      d1Statement(database, `INSERT INTO appointments (id, code, customer_id, customer_name_snapshot, service_id, service_name_snapshot, duration_min_snapshot, status, primary_staff_id, amount, currency, service_count, business_date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`, appointmentId, code, customerId, input.name.trim(), orderedServices[0].id, orderedServices[0].name, orderedServices[0].durationMin, AppointmentStatus.CREATED, totalAmount, shopConfig?.currency ?? 'USD', orderedServices.length, businessDateIso, nowIso),
+      ...orderedServices.map((service, index) => d1Statement(database, `INSERT INTO appointment_services (id, appointment_id, service_id, sequence, service_name_snapshot, duration_min_snapshot, amount, currency, status, primary_staff_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`, randomId(), appointmentId, service.id, index + 1, service.name, service.durationMin, moneyFromMinorUnits(toMinorUnits(service.price)), shopConfig?.currency ?? 'USD', AppointmentStatus.CREATED)),
       d1Statement(database, `INSERT INTO audit_events (id, ts, actor_type, actor_id, action, entity, entity_id, metadata)
         VALUES (?, ?, ?, NULL, ?, ?, ?, ?)`, randomId(), nowIso, ActorType.SYSTEM, 'appointment.checked_in', 'Appointment', appointmentId, JSON.stringify({ code, serviceIds: orderedServices.map((service) => service.id) })),
       ...(input.idempotencyKey ? [d1Statement(database, `INSERT INTO command_receipts (id, scope, key, response, request_hash, created_at)
@@ -2563,10 +2568,10 @@ async function confirmDbPaymentD1(input: {
     const paymentId = randomId();
     const nowIso = new Date().toISOString();
     const statements = [
-      d1Statement(database, `INSERT INTO payments (id, appointment_id, amount, tip, method, service_name_snapshot, staff_name_snapshot, confirmed_by_admin_id, confirmed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, paymentId, appointment.id, finalAmount, tip, input.method, payableServices.map((service) => service.serviceNameSnapshot).join(' + '), payableServices.map((service) => service.primaryStaff?.name).filter(Boolean).join(', ') || null, admin.id, nowIso),
-      ...payableServices.map((service) => d1Statement(database, `INSERT INTO payment_items (id, payment_id, appointment_service_id, service_name_snapshot, staff_name_snapshot, amount)
-        VALUES (?, ?, ?, ?, ?, ?)`, randomId(), paymentId, service.id, service.serviceNameSnapshot, service.primaryStaff?.name ?? null, Number(service.amount))),
+      d1Statement(database, `INSERT INTO payments (id, appointment_id, amount, tip, currency, method, service_name_snapshot, staff_name_snapshot, confirmed_by_admin_id, confirmed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, paymentId, appointment.id, finalAmount, tip, appointment.currency, input.method, payableServices.map((service) => service.serviceNameSnapshot).join(' + '), payableServices.map((service) => service.primaryStaff?.name).filter(Boolean).join(', ') || null, admin.id, nowIso),
+      ...payableServices.map((service) => d1Statement(database, `INSERT INTO payment_items (id, payment_id, appointment_service_id, service_name_snapshot, staff_name_snapshot, amount, currency)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`, randomId(), paymentId, service.id, service.serviceNameSnapshot, service.primaryStaff?.name ?? null, Number(service.amount), appointment.currency)),
       d1Statement(database, `UPDATE appointments SET status = ?, completed_at = ? WHERE id = ? AND status = ?`, AppointmentStatus.COMPLETED, nowIso, appointment.id, AppointmentStatus.PAYMENT_PENDING),
       ...(shouldReleaseCurrentStaff && appointmentStaffIds.length ? [d1Statement(database, `UPDATE staff_service_state
         SET availability = ?
@@ -2661,10 +2666,12 @@ export async function createDbCheckIn(input: {
     if (orderedServices.length !== requestedServiceIds.length)
       throw new Error('One or more selected services are unavailable');
     const phoneNormalized = normalizePhoneNumber(input.phone);
+    const currency = shopConfig?.currency ?? 'USD';
+    const customerNameSnapshot = input.name.trim();
     const customer = await tx.customer.upsert({
       where: { phoneNormalized },
       update: { phone: input.phone, phoneNormalized },
-      create: { phone: input.phone, phoneNormalized, name: input.name },
+      create: { phone: input.phone, phoneNormalized, name: customerNameSnapshot },
     });
     const code = await nextAppointmentCode(tx, businessDate);
     const totalAmount = moneyFromMinorUnits(orderedServices.reduce((total, service) => total + toMinorUnits(service.price), 0));
@@ -2672,12 +2679,14 @@ export async function createDbCheckIn(input: {
       data: {
         code,
         customerId: customer.id,
+        customerNameSnapshot,
         serviceId: orderedServices[0].id,
         serviceNameSnapshot: orderedServices[0].name,
         durationMinSnapshot: orderedServices[0].durationMin,
         status: AppointmentStatus.CREATED,
         primaryStaffId: null,
         amount: totalAmount,
+        currency,
         serviceCount: orderedServices.length,
         businessDate,
       },
@@ -2691,6 +2700,7 @@ export async function createDbCheckIn(input: {
           serviceNameSnapshot: service.name,
           durationMinSnapshot: service.durationMin,
           amount: service.price,
+          currency,
           status: AppointmentStatus.CREATED,
           primaryStaffId: null,
         },
@@ -2833,6 +2843,7 @@ export async function confirmDbPayment(input: {
         appointmentId: appointment.id,
         amount: finalAmount,
         tip,
+        currency: appointment.currency,
         method: input.method,
         serviceNameSnapshot: payableServices
           .map((service) => service.serviceNameSnapshot)
@@ -2850,6 +2861,7 @@ export async function confirmDbPayment(input: {
             serviceNameSnapshot: service.serviceNameSnapshot,
             staffNameSnapshot: service.primaryStaff?.name ?? null,
             amount: service.amount,
+            currency: appointment.currency,
           })),
         },
       },
@@ -2907,6 +2919,7 @@ export async function getDbPaymentHistory(appointmentId: string) {
           code: true,
           amount: true,
           businessDate: true,
+          customerNameSnapshot: true,
           customer: { select: { name: true } },
         },
       },
@@ -2982,7 +2995,8 @@ export async function getDbPaymentHistory(appointmentId: string) {
       id: payment.id,
       appointmentId: payment.appointment.id,
       code: payment.appointment.code,
-      customerName: payment.appointment.customer.name,
+      customerName:
+        payment.appointment.customerNameSnapshot || payment.appointment.customer.name,
       originalAmount: Number(payment.appointment.amount),
       amount: Number(payment.amount),
       tip: Number(payment.tip),
@@ -4988,6 +5002,7 @@ export async function changeDbAppointmentService(input: {
             serviceNameSnapshot: nextService.name,
             durationMinSnapshot: nextService.durationMin,
             amount: nextService.price,
+            currency: current.appointment.currency,
             status: AppointmentStatus.WAITING,
             primaryStaffId: null,
           },
@@ -5000,6 +5015,7 @@ export async function changeDbAppointmentService(input: {
             serviceNameSnapshot: nextService.name,
             durationMinSnapshot: nextService.durationMin,
             amount: nextService.price,
+            currency: current.appointment.currency,
           },
         });
       }
@@ -5011,6 +5027,7 @@ export async function changeDbAppointmentService(input: {
           serviceNameSnapshot: nextService.name,
           durationMinSnapshot: nextService.durationMin,
           amount: nextService.price,
+          currency: current.appointment.currency,
         },
       });
     }
@@ -5026,6 +5043,7 @@ export async function changeDbAppointmentService(input: {
         newServiceName: nextService.name,
         newDurationMin: nextService.durationMin,
         newAmount: nextService.price,
+        currency: current.appointment.currency,
         reason: input.reason.trim(),
         actorId: input.adminId,
       },
@@ -5643,6 +5661,7 @@ async function autoCloseDbAttendanceD1(businessDate: Date) {
         code: true,
         status: true,
         amount: true,
+        customerNameSnapshot: true,
         customer: { select: { name: true } },
         payment: { select: { id: true, confirmedAt: true } },
         services: { select: { status: true } },
@@ -5653,7 +5672,7 @@ async function autoCloseDbAttendanceD1(businessDate: Date) {
         getAppointmentClosingBlocker({
           appointmentId: appointment.id,
           code: appointment.code,
-          customerName: appointment.customer.name,
+          customerName: appointment.customerNameSnapshot || appointment.customer.name,
           status: appointment.status,
           amount: Number(appointment.amount),
           hasPayment: Boolean(appointment.payment?.confirmedAt),
@@ -5728,12 +5747,18 @@ async function autoCloseDbAttendanceD1(businessDate: Date) {
   });
 }
 
-export async function autoCloseDbAttendance({ force = false }: { force?: boolean } = {}) {
-  const businessDate = await currentDbBusinessDate();
+export async function autoCloseDbAttendance({ force = false, businessDate: requestedBusinessDate }: { force?: boolean; businessDate?: Date } = {}) {
+  const currentBusinessDate = await currentDbBusinessDate();
+  const businessDate = requestedBusinessDate ?? currentBusinessDate;
+  if (requestedBusinessDate) {
+    const dateDelta = Math.round((currentBusinessDate.getTime() - requestedBusinessDate.getTime()) / 86_400_000);
+    if (dateDelta < 0 || dateDelta > 1) throw new Error('Closing business date must be today or the immediately previous business date');
+  }
   const shopConfig = await getDbShopConfig();
   const closingMinutes = configuredTimeToMinutes(shopConfig.closingTime);
   if (
     !force &&
+    formatBusinessDate(businessDate) === formatBusinessDate(currentBusinessDate) &&
     closingMinutes !== null &&
     minutesInTimezone(new Date(), shopConfig.timezone) < closingMinutes
   ) {
@@ -5756,6 +5781,7 @@ export async function autoCloseDbAttendance({ force = false }: { force?: boolean
         code: true,
         status: true,
         amount: true,
+        customerNameSnapshot: true,
         customer: { select: { name: true } },
         payment: { select: { id: true, confirmedAt: true } },
         services: { select: { status: true } },
@@ -5766,7 +5792,7 @@ export async function autoCloseDbAttendance({ force = false }: { force?: boolean
         getAppointmentClosingBlocker({
           appointmentId: appointment.id,
           code: appointment.code,
-          customerName: appointment.customer.name,
+          customerName: appointment.customerNameSnapshot || appointment.customer.name,
           status: appointment.status,
           amount: Number(appointment.amount),
           hasPayment: Boolean(appointment.payment?.confirmedAt),

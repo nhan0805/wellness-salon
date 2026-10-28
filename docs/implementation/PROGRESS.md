@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-25
+Last updated: 2026-10-28
 
 ## Active target
 
@@ -25,13 +25,13 @@ Cloudflare Worker + D1 (SQLite) is the only runtime and database-backed test tar
 | --- | --- |
 | `npm run lint` | PASS in the recorded local gate |
 | `npm run typecheck` | PASS on 2026-10-25 after D1 client generation |
-| `npm test` | 67/67 PASS |
+| `npm test` | 71/71 PASS |
 | `npm run build:vinext` | PASS on 2026-10-25 |
 | `npm run test:e2e:d1` | 47 passed; one intentional skip |
-| `npm run test:e2e:d1:webkit` | 61 passed; two intentional skips across Chromium, tablet, and WebKit projects |
+| `npm run test:e2e:d1:webkit` | 70 passed; two intentional skips across Chromium, tablet, and WebKit projects |
 | `npm run smoke:remote` | 19/19 public and authenticated read-only checks passed |
 | `npm run d1:recovery:rehearsal` | PASS; representative table counts matched after export/restore |
-| Local D1 migrations/bootstrap | PASS; five migrations and 101 bootstrap statements |
+| Local D1 migrations/bootstrap | PASS; six migrations and 101 bootstrap statements |
 | Local Worker route/command smoke | PASS for health, auth, kiosk, board, admin, payments, closing, retention, and resilience scope |
 | `npx cf deploy --dry-run` | PASS in the recorded deployment gate |
 | Remote workers.dev read-only smoke | PASS for health, catalog, board, and kiosk |

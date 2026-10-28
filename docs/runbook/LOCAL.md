@@ -32,6 +32,8 @@ State D1 của E2E là disposable và không được trỏ vào database produc
 
 Worker có cron quarter-hour và đọc timezone/closing time hiện tại từ `ShopConfig` trong D1. Không cần cron local riêng khi chạy deployment Cloudflare.
 
+Job closing gần nửa đêm nhận `businessDate` do Worker tính theo timezone salon; khi closing và retention trùng cùng một tick, Worker chạy tuần tự để không tranh lease D1. Các job vẫn cần `CRON_SECRET`, logging và alerting vận hành khi bật trên Cloudflare.
+
 Để trigger thủ công local khi cần debug:
 
 ```bash

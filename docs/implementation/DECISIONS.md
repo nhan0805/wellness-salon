@@ -1,6 +1,6 @@
 # Implementation decisions
 
-Last updated: 2026-10-15
+Last updated: 2026-10-28
 
 ## 2026-10-13 handoff decision
 
@@ -66,9 +66,17 @@ Supporting technicians finish with the primary technician. There is no independe
 - A support technician's participation row is retained for history but receives `releasedAt` when the primary service finishes or the work is cancelled. Active-support queries require `releasedAt: null`, so historical participation cannot keep a technician busy.
 - Public board responses redact customer name/phone and exclusion details; staff names and operational availability remain visible because the board is a shared staff-facing display.
 - Queue repair is an explicit manager action. It is not performed by read-only board requests, which prevents an SSE/refresh storm from creating hidden writes.
-- Retention cleanup is exposed as a protected job endpoint and is not automatically scheduled by the application. The deployment operator must schedule it with the configured job secret.
+- Retention cleanup is exposed as a protected job endpoint. The Cloudflare Worker scheduled handler invokes it on the configured quarter-hour tick, while the deployment operator must enable the schedule, configure alerting/retries, and protect the job secret.
 - The active database-backed gate uses disposable local D1 through `npm run test:e2e:d1`; it must never target production state.
-- Public kiosk returning-customer lookup uses the approved full-name behavior: a matching phone may display the stored full name on the shared kiosk so the guest can confirm it. The lookup response is limited to `found`, `name`, and readiness/error fields, is marked `no-store`, and does not expose the phone or customer record. Rate limiting remains an infrastructure/operator concern because the shared kiosk is a trusted-origin surface.
+- Public kiosk returning-customer lookup is readiness-only: after phone-format validation it never returns `found`, a stored name, the phone, or the customer record. The kiosk asks for the name for each visit, and that entered name is stored as an appointment snapshot. The response is marked `no-store`; rate limiting remains an infrastructure/operator concern because the shared kiosk is a trusted-origin surface.
+
+## 2026-10-28 reliability and history follow-up
+
+- Appointment, appointment-service, payment, payment-item, and service-change writes preserve the configured currency snapshot; appointments also preserve the entered customer name so later profile edits do not rewrite visit history.
+- Customer history applies audited full/partial refunds to net amount, net tip, and net collected totals, while retaining gross and refund values for reconciliation.
+- The Worker scheduler supports both jobs at the same quarter-hour, supplies the correct previous business date for a near-midnight closing, and runs colliding jobs sequentially because they share one D1 lease.
+- Kiosk and board mutation forms rotate their idempotency key when the payload changes; reusing a key for a different payload remains a server-side conflict.
+- JSON bodies are bounded, proxy-header trust is explicit for origin and kiosk rate-limit identity, D1 lease-loss is surfaced as a retryable failure, and the CSP no longer permits `unsafe-eval`.
 
 ## 2026-10-14 — Historical appointment reconciliation
 

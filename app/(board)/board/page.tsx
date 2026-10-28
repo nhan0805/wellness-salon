@@ -145,6 +145,17 @@ export default function BoardPage() {
   const verificationActionLabel = modal ? ({ ACCEPT: 'accept this service', SKIP: 'skip this service', FINISH: 'finish this service', CHECK_IN: 'check in', CHECK_OUT: 'check out', ADD_SUPPORT: 'add support', CONTINUE_WITH_ME: 'continue with this specialist' } as const)[modal.action] : '';
   const pinCanSubmit = selectedStaffIsVerified ? pin.length === 0 || pin.length === 4 : pin.length === 4;
 
+  function rotateActionKey() {
+    setModal((current) => {
+      if (!current) return current;
+      actionSequenceRef.current += 1;
+      return {
+        ...current,
+        idempotencyKey: `${current.action.toLowerCase()}-${current.appointmentId ?? current.staffId ?? 'staff'}-${actionSequenceRef.current}`,
+      };
+    });
+  }
+
   useEffect(() => {
     if (!verifiedStaffSession) return;
     const timer = window.setInterval(() => setVerificationNow(Date.now()), 1000);
@@ -548,11 +559,11 @@ export default function BoardPage() {
       {modal ? <div className="modal-backdrop" role="presentation"><div className="modal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="verify-title">
         <div className="modal-header"><div><div className="eyebrow">Staff PIN verification</div><h2 id="verify-title">{modal.action === 'CONTINUE_WITH_ME' ? 'Continue with this specialist?' : `Verify ${verificationActionLabel}`}</h2><p>{selectedStaff ? `Confirm this action for ${selectedStaff.name}.` : 'Choose a staff member, then enter their PIN.'}</p></div><button type="button" className="modal-close" aria-label="Close dialog" onClick={closeActionModal}><X size={18} aria-hidden="true" /></button></div>
         <form className="form-grid" onSubmit={submitAction}>
-          {!staffSelectionLocked ? <div className="field"><label htmlFor="staff-name">Select staff</label><select id="staff-name" value={selectedStaffIsValid ? selectedStaffId : ''} onChange={(event) => { setSelectedStaffId(event.target.value); setPin(''); }} required disabled={!modalStaff.length}>{modalStaff.length ? modalStaff.map((member) => <option key={member.id} value={member.id}>{member.name}</option>) : <option value="">No staff currently available</option>}</select><span className="field-hint">Select the specialist completing this action.</span></div> : null}
+          {!staffSelectionLocked ? <div className="field"><label htmlFor="staff-name">Select staff</label><select id="staff-name" value={selectedStaffIsValid ? selectedStaffId : ''} onChange={(event) => { rotateActionKey(); setSelectedStaffId(event.target.value); setPin(''); }} required disabled={!modalStaff.length}>{modalStaff.length ? modalStaff.map((member) => <option key={member.id} value={member.id}>{member.name}</option>) : <option value="">No staff currently available</option>}</select><span className="field-hint">Select the specialist completing this action.</span></div> : null}
           <div className="staff-verification-card" aria-live="polite"><div className="staff-verification-card-heading"><span className="staff-verification-icon"><ShieldCheck size={20} aria-hidden="true" /></span><div><span>Verifying for</span><strong>{selectedStaff?.name ?? 'Select a staff member'}</strong></div>{selectedStaffIsVerified ? <span className="status-badge status-success">PIN active</span> : null}</div>{selectedStaff ? <div className="staff-verification-meta"><span>{selectedStaff.isPresent ? 'Checked in today' : 'Not checked in today'}</span><span>{selectedStaff.availability === 'BUSY' ? 'Busy with a guest' : 'Available'}</span></div> : null}</div>
           <PinKeypad
             value={pin}
-            onChange={(nextPin) => { setPin(nextPin); if (notice) setNotice(''); }}
+            onChange={(nextPin) => { rotateActionKey(); setPin(nextPin); if (notice) setNotice(''); }}
             onComplete={(completedPin) => { void submitAction(undefined, completedPin); }}
             maxLength={4}
             autoSubmit
@@ -561,7 +572,7 @@ export default function BoardPage() {
             error={notice}
             disabled={loading || !selectedStaffIsValid}
           />
-          {modal.action === 'SKIP' ? <div className="field"><label htmlFor="skip-reason">Reason for skip</label><select id="skip-reason" value={skipReasonId} onChange={(event) => setSkipReasonId(event.target.value)} required><option value="" disabled>Select a reason</option>{board.skipReasons.map((skipReason) => <option value={skipReason.id} key={skipReason.id}>{skipReason.name}</option>)}</select><span className="field-hint">This exclusion stays attached to this service until a manager explicitly overrides it.</span></div> : null}
+          {modal.action === 'SKIP' ? <div className="field"><label htmlFor="skip-reason">Reason for skip</label><select id="skip-reason" value={skipReasonId} onChange={(event) => { rotateActionKey(); setSkipReasonId(event.target.value); }} required><option value="" disabled>Select a reason</option>{board.skipReasons.map((skipReason) => <option value={skipReason.id} key={skipReason.id}>{skipReason.name}</option>)}</select><span className="field-hint">This exclusion stays attached to this service until a manager explicitly overrides it.</span></div> : null}
           <div className="form-actions"><button className="button button-quiet" type="button" onClick={closeActionModal}>Cancel</button><button className="button button-primary" disabled={loading || !selectedStaffIsValid || !pinCanSubmit}>{loading ? 'Saving…' : <><UserCheck size={16} aria-hidden="true" /> {modal.action === 'CONTINUE_WITH_ME' ? selectedStaffIsVerified ? `Continue as ${selectedStaff?.name ?? 'staff'}` : 'Verify & continue' : selectedStaffIsVerified ? `Confirm for ${selectedStaff?.name ?? 'staff'}` : 'Verify & confirm'}</>}</button></div>
         </form>
       </div></div> : null}

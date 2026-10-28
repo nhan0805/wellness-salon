@@ -39,6 +39,14 @@ import {
 } from '@/src/server/db';
 import { hashSecret } from '@/src/server/security';
 
+function paymentAuditAmountInMinorUnits(metadata: Prisma.JsonValue | null) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return 0;
+  const value = (metadata as Prisma.JsonObject).amount;
+  const amount = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : 0;
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  return toMinorUnits(amount);
+}
+
 function mapAttendance(row: {
   id: string;
   name: string;
@@ -1818,14 +1826,14 @@ export async function getDbAdminCustomerHistory(
         }
       : {}),
   };
-  const [total, completedCount, paymentSummary, rows] = await Promise.all([
+  const [total, completedCount, paymentRows, rows] = await Promise.all([
     prisma.appointment.count({ where: appointmentWhere }),
     prisma.appointment.count({
       where: { ...appointmentWhere, status: AppointmentStatus.COMPLETED },
     }),
-    prisma.payment.aggregate({
+    prisma.payment.findMany({
       where: { appointment: appointmentWhere },
-      _sum: { amount: true, tip: true },
+      select: { id: true, amount: true, tip: true },
     }),
     prisma.appointment.findMany({
       where: appointmentWhere,
@@ -1840,17 +1848,53 @@ export async function getDbAdminCustomerHistory(
     }),
   ]);
 
+  // D1 has a bounded SQL parameter budget. Fetch refund audit events in
+  // chunks so customer history remains correct for large customer records.
+  const refundEvents: Array<{ entityId: string | null; metadata: Prisma.JsonValue | null }> = [];
+  const paymentIds = paymentRows.map((payment) => payment.id);
+  for (let offset = 0; offset < paymentIds.length; offset += 75) {
+    const chunk = paymentIds.slice(offset, offset + 75);
+    refundEvents.push(
+      ...(await prisma.auditEvent.findMany({
+        where: {
+          entity: 'Payment',
+          action: 'payment.refunded',
+          entityId: { in: chunk },
+        },
+        select: { entityId: true, metadata: true },
+      })),
+    );
+  }
+  const refundsByPayment = new Map<string, number>();
+  for (const event of refundEvents) {
+    if (!event.entityId) continue;
+    refundsByPayment.set(
+      event.entityId,
+      (refundsByPayment.get(event.entityId) ?? 0) + paymentAuditAmountInMinorUnits(event.metadata),
+    );
+  }
+  const netPayment = (payment: { id: string; amount: Prisma.Decimal; tip: Prisma.Decimal }) => {
+    const amount = toMinorUnits(payment.amount);
+    const tip = toMinorUnits(payment.tip);
+    const refunded = Math.min(amount + tip, refundsByPayment.get(payment.id) ?? 0);
+    const netAmount = Math.max(0, amount - Math.min(amount, refunded));
+    const netTip = Math.max(0, tip - Math.max(0, refunded - amount));
+    return {
+      amount: moneyFromMinorUnits(amount),
+      tip: moneyFromMinorUnits(tip),
+      total: moneyFromMinorUnits(amount + tip),
+      refundedAmount: moneyFromMinorUnits(refunded),
+      netAmount: moneyFromMinorUnits(netAmount),
+      netTip: moneyFromMinorUnits(netTip),
+      netTotal: moneyFromMinorUnits(netAmount + netTip),
+      status: refunded === 0 ? 'PAID' : refunded >= amount + tip ? 'REFUNDED' : 'PARTIALLY_REFUNDED',
+    } as const;
+  };
+
   const history = rows.map((row) => {
-    const payment = row.payment?.confirmedAt
-      ? {
-          amount: moneyFromMinorUnits(toMinorUnits(row.payment.amount)),
-          tip: moneyFromMinorUnits(toMinorUnits(row.payment.tip)),
-          total: moneyFromMinorUnits(
-            toMinorUnits(row.payment.amount) + toMinorUnits(row.payment.tip),
-          ),
-          method: row.payment.method,
-          confirmedAt: row.payment.confirmedAt,
-        }
+    const paymentTotals = row.payment ? netPayment(row.payment) : null;
+    const payment = row.payment?.confirmedAt && paymentTotals
+      ? { ...paymentTotals, method: row.payment.method, confirmedAt: row.payment.confirmedAt }
       : null;
     const paymentItems = new Map(
       (row.payment?.items ?? []).map((item) => [item.appointmentServiceId, item]),
@@ -1893,8 +1937,19 @@ export async function getDbAdminCustomerHistory(
     };
   });
 
-  const paidTotal = moneyFromMinorUnits(toMinorUnits(paymentSummary._sum.amount ?? 0));
-  const tipTotal = moneyFromMinorUnits(toMinorUnits(paymentSummary._sum.tip ?? 0));
+  const summaryTotals = paymentRows.reduce(
+    (totals, payment) => {
+      const net = netPayment(payment);
+      return {
+        paid: totals.paid + net.netAmount,
+        tip: totals.tip + net.netTip,
+        refunded: totals.refunded + net.refundedAmount,
+      };
+    },
+    { paid: 0, tip: 0, refunded: 0 },
+  );
+  const paidTotal = summaryTotals.paid;
+  const tipTotal = summaryTotals.tip;
 
   return {
     customer,
@@ -1903,6 +1958,7 @@ export async function getDbAdminCustomerHistory(
       completedCount,
       paidTotal,
       tipTotal,
+      refundedTotal: summaryTotals.refunded,
       totalCollected: paidTotal + tipTotal,
     },
     history,

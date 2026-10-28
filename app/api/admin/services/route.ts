@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminActor } from '@/src/server/admin-auth';
-import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
+import { hasTrustedOrigin, jsonError, readJsonBodyOrNull } from '@/src/server/request-security';
 import { adminServiceCreateSchema, adminServiceUpdateSchema } from '@/src/server/validation';
 import { createDbAdminService, deactivateDbAdminService, getDbAdminServices, updateDbAdminService } from '@/src/server/services/admin-operations';
 import { observeApiRequest } from '@/src/server/observability';
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     if (!hasTrustedOrigin(request)) return jsonError('Invalid request origin', 403);
     const actor = await getAdminActor();
     if (!actor) return jsonError('Admin authorization required', 403);
-    const parsed = adminServiceCreateSchema.safeParse(await request.json().catch(() => null));
+    const parsed = adminServiceCreateSchema.safeParse(await readJsonBodyOrNull(request));
     if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? 'Invalid service', 422);
     try {
       const service = await createDbAdminService({ ...parsed.data, adminId: actor.id });
@@ -35,7 +35,7 @@ export async function PATCH(request: Request) {
     if (!hasTrustedOrigin(request)) return jsonError('Invalid request origin', 403);
     const actor = await getAdminActor();
     if (!actor) return jsonError('Admin authorization required', 403);
-    const parsed = adminServiceUpdateSchema.safeParse(await request.json().catch(() => null));
+    const parsed = adminServiceUpdateSchema.safeParse(await readJsonBodyOrNull(request));
     if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? 'Invalid service', 422);
     try {
       const service = await updateDbAdminService({ ...parsed.data, adminId: actor.id });

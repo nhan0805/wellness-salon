@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/src/server/auth';
 import { staffActionSchema } from '@/src/server/validation';
-import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
+import { hasTrustedOrigin, jsonError, readJsonBodyOrNull } from '@/src/server/request-security';
 import {
   getDbBoardState,
   getDbBoardVersion,
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     const session = await auth();
     const stationUserId = session?.user?.id;
     if (!['STATION', 'ADMIN'].includes(session?.user?.role ?? '') || !stationUserId) return jsonError('Station authorization required', 403);
-    const parsed = staffActionSchema.safeParse(await request.json().catch(() => null));
+    const parsed = staffActionSchema.safeParse(await readJsonBodyOrNull(request));
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid action' }, { status: 422 });
     try {
       const verifiedSessionId = request.headers.get('cookie')?.match(/(?:^|; )(?:__Host-)?verified-staff-session=([^;]+)/)?.[1];

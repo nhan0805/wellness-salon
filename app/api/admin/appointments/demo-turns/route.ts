@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAdminActor } from '@/src/server/admin-auth';
 import { observeApiRequest } from '@/src/server/observability';
-import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
+import { hasTrustedOrigin, jsonError, readJsonBodyOrNull } from '@/src/server/request-security';
 import {
   backfillDbDemoAppointmentTurns,
 } from '@/src/server/services/prisma-operations';
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const actor = await getAdminActor();
     if (!actor) return jsonError('Admin authorization required', 403);
     const parsed = adminDemoTurnBackfillSchema.safeParse(
-      await request.json().catch(() => null),
+      await readJsonBodyOrNull(request),
     );
     if (!parsed.success)
       return jsonError(parsed.error.issues[0]?.message ?? 'Invalid demo turn backfill request', 422);

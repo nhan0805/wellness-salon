@@ -18,20 +18,36 @@ export const PRODUCTION_SCHEDULE = {
   retentionCron: SCHEDULER_CRON,
 } as const;
 
-export function localTimeParts(at: Date, timeZone: string) {
+type LocalDateTimeParts = { year: number; month: number; day: number; hour: number; minute: number };
+
+function localDateTimeParts(at: Date, timeZone: string): LocalDateTimeParts {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
     calendar: 'iso8601',
     numberingSystem: 'latn',
     hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
   }).formatToParts(at);
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return { hour: Number(values.hour), minute: Number(values.minute) };
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+  };
 }
 
-function roundedClosingTriggerMinutes(closingTime: string) {
+export function localTimeParts(at: Date, timeZone: string) {
+  const parts = localDateTimeParts(at, timeZone);
+  return { hour: parts.hour, minute: parts.minute };
+}
+
+export function roundedClosingTriggerMinutes(closingTime: string) {
   const match = /^(\d{2}):(\d{2})$/.exec(closingTime);
   if (!match) return null;
   const minutes = Number(match[1]) * 60 + Number(match[2]);
@@ -40,15 +56,39 @@ function roundedClosingTriggerMinutes(closingTime: string) {
 }
 
 export type ScheduledJob = 'closing' | 'retention' | null;
+export type ScheduledJobs = Array<Exclude<ScheduledJob, null>>;
 
-export function scheduledJobForTick(at: Date, timeZone: string, closingTime: string): ScheduledJob {
-  if (!isValidIanaTimezone(timeZone)) return null;
+export function scheduledJobsForTick(at: Date, timeZone: string, closingTime: string): ScheduledJobs {
+  if (!isValidIanaTimezone(timeZone)) return [];
   const local = localTimeParts(at, timeZone);
   const localMinutes = local.hour * 60 + local.minute;
+  const jobs: ScheduledJobs = [];
   const closingTrigger = roundedClosingTriggerMinutes(closingTime);
-  if (closingTrigger !== null && localMinutes === closingTrigger) return 'closing';
-  if (localMinutes === 3 * 60 + 15) return 'retention';
-  return null;
+  if (closingTrigger !== null && localMinutes === closingTrigger) jobs.push('closing');
+  if (localMinutes === 3 * 60 + 15) jobs.push('retention');
+  return jobs;
+}
+
+export function scheduledJobForTick(at: Date, timeZone: string, closingTime: string): ScheduledJob {
+  return scheduledJobsForTick(at, timeZone, closingTime)[0] ?? null;
+}
+
+/**
+ * Return the business date whose closing should be processed for a closing
+ * tick. A closing time near midnight rounds into the next calendar day; the
+ * job still belongs to the previous local business date.
+ */
+export function scheduledClosingBusinessDate(at: Date, timeZone: string, closingTime: string) {
+  if (!isValidIanaTimezone(timeZone)) return null;
+  const local = localDateTimeParts(at, timeZone);
+  const localMinutes = local.hour * 60 + local.minute;
+  const closingTrigger = roundedClosingTriggerMinutes(closingTime);
+  const closingMatch = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(closingTime);
+  if (closingTrigger === null || !closingMatch || localMinutes !== closingTrigger) return null;
+  const closingMinutes = Number(closingMatch[1]) * 60 + Number(closingMatch[2]);
+  const businessDate = new Date(Date.UTC(local.year, local.month - 1, local.day));
+  if (closingTrigger < closingMinutes) businessDate.setUTCDate(businessDate.getUTCDate() - 1);
+  return businessDate.toISOString().slice(0, 10);
 }
 
 function timezoneOffsetMinutes(at: Date, timeZone: string) {

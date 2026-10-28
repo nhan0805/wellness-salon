@@ -35,14 +35,50 @@ function isValidIanaTimezone(timeZone: string) {
   }
 }
 
-function scheduledJobForTick(at: Date, timeZone: string, closingTime: string) {
+function localDateTimeParts(at: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    calendar: 'iso8601',
+    numberingSystem: 'latn',
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(at);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+  };
+}
+
+function scheduledJobsForTick(at: Date, timeZone: string, closingTime: string) {
   if (!isValidIanaTimezone(timeZone)) return null;
   const local = localTimeParts(at, timeZone);
   const localMinutes = local.hour * 60 + local.minute;
   const closingTrigger = roundedClosingTriggerMinutes(closingTime);
-  if (closingTrigger !== null && localMinutes === closingTrigger) return 'closing' as const;
-  if (localMinutes === 3 * 60 + 15) return 'retention' as const;
-  return null;
+  const jobs: Array<'closing' | 'retention'> = [];
+  if (closingTrigger !== null && localMinutes === closingTrigger) jobs.push('closing');
+  if (localMinutes === 3 * 60 + 15) jobs.push('retention');
+  return jobs;
+}
+
+function scheduledClosingBusinessDate(at: Date, timeZone: string, closingTime: string) {
+  if (!isValidIanaTimezone(timeZone)) return null;
+  const local = localDateTimeParts(at, timeZone);
+  const localMinutes = local.hour * 60 + local.minute;
+  const closingTrigger = roundedClosingTriggerMinutes(closingTime);
+  const closingMatch = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(closingTime);
+  if (closingTrigger === null || !closingMatch || localMinutes !== closingTrigger) return null;
+  const closingMinutes = Number(closingMatch[1]) * 60 + Number(closingMatch[2]);
+  const businessDate = new Date(Date.UTC(local.year, local.month - 1, local.day));
+  if (closingTrigger < closingMinutes) businessDate.setUTCDate(businessDate.getUTCDate() - 1);
+  return businessDate.toISOString().slice(0, 10);
 }
 
 type WorkerEnvironment = Record<string, unknown> & {
@@ -67,7 +103,7 @@ const schedulerEnabled = (env: WorkerEnvironment) =>
   typeof env.SCHEDULER_CRON === 'string' &&
   env.SCHEDULER_CRON.length > 0;
 
-async function runInternalJob(path: string, env: WorkerEnvironment, ctx: WorkerExecutionContext) {
+async function runInternalJob(path: string, env: WorkerEnvironment, ctx: WorkerExecutionContext, body = '{}') {
   if (!schedulerEnabled(env)) {
     console.warn(JSON.stringify({ level: 'warn', event: 'job.scheduler.disabled', reason: 'scheduler configuration is incomplete or timezone is invalid', path }));
     return;
@@ -85,7 +121,7 @@ async function runInternalJob(path: string, env: WorkerEnvironment, ctx: WorkerE
         'content-type': 'application/json',
         'x-cron-secret': cronSecret,
       },
-      body: '{}',
+      body,
     }),
     env,
     ctx,
@@ -118,10 +154,23 @@ const worker = {
       return;
     }
     const scheduledAt = new Date(controller.scheduledTime ?? Date.now());
-    const job = scheduledJobForTick(scheduledAt, timezone, config.closing_time ?? '21:00');
-    const path = job === 'retention' ? '/api/jobs/retention' : job === 'closing' ? '/api/jobs/closing' : null;
-    if (!path) return;
-    await runInternalJob(path, env, ctx);
+    const closingTime = config.closing_time ?? '21:00';
+    const jobs = scheduledJobsForTick(scheduledAt, timezone, closingTime);
+    if (!jobs?.length) return;
+    const errors: unknown[] = [];
+    // These endpoints both acquire the shop-wide D1 lease. Run them in order
+    // so a closing/retention collision does not turn into a false lease-busy
+    // failure, while still attempting the next job if one fails.
+    for (const job of jobs) {
+      try {
+        const path = job === 'retention' ? '/api/jobs/retention' : '/api/jobs/closing';
+        const businessDate = job === 'closing' ? scheduledClosingBusinessDate(scheduledAt, timezone, closingTime) : null;
+        await runInternalJob(path, env, ctx, businessDate ? JSON.stringify({ businessDate }) : '{}');
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length) throw errors[0];
   },
 };
 

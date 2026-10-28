@@ -27,6 +27,13 @@ type Runtime = {
   database: D1DatabaseLike;
 };
 
+export class D1LeaseLostError extends Error {
+  constructor() {
+    super('The D1 command lease was lost before the operation completed; retry safely.');
+    this.name = 'D1LeaseLostError';
+  }
+}
+
 /**
  * A runtime must never outlive the request that supplied its D1 binding.
  *
@@ -142,7 +149,12 @@ async function getCloudflareDatabase(): Promise<D1DatabaseLike | undefined> {
   }
 }
 
-async function acquireD1Lease(database: D1DatabaseLike) {
+type D1Lease = {
+  assertActive: () => void;
+  release: () => Promise<void>;
+};
+
+async function acquireD1Lease(database: D1DatabaseLike): Promise<D1Lease> {
   const leaseTtlSeconds = 60;
   const renewalIntervalMs = 5_000;
   const owner = globalThis.crypto.randomUUID();
@@ -186,10 +198,15 @@ async function acquireD1Lease(database: D1DatabaseLike) {
         if (!stopped) renewalTimer = setTimeout(() => void renew(), renewalIntervalMs);
       };
       renewalTimer = setTimeout(() => void renew(), renewalIntervalMs);
-      return async () => {
-        stopped = true;
-        if (renewalTimer) clearTimeout(renewalTimer);
-        await database.prepare('DELETE FROM "__app_locks" WHERE lock_key = ? AND owner = ?').bind(lockKey, owner).run();
+      return {
+        assertActive() {
+          if (stopped) throw new D1LeaseLostError();
+        },
+        async release() {
+          stopped = true;
+          if (renewalTimer) clearTimeout(renewalTimer);
+          await database.prepare('DELETE FROM "__app_locks" WHERE lock_key = ? AND owner = ?').bind(lockKey, owner).run();
+        },
       };
     }
 
@@ -199,36 +216,88 @@ async function acquireD1Lease(database: D1DatabaseLike) {
   throw new Error('D1 command lock is busy; retry the request safely.');
 }
 
-async function runD1Transaction<T>(database: D1DatabaseLike, operation: () => Promise<T>): Promise<T> {
+const rawD1Statements = new WeakMap<object, D1Statement>();
+
+function guardD1Statement(statement: D1Statement, assertActive: () => void): D1Statement {
+  const guarded = {
+    bind(...values: unknown[]) {
+      assertActive();
+      return guardD1Statement(statement.bind(...values), assertActive);
+    },
+    async run() {
+      assertActive();
+      const result = await statement.run();
+      assertActive();
+      return result;
+    },
+    async first<T = Record<string, unknown>>() {
+      assertActive();
+      const result = await statement.first<T>();
+      assertActive();
+      return result;
+    },
+    async all<T = Record<string, unknown>>() {
+      assertActive();
+      const result = await statement.all<T>();
+      assertActive();
+      return result;
+    },
+  };
+  rawD1Statements.set(guarded, statement);
+  return guarded;
+}
+
+function guardD1Database(database: D1DatabaseLike, assertActive: () => void): D1DatabaseLike {
+  return {
+    prepare(query: string) {
+      assertActive();
+      return guardD1Statement(database.prepare(query), assertActive);
+    },
+    async batch<T = unknown>(statements: D1Statement[]) {
+      assertActive();
+      // D1 batch requires the platform's native prepared-statement objects.
+      // The wrappers are for lease checks on individual calls, so unwrap them
+      // at this boundary before handing the list back to D1.
+      const nativeStatements = statements.map((statement) => rawD1Statements.get(statement) ?? statement);
+      const result = await database.batch<T>(nativeStatements);
+      assertActive();
+      return result;
+    },
+  };
+}
+
+async function runD1Transaction<T>(database: D1DatabaseLike, operation: (database: D1DatabaseLike) => Promise<T>): Promise<T> {
   const release = await acquireD1Lease(database);
+  const guardedDatabase = guardD1Database(database, release.assertActive);
   try {
-    return await operation();
+    return await operation(guardedDatabase);
   } finally {
-    await release();
+    await release.release();
   }
 }
 
 export async function withD1Lease<T>(operation: (database: D1DatabaseLike) => Promise<T>) {
   const database = await getD1Database();
   if (!database) throw new Error('D1 database binding is not available');
-  return runD1Transaction(database, () => operation(database));
+  return runD1Transaction(database, (guardedDatabase) => operation(guardedDatabase));
 }
 
 export async function withD1PrismaLease<T>(
-  operation: (runtime: { client: D1PrismaRuntime; database: D1DatabaseLike }) => Promise<T>,
+  operation: (runtime: { client: D1PrismaRuntime; database: D1DatabaseLike; assertLeaseActive: () => void }) => Promise<T>,
 ) {
   const runtime = await getRuntime();
   let operationError: unknown;
-  let release: (() => Promise<void>) | undefined;
+  let lease: D1Lease | undefined;
   try {
-    release = await acquireD1Lease(runtime.database);
-    return await operation(runtime);
+    lease = await acquireD1Lease(runtime.database);
+    const guardedDatabase = guardD1Database(runtime.database, lease.assertActive);
+    return await operation({ client: runtime.client, database: guardedDatabase, assertLeaseActive: lease.assertActive });
   } catch (error) {
     operationError = error;
     throw error;
   } finally {
     try {
-      if (release) await release();
+      if (lease) await lease.release();
     } catch (error) {
       if (!operationError) throw error;
     }

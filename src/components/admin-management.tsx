@@ -122,6 +122,11 @@ type CustomerHistoryItem = {
     amount: number;
     tip: number;
     total: number;
+    refundedAmount: number;
+    netAmount: number;
+    netTip: number;
+    netTotal: number;
+    status: 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED';
     method: 'CARD' | 'CASH';
     confirmedAt: string;
   } | null;
@@ -133,6 +138,7 @@ type CustomerHistoryPayload = {
     completedCount: number;
     paidTotal: number;
     tipTotal: number;
+    refundedTotal: number;
     totalCollected: number;
   };
   history: CustomerHistoryItem[];
@@ -1149,16 +1155,21 @@ function CustomerHistoryModal({
             <div className="history-stat">
               <span>Services</span>
               <strong>{formatManagementMoney(data.summary.paidTotal, currency)}</strong>
-              <small>{data.summary.completedCount} completed · tips excluded</small>
+              <small>{data.summary.completedCount} completed · net of refunds · tips excluded</small>
             </div>
             <div className="history-stat">
               <span>Tips</span>
               <strong>{formatManagementMoney(data.summary.tipTotal, currency)}</strong>
             </div>
             <div className="history-stat">
+              <span>Refunds</span>
+              <strong>{formatManagementMoney(data.summary.refundedTotal, currency)}</strong>
+              <small>Recorded refund events</small>
+            </div>
+            <div className="history-stat">
               <span>Total collected</span>
               <strong>{formatManagementMoney(data.summary.totalCollected, currency)}</strong>
-              <small>Services + tips</small>
+              <small>Net services + tips</small>
             </div>
           </div>
           {data.history.length ? (
@@ -1210,13 +1221,19 @@ function CustomerHistoryModal({
                       <td>
                         {item.payment ? (
                           <>
-                            <strong>{formatManagementMoney(item.payment.total, currency)}</strong>
+                            <strong>{formatManagementMoney(item.payment.netTotal, currency)}</strong>
                             <small className="table-note">
                               {item.payment.method === 'CARD' ? 'Card' : 'Cash'}
-                              {item.payment.tip
-                                ? ` · ${formatManagementMoney(item.payment.tip, currency)} tip`
+                              {item.payment.netTip
+                                ? ` · ${formatManagementMoney(item.payment.netTip, currency)} tip`
                                 : ''}
                             </small>
+                            {item.payment.refundedAmount > 0 ? (
+                              <small className="table-note">
+                                {item.payment.status === 'REFUNDED' ? 'Fully refunded' : 'Partially refunded'} ·{' '}
+                                {formatManagementMoney(item.payment.refundedAmount, currency)}
+                              </small>
+                            ) : null}
                           </>
                         ) : (
                           <span className="subtle">Not paid</span>

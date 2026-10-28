@@ -9,8 +9,15 @@ export function hasTrustedOrigin(request: Request, options: { allowMissing?: boo
   const requestUrl = new URL(request.url);
   const requestOrigin = requestUrl.origin;
   const configuredOrigin = getBuildTimeValue('NEXTAUTH_URL');
-  const forwardedProtocol = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
-  const requestHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim() ?? request.headers.get('host')?.trim();
+  // Forwarded headers are client-controlled unless the ingress explicitly
+  // strips and rewrites them. Keep them opt-in so a forged Origin cannot make
+  // itself match a forged proxy host in a direct Worker request.
+  const trustProxyHeaders = getBuildTimeValue('TRUST_PROXY_HEADERS') === 'true';
+  const forwardedProtocol = trustProxyHeaders
+    ? request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
+    : undefined;
+  const requestHost = (trustProxyHeaders ? request.headers.get('x-forwarded-host')?.split(',')[0]?.trim() : undefined)
+    ?? request.headers.get('host')?.trim();
   const requestProtocol = forwardedProtocol || requestUrl.protocol.slice(0, -1);
   const hostOrigin = requestHost ? `${requestProtocol}://${requestHost}` : null;
 
@@ -48,6 +55,20 @@ export async function readJsonBody(request: Request, maxBytes = 16 * 1024): Prom
   try {
     return JSON.parse(text) as unknown;
   } catch {
+    return null;
+  }
+}
+
+/**
+ * Bounded JSON parsing for routes whose validation layer already owns the
+ * invalid-input response. Kiosk check-in uses readJsonBody directly so it can
+ * preserve its explicit 413 response for oversized requests.
+ */
+export async function readJsonBodyOrNull(request: Request, maxBytes = 16 * 1024) {
+  try {
+    return await readJsonBody(request, maxBytes);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) return null;
     return null;
   }
 }

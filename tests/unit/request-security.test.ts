@@ -35,4 +35,17 @@ describe('trusted request origins', () => {
 
     expect(hasTrustedOrigin(request)).toBe(false);
   });
+
+  it('does not trust forged forwarded headers by default', () => {
+    const request = new Request('http://localhost:3000/api/test', {
+      headers: {
+        origin: 'https://trusted.example',
+        host: 'localhost:3000',
+        'x-forwarded-proto': 'https',
+        'x-forwarded-host': 'trusted.example',
+      },
+    });
+
+    expect(hasTrustedOrigin(request)).toBe(false);
+  });
 });

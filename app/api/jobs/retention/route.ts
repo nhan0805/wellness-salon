@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ActorType } from '@prisma/d1-client';
 import { auth } from '@/src/server/auth';
-import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
+import { hasTrustedOrigin, jsonError, readJsonBodyOrNull } from '@/src/server/request-security';
 import { cleanupDbOperationalData } from '@/src/server/services/prisma-operations';
 import { observeApiRequest } from '@/src/server/observability';
 import { logEvent } from '@/src/server/logger';
@@ -17,9 +17,13 @@ export async function POST(request: Request) {
     if (!hasCronAccess && session?.user?.role !== 'ADMIN') return jsonError('Admin or scheduler authorization required', 403);
 
     try {
-      const payload = await request.json().catch(() => ({}));
-      const requestedRetentionDays = payload?.retentionDays;
-      if (requestedRetentionDays !== undefined && (!Number.isInteger(requestedRetentionDays) || requestedRetentionDays < 30 || requestedRetentionDays > 3650)) {
+      const payload = ((await readJsonBodyOrNull(request)) ?? {}) as { retentionDays?: unknown };
+      const requestedRetentionDays = payload.retentionDays === undefined
+        ? undefined
+        : typeof payload.retentionDays === 'number'
+          ? payload.retentionDays
+          : null;
+      if (requestedRetentionDays === null || (requestedRetentionDays !== undefined && (!Number.isInteger(requestedRetentionDays) || requestedRetentionDays < 30 || requestedRetentionDays > 3650))) {
         return jsonError('retentionDays must be an integer from 30 to 3650', 400);
       }
       const result = await cleanupDbOperationalData(

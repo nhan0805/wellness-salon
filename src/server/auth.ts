@@ -2,7 +2,7 @@ import { headers } from 'next/headers';
 import { z } from 'zod';
 import { getD1Database } from '@/src/server/db';
 import { logEvent } from '@/src/server/logger';
-import { hasTrustedOrigin } from '@/src/server/request-security';
+import { hasTrustedOrigin, readJsonBodyOrNull } from '@/src/server/request-security';
 import { assertDbLoginNotLocked, recordDbLoginAttempt, verifySecret } from '@/src/server/security';
 import { getRuntimeValue, isProductionRuntime } from '@/src/server/runtime-config';
 import { signHs256, verifyHs256 } from '@/src/server/web-crypto';
@@ -141,7 +141,7 @@ async function login(request: Request) {
   if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
     const form = await request.formData();
     body = { email: form.get('email'), password: form.get('password') };
-  } else body = await request.json().catch(() => null);
+  } else body = await readJsonBodyOrNull(request);
   try {
     const user = await authenticateCredentials(body);
     if (!user) return Response.json({ error: 'Unable to sign in. Check your email and password and try again.' }, { status: 401 });

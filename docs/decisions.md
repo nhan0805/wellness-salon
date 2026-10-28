@@ -198,32 +198,32 @@ The repository now contains only the Cloudflare Worker + local D1 (SQLite) runti
 - Decision: Durable `CommandReceipt` records store a normalized request hash. The same scope/key/payload replays; the same key with changed details is rejected. Account/session version is revalidated server-side on protected requests.
 - Alternatives considered: Client-only button disabling; replay any response regardless of payload; trust the original JWT role/status until expiry.
 - Reason: Makes retry semantics explicit and prevents stale authorization or accidental key reuse from bypassing current state.
-- Tradeoffs: Clients must retain a stable key for a retry and surface conflict errors clearly; receipt retention remains an operator policy.
+- Tradeoffs: Clients must retain a stable key for a retry, rotate it when the mutation payload changes, and surface conflict errors clearly; receipt retention remains an operator policy.
 - Consequences: Kiosk, payment, staff, cancellation, reassignment, service-change, and exclusion-override paths define stable scopes and audited receipts.
 
-## ADR-017 — Returning kiosk lookup uses limited full-name confirmation
+## ADR-017 — Returning kiosk lookup is readiness-only
 
 - ID: ADR-017
 - Date: 2026-10-10
 - Status: Accepted for V1
 - Context: Returning guests need a low-friction check-in, but the shared kiosk must not reveal phone numbers or full customer records.
-- Decision: When a normalized phone matches, the kiosk may display the stored full name read-only for confirmation. The response is limited to readiness/found/name fields, marked `no-store`, and does not return the phone or customer record.
-- Alternatives considered: Always ask for the name again; reveal the full customer record; return only a boolean match.
-- Reason: The approved option balances check-in speed with limited disclosure on a trusted-origin kiosk.
-- Tradeoffs: Anyone with repeated phone access could attempt enumeration; rate limiting and abuse monitoring remain deployment/operator controls.
-- Consequences: Returning-guest behavior is covered by a 2/2 E2E check and remains a supervised-pilot risk until kiosk abuse controls are reviewed.
+- Decision: Keep the compatibility lookup endpoint privacy-preserving: after validating the phone format it returns readiness only, never whether the phone exists, a stored name, the phone, or a customer record. The response is marked `no-store`; the kiosk always asks the guest to enter the name for the new visit snapshot.
+- Alternatives considered: Display the stored full name; reveal the full customer record; return a boolean match.
+- Reason: A shared kiosk should not become a phone-number enumeration oracle. The current flow still supports returning guests without disclosing profile data.
+- Tradeoffs: Returning guests re-enter their name, while rate limiting and abuse monitoring remain deployment/operator controls.
+- Consequences: The lookup contract is intentionally readiness-only and the submitted visit name is persisted independently from the reusable customer profile.
 
-## ADR-018 — Closing/retention scheduling is operator-owned
+## ADR-018 — Worker evaluates closing/retention while operations own scheduling
 
 - ID: ADR-018
 - Date: 2026-10-10
 - Status: Deferred for V1 deployment
-- Context: Closing and retention endpoints are implemented, but adding an internal scheduler would couple application lifecycle, retries, alerting, and secret rotation to the MVP runtime.
-- Decision: Keep `/api/jobs/closing` and `/api/jobs/retention` protected by admin session or `CRON_SECRET`; deployment operators own external scheduling, retry policy, monitoring, and approval.
+- Context: Cloudflare Workers supplies scheduled events, but job execution still needs a protected endpoint, correct business-date semantics, and explicit operational monitoring.
+- Decision: Keep `/api/jobs/closing` and `/api/jobs/retention` protected by admin session or `CRON_SECRET`. The Worker scheduled handler evaluates the configured quarter-hour tick, sends the previous local business date for near-midnight closing, and runs a closing/retention collision sequentially. Deployment operators own enabling the schedule, retry policy, monitoring, and approval.
 - Alternatives considered: In-process timer; Compose cron container; silently assume a platform scheduler.
-- Reason: Keeps job execution explicit and avoids a false production-readiness claim before deployment infrastructure is approved.
-- Tradeoffs: The app does not self-schedule; unattended operation is blocked until an external schedule and alerting are configured.
-- Consequences: Scheduler setup is a release gate, not an application feature, and the local runbook must document the secret boundary.
+- Reason: Uses the Worker platform's scheduled event without hiding the operational dependency on configuration, alerting, and secret rotation.
+- Tradeoffs: The Worker handler does not provide durable retry/alerting by itself; unattended operation still requires an enabled Cloudflare schedule and operator observability.
+- Consequences: Scheduler setup remains a release gate, and the local runbook documents the secret boundary and collision behavior.
 
 ## ADR-019 — Restore service categories as presentation taxonomy
 
@@ -352,3 +352,15 @@ The repository now contains only the Cloudflare Worker + local D1 (SQLite) runti
 - Alternatives considered: Keep the global queue and increase the client timeout; remove the compatibility flag without refactoring; add retries around the affected routes.
 - Reason: Request-local I/O ownership is the only safe boundary for Cloudflare D1. Retries or longer deadlines would amplify or hide a lifecycle bug.
 - Consequences: The E2E harness scans Worker output for cancellation/cross-request I/O signatures, API responses expose timing headers, and deployed latency/capacity measurement remains a separate release gate.
+
+## ADR-030 — Snapshot visit identity and report refunds as net collections
+
+- ID: ADR-030
+- Date: 2026-10-28
+- Status: Accepted for the current Worker/D1 runtime
+- Context: Customer profiles and shop configuration are mutable, while a completed visit and its financial records must remain historically reproducible. Customer history also needs to reflect administrative refunds instead of overstating collected revenue.
+- Decision: Store the entered customer name and configured currency on each appointment/service/payment snapshot, preserve that name in board/history projections, and calculate customer-history payment totals after applying audited refund events to the payment amount first and tip second. Refund records remain append-only audit events; the current payment row is not deleted.
+- Alternatives considered: Read the current customer/configuration values for old visits; show gross payment totals only; mutate or delete the payment row when refunded.
+- Reason: Immutable visit snapshots prevent later profile/configuration edits from rewriting history, while net totals match what the salon actually retained.
+- Tradeoffs: Migration/backfill and bounded refund-event reads add storage/query work; historical refunds must remain auditable and operators still reconcile the external terminal.
+- Consequences: New D1 writes must populate currency/name snapshots, migration `0006` is required locally and before any future production release, and customer history exposes gross/net/refund fields explicitly.

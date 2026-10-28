@@ -1,6 +1,6 @@
 # Implementation final report
 
-Last updated: 2026-10-25
+Last updated: 2026-10-28
 
 ## Decision
 
@@ -17,6 +17,7 @@ Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development
 - Admin loading resilience with bounded client deadlines, cancellation/stale-response guards, a section-aware Dashboard snapshot, narrow live projections, direct D1 Attendance reads, response timing diagnostics, and an Attendance Worker/D1 E2E smoke.
 - Request-safe Worker/D1 lifecycle: no module-global Prisma client/binding/Promise queue, default Cloudflare cross-request handling, and an E2E guard for runtime cancellation/cross-request I/O errors.
 - 2026-10-25 follow-up: fixed Staff availability expansion, historical review overflow, mobile queue actions, Admin/Board Kiosk entry points, and staff-form layout/semantics. Reduced duplicate board bootstrap/projection work and unused Admin Appointments reports without changing assignment or payment rules.
+- 2026-10-28 follow-up: added visit-level customer-name/currency snapshots, net-of-refund customer history, scheduler boundary/collision handling, payload-aware idempotency-key rotation, bounded JSON parsing, explicit proxy-header trust, D1 lease-loss guards, and CSP removal of `unsafe-eval`. These changes are local and unreleased; remote D1 remains on migration `0005`.
 
 ## Evidence
 
@@ -24,13 +25,13 @@ Cloudflare Worker + D1 (SQLite) is the only supported runtime. Local development
 | --- | --- |
 | `npm run lint` | PASS in the recorded local gate |
 | `npm run typecheck` | PASS on 2026-10-25 after D1 client generation |
-| `npm test` | 67/67 PASS |
+| `npm test` | 71/71 PASS |
 | `npm run build:vinext` | PASS on 2026-10-25 |
 | `npm run test:e2e:d1` | 47 passed; one intentional skip |
-| `npm run test:e2e:d1:webkit` | 61 passed; two intentional skips across Chromium, tablet, and WebKit |
+| `npm run test:e2e:d1:webkit` | 70 passed; two intentional skips across Chromium, tablet, and WebKit |
 | `npm run smoke:remote` | 19/19 public and authenticated read-only checks passed |
 | `npm run d1:recovery:rehearsal` | PASS; representative counts matched after local export/restore |
-| Local D1 migrations/bootstrap | PASS; two migrations and 101 bootstrap statements |
+| Local D1 migrations/bootstrap | PASS; six migrations and 101 bootstrap statements |
 | Local Worker/D1 smoke | PASS for public routes, auth, kiosk, board, admin, payments, jobs, and resilience scope |
 | `npx cf deploy --dry-run` | PASS in the recorded deployment gate |
 | Remote workers.dev smoke | PASS for read-only health, catalog, board, and kiosk |

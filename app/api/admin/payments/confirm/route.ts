@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { confirmPaymentSchema } from '@/src/server/validation';
-import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
+import { hasTrustedOrigin, jsonError, readJsonBodyOrNull } from '@/src/server/request-security';
 import { auth } from '@/src/server/auth';
 import { confirmDbPayment } from '@/src/server/services/prisma-operations';
 import { observeApiRequest } from '@/src/server/observability';
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     if (!hasTrustedOrigin(request)) return jsonError('Invalid request origin', 403);
     const adminId = await adminIdForRequest();
     if (adminId === null) return jsonError('Admin authorization required', 403);
-    const parsed = confirmPaymentSchema.safeParse(await request.json().catch(() => null));
+    const parsed = confirmPaymentSchema.safeParse(await readJsonBodyOrNull(request));
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid payment' }, { status: 422 });
     try {
       return NextResponse.json(await confirmDbPayment({ ...parsed.data, adminId: adminId! }));

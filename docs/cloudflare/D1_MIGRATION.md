@@ -1,7 +1,7 @@
 # D1 Migration Plan
 
 **Date:** 2026-10-19
-**Status:** Separate D1 schema, five local migrations, Worker bridge, explicit critical-mutation branches, and clean bootstrap workflow are present. Migration `0005` adds the Free-plan quota hardening and remains applied to the reviewed remote D1 for the deployed release commit `227a5dc`.
+**Status:** Separate D1 schema, six local migrations, Worker bridge, explicit critical-mutation branches, and clean bootstrap workflow are present. Migration `0005` remains the latest applied migration on the reviewed remote D1 for the deployed release; local migration `0006` is unreleased and must be applied only through the Git-based deployment workflow after review.
 
 ## Source of truth and safety
 
@@ -27,7 +27,8 @@ Production starts with a reviewed D1 database state. The migration excludes real
 - prisma/d1/migrations/0003_appointment_read_indexes.sql adds the date-scoped appointment read index used by queue/history projections.
 - prisma/d1/migrations/0004_p0_hardening.sql adds historical currency columns and the bounded kiosk rate-limit table/index.
 - prisma/d1/migrations/0005_free_quota_hardening.sql adds denormalized service counts, indexed report/routing support, and an atomic appointment-code counter.
-- wrangler.local.jsonc applies all five migrations to disposable local Wrangler state.
+- prisma/d1/migrations/0006_appointment_customer_name_snapshot.sql backfills the entered customer name snapshot for historical appointments and preserves it for new visits.
+- wrangler.local.jsonc applies all six migrations to disposable local Wrangler state.
 
 ## Transaction constraint
 
@@ -50,7 +51,7 @@ It does not create appointments, payments, demo history, or import production da
 npm run test:e2e:d1
 ~~~
 
-The command builds the Worker artifact, applies all five local migrations, emits/applies the disposable 101-statement bootstrap, and runs the D1 Playwright gate. For a manual migration/bootstrap review, use `wrangler.local.jsonc` and disposable values only. The local database is disposable and must never be treated as a production seed or data import.
+The command builds the Worker artifact, applies all six local migrations, emits/applies the disposable 101-statement bootstrap, and runs the D1 Playwright gate. For a manual migration/bootstrap review, use `wrangler.local.jsonc` and disposable values only. The local database is disposable and must never be treated as a production seed or data import.
 
 ## References
 

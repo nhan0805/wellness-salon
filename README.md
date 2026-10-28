@@ -14,6 +14,10 @@ The 2026-10-19 release is commit `9474c0e`. It was deployed through `.github/wor
 
 This release hardens the Free demo path with a dedicated atomic kiosk rate-limit table, bounded reconciliation/routing batches, indexed service-count filtering, chunked refund-report lookups, a bounded appointment-code counter, visibility-aware board reconnects, a maximum SSE lifetime, catalog cache headers, and lower-volume routine-read logging. Migration `0005_free_quota_hardening.sql` is applied to the reviewed remote D1.
 
+## Local unreleased hardening — 2026-10-28
+
+The current workspace contains unreleased follow-up changes that have not been deployed or applied to remote D1. They add migration `0006_appointment_customer_name_snapshot.sql` for per-visit customer-name snapshots, complete currency propagation across D1 write paths, make customer history net refunds, fix near-midnight and colliding Worker jobs, rotate UI idempotency keys when the payload changes, bound JSON request bodies, opt forwarded headers into an explicit trust setting, preserve D1 lease-loss detection, and remove `unsafe-eval` from the CSP. Remote production remains on the reviewed `0005` state until a Git-based release is approved.
+
 Local Cloudflare checks:
 
 ```bash
@@ -23,7 +27,7 @@ npx vinext check
 npx cf build
 ```
 
-`npm run test:e2e:d1` builds the Worker artifact, applies all five D1 migrations, generates/applies the 101-statement disposable bootstrap, and runs the Worker E2E suite against local D1. `npm run test:e2e:d1:webkit` adds the iPad/WebKit project locally. `npm run smoke:remote` runs the safe public/authenticated read-only production smoke, and `npm run d1:recovery:rehearsal` rehearses a disposable D1 export/restore. `npm run dev` starts the Worker-compatible local app on port `3001`; it needs no separate database service. Admin data loads use bounded client deadlines and show Retry instead of an indefinite spinner; this does not replace server-side latency investigation. Read the [Cloudflare performance plan](docs/cloudflare/PERFORMANCE.md), [observability runbook](docs/cloudflare/OBSERVABILITY.md), [remote smoke scope](docs/cloudflare/REMOTE_SMOKE.md), [backup/recovery guide](docs/cloudflare/BACKUP_AND_RECOVERY.md), [deployment record](docs/cloudflare/DEPLOYMENT_GUIDE.md), and [compatibility audit](docs/cloudflare/COMPATIBILITY_AUDIT.md) for the current remote status. The latest local verification is 67 passing unit/integration tests, 47 passing Worker/D1 E2E cases with one intentional skip, and 61 passing cases in the combined Chromium/tablet/WebKit gate with two intentional skips.
+`npm run test:e2e:d1` builds the Worker artifact, applies all six D1 migrations, generates/applies the 101-statement disposable bootstrap, and runs the Worker E2E suite against local D1. `npm run test:e2e:d1:webkit` adds the iPad/WebKit project locally. `npm run smoke:remote` runs the safe public/authenticated read-only production smoke, and `npm run d1:recovery:rehearsal` rehearses a disposable D1 export/restore. `npm run dev` starts the Worker-compatible local app on port `3001`; it needs no separate database service. Admin data loads use bounded client deadlines and show Retry instead of an indefinite spinner; this does not replace server-side latency investigation. Read the [Cloudflare performance plan](docs/cloudflare/PERFORMANCE.md), [observability runbook](docs/cloudflare/OBSERVABILITY.md), [remote smoke scope](docs/cloudflare/REMOTE_SMOKE.md), [backup/recovery guide](docs/cloudflare/BACKUP_AND_RECOVERY.md), [deployment record](docs/cloudflare/DEPLOYMENT_GUIDE.md), and [compatibility audit](docs/cloudflare/COMPATIBILITY_AUDIT.md) for the current remote status. The 2026-10-28 local verification is 71 passing unit/integration tests, 47 passing Worker/D1 E2E cases with one intentional skip, and 70 passing cases in the combined Chromium/tablet/WebKit gate with two intentional skips.
 
 ### Performance fixture (local/staging only)
 
@@ -51,7 +55,7 @@ npx prisma validate --schema prisma/d1/schema.prisma
 npm run build
 ```
 
-Kết quả kiểm chứng gần nhất ngày 25/10/2026: lint, typecheck, 67/67 unit/integration tests và build Worker PASS; D1 Worker E2E PASS 47 tests với 1 skip có chủ đích. Local D1 migrations (bao gồm migration 0005), bootstrap 101 statements, public routes, authentication, kiosk/board/admin workflows, Attendance loading smoke và các responsive regression 320/360/390px, zoom 90% đều PASS. Cloudflare CPU production vẫn cần dashboard/log evidence; các giới hạn còn lại được ghi trong `docs/cloudflare/TEST_REPORT.md`.
+Kết quả kiểm chứng ngày 28/10/2026: lint, typecheck, build Worker, 71/71 unit/integration tests, D1 Worker E2E 47 PASS với 1 skip có chủ đích, và gate Chromium/tablet/WebKit 70 PASS với 2 skip có chủ đích. Các lệnh local chạy trên disposable D1 với cả sáu migration; không triển khai hoặc mutate remote D1 trong lượt hardening này. Cloudflare CPU production, scheduler event, physical-device và capacity evidence vẫn cần dashboard/log hoặc kiểm thử vận hành riêng.
 
 ## Chạy app
 

@@ -1,6 +1,10 @@
 # Project state
 
-Last updated: 2026-10-25
+Last updated: 2026-10-28
+
+## 2026-10-28 local hardening follow-up
+
+The workspace now contains unreleased changes for visit-level customer-name/currency snapshots, net-of-refund customer history, Worker scheduler boundary/collision handling, payload-aware idempotency keys, bounded JSON bodies, explicit forwarded-header trust, D1 lease-loss guards, and CSP hardening. Local disposable D1 uses migration `0006_appointment_customer_name_snapshot.sql`; the reviewed remote Worker/D1 deployment remains on migration `0005` because no deployment or remote D1 mutation was performed in this follow-up.
 
 ## Cloudflare migration gate — current status
 
@@ -89,7 +93,7 @@ Verify the canonical Worker/D1 runtime without weakening BR-01–BR-06, keep the
 
 ## Build and test status
 
-Latest local verification on 2026-10-25: lint, typecheck, 67/67 unit/integration tests, build, and the Worker/D1 gate pass 47 cases with one intentional skip. The combined Chromium/tablet/WebKit gate passes 61 cases with two intentional skips; the disposable D1 export/restore rehearsal passes; and `npm run smoke:remote` passes 19/19 public and authenticated admin read-only checks. The follow-up fixes the queue, historical review, Kiosk entry, and staff-form regressions and reduces duplicate board/admin read work. GitHub Actions run `39184956401` deployed the current workers.dev source at `227a5dc`; remote D1 migration verification reports no pending migrations. Cloudflare CPU/quota metrics, approved business mutations, scheduler event evidence, physical-device QA, and deployed capacity observation remain open. Local tests do not mutate remote D1.
+Latest deployed verification remains the 2026-10-25 baseline recorded below. The 2026-10-28 local hardening follow-up requires a fresh lint/typecheck/unit/E2E run before release; no deployment or remote D1 mutation was performed. Cloudflare CPU/quota metrics, approved business mutations, scheduler event evidence, physical-device QA, and deployed capacity observation remain open. Local tests do not mutate remote D1.
 
 Detailed evidence and scenario-level gaps are maintained in [`docs/implementation/FINAL_REPORT.md`](implementation/FINAL_REPORT.md), [`docs/implementation/RELEASE_CHECKLIST.md`](implementation/RELEASE_CHECKLIST.md), and [`docs/implementation/TEST_MATRIX.md`](implementation/TEST_MATRIX.md).
 

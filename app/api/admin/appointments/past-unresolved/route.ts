@@ -5,7 +5,7 @@ import {
   resolveDbPastAppointment,
 } from '@/src/server/services/prisma-operations';
 import { observeApiRequest } from '@/src/server/observability';
-import { hasTrustedOrigin, jsonError } from '@/src/server/request-security';
+import { hasTrustedOrigin, jsonError, readJsonBodyOrNull } from '@/src/server/request-security';
 import { adminPastAppointmentResolutionSchema } from '@/src/server/validation';
 import { withPrismaRuntime } from '@/src/server/db';
 
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     const actor = await getAdminActor();
     if (!actor) return jsonError('Admin authorization required', 403);
     const parsed = adminPastAppointmentResolutionSchema.safeParse(
-      await request.json().catch(() => null),
+      await readJsonBodyOrNull(request),
     );
     if (!parsed.success)
       return jsonError(parsed.error.issues[0]?.message ?? 'Invalid historical resolution', 422);

@@ -1,6 +1,6 @@
 # Implementation test matrix
 
-The active database-backed gate is `npm run test:e2e:d1`. It builds the Worker artifact, creates disposable local D1 state, applies all five migrations and the 101-statement bootstrap, and runs the Worker Playwright suite. `npm run test:e2e:d1:webkit` adds the iPad/WebKit project. The current follow-up was verified on 2026-10-25.
+The active database-backed gate is `npm run test:e2e:d1`. It builds the Worker artifact, creates disposable local D1 state, applies all six migrations and the 101-statement bootstrap, and runs the Worker Playwright suite. `npm run test:e2e:d1:webkit` adds the iPad/WebKit project. The current follow-up was verified on 2026-10-28; exact counts are recorded in `docs/cloudflare/TEST_REPORT.md`.
 
 ## Functional coverage
 
@@ -51,9 +51,9 @@ The active database-backed gate is `npm run test:e2e:d1`. It builds the Worker a
 | --- | --- |
 | `npm run lint` | PASS in the recorded local gate |
 | `npm run typecheck` | PASS on 2026-10-25 |
-| `npm test` | PASS: 67/67 |
+| `npm test` | PASS: 71/71 |
 | `npm run build:vinext` | PASS on 2026-10-25 |
-| `npm run test:e2e:d1` | PASS: 47 passed, 1 intentional skip |
+| `npm run test:e2e:d1` | PASS: 47 passed, 1 intentional skip; all six local migrations applied |
 | `npm run d1:recovery:rehearsal` | PASS: representative local tables restored with matching counts |
 | `npm run smoke:remote` | PASS: 19/19 read-only production checks |
 | `npx cf deploy --dry-run` | PASS in the recorded deployment gate |

@@ -232,6 +232,11 @@ export interface AdminCustomerHistoryItem {
     amount: number;
     tip: number;
     total: number;
+    refundedAmount: number;
+    netAmount: number;
+    netTip: number;
+    netTotal: number;
+    status: 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED';
     method: PaymentMethod;
     confirmedAt: Date;
   } | null;
@@ -244,6 +249,7 @@ export interface AdminCustomerHistorySnapshot {
     completedCount: number;
     paidTotal: number;
     tipTotal: number;
+    refundedTotal: number;
     totalCollected: number;
   };
   history: AdminCustomerHistoryItem[];

@@ -280,6 +280,7 @@ export default function KioskPage() {
   }
 
   function changeService() {
+    checkInKeyRef.current = null;
     setStep(1);
     setPhone('');
     setName('');
@@ -288,10 +289,26 @@ export default function KioskPage() {
   }
 
   function handlePhoneChange(value: string) {
+    checkInKeyRef.current = null;
     setPhone(value);
     setName('');
     setError('');
     setPhoneError('');
+  }
+
+  function handleNameChange(value: string) {
+    checkInKeyRef.current = null;
+    setName(value);
+    setError('');
+  }
+
+  function toggleService(serviceId: string) {
+    checkInKeyRef.current = null;
+    setSelectedServiceIds((current) =>
+      current.includes(serviceId)
+        ? current.filter((id) => id !== serviceId)
+        : [...current, serviceId],
+    );
   }
 
   function handlePhoneBlur() {
@@ -582,11 +599,7 @@ export default function KioskPage() {
                                   type="button"
                                   className={`service-card ${isSelected ? 'selected' : ''}`}
                                   onClick={() =>
-                                    setSelectedServiceIds((current) =>
-                                      isSelected
-                                        ? current.filter((id) => id !== service.id)
-                                        : [...current, service.id],
-                                    )
+                                    toggleService(service.id)
                                   }
                                   aria-pressed={isSelected}
                                 >
@@ -710,7 +723,7 @@ export default function KioskPage() {
                     id="kiosk-name"
                     name="name"
                     value={name}
-                    onChange={(event) => setName(event.target.value)}
+                    onChange={(event) => handleNameChange(event.target.value)}
                     autoComplete="name"
                     placeholder="e.g. Jamie Lee"
                     required

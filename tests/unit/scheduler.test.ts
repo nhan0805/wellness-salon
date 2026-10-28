@@ -3,6 +3,8 @@ import {
   PRODUCTION_SCHEDULE,
   PRODUCTION_TIMEZONE,
   isValidIanaTimezone,
+  scheduledClosingBusinessDate,
+  scheduledJobsForTick,
   scheduledJobForTick,
   staticUtcCronForFixedTimezone,
 } from '@/src/domain/scheduler';
@@ -25,6 +27,15 @@ describe('Cloudflare scheduler mapping', () => {
     expect(scheduledJobForTick(new Date('2026-10-12T20:15:00.000Z'), PRODUCTION_TIMEZONE, '21:00')).toBe('retention');
     expect(scheduledJobForTick(new Date('2026-10-12T13:15:00.000Z'), PRODUCTION_TIMEZONE, '20:00')).toBe('closing');
     expect(scheduledJobForTick(new Date('2026-10-12T14:15:00.000Z'), PRODUCTION_TIMEZONE, '21:30')).toBeNull();
+  });
+
+  it('keeps a near-midnight closing job on the previous business date', () => {
+    expect(scheduledClosingBusinessDate(new Date('2026-10-12T17:00:00.000Z'), PRODUCTION_TIMEZONE, '23:41')).toBe('2026-10-12');
+    expect(scheduledClosingBusinessDate(new Date('2026-10-12T17:15:00.000Z'), PRODUCTION_TIMEZONE, '23:59')).toBe('2026-10-12');
+  });
+
+  it('returns both jobs when a configurable closing tick collides with retention', () => {
+    expect(scheduledJobsForTick(new Date('2026-10-12T20:15:00.000Z'), PRODUCTION_TIMEZONE, '03:10')).toEqual(['closing', 'retention']);
   });
 
   it('accepts valid IANA zones and rejects invalid values', () => {

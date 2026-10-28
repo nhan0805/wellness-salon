@@ -12,9 +12,10 @@ const schedulerCron = '*/15 * * * *';
 
 function environment(overrides: Record<string, unknown> = {}) {
   const timezone = typeof overrides.SHOP_TIMEZONE === 'string' ? overrides.SHOP_TIMEZONE : 'Asia/Ho_Chi_Minh';
+  const closingTime = typeof overrides.CLOSING_TIME === 'string' ? overrides.CLOSING_TIME : '21:00';
   const db = {
     prepare: vi.fn(() => ({
-      first: vi.fn(async () => ({ timezone, closing_time: '21:00' })),
+      first: vi.fn(async () => ({ timezone, closing_time: closingTime })),
     })),
   };
   return {
@@ -54,7 +55,20 @@ describe('Worker scheduled handler', () => {
     expect(secondRequest.url).toBe('https://internal/api/jobs/retention');
     expect(firstRequest.headers.get('x-cron-secret')).toBe('c'.repeat(40));
     expect(firstRequest.method).toBe('POST');
+    expect(await firstRequest.clone().json()).toMatchObject({ businessDate: '2026-10-12' });
     expect(closingContext.waitUntil).not.toHaveBeenCalled();
+  });
+
+  it('runs retention even when a configurable closing tick lands at 03:15', async () => {
+    await worker.scheduled(
+      { cron: schedulerCron, scheduledTime: Date.parse('2026-10-12T20:15:00.000Z') },
+      environment({ CLOSING_TIME: '03:10' }) as never,
+      context(),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((fetchMock.mock.calls[0]?.[0] as Request).url).toBe('https://internal/api/jobs/closing');
+    expect((fetchMock.mock.calls[1]?.[0] as Request).url).toBe('https://internal/api/jobs/retention');
   });
 
   it('ignores an unknown cron event and refuses an incomplete secure configuration', async () => {
