@@ -116,7 +116,6 @@ export function AmountKeypad({
     if (disabled) return;
     const pastedValue = normalizeAmount(event.clipboardData.getData('text'));
     if (!pastedValue) return;
-    event.preventDefault();
     updateValue(pastedValue);
   }
 

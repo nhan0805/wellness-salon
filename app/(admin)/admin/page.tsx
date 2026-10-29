@@ -294,6 +294,40 @@ const shopConfigTabs: Array<{ id: ShopConfigSection; label: string; icon: typeof
   { id: 'accounts', label: 'Accounts', icon: UserCog },
 ];
 
+function isAdminSection(value: string | null): value is Section {
+  return navItems.some((item) => item.id === value);
+}
+
+function isShopConfigSection(value: string | null): value is ShopConfigSection {
+  return shopConfigTabs.some((tab) => tab.id === value);
+}
+
+function readAdminNavigationFromUrl() {
+  if (typeof window === 'undefined') {
+    return { section: 'overview' as Section, shopConfigSection: 'general' as ShopConfigSection };
+  }
+  const params = new URLSearchParams(window.location.search);
+  const sectionParam = params.get('section');
+  const configParam = params.get('config');
+  return {
+    section: isAdminSection(sectionParam) ? sectionParam : ('overview' as Section),
+    shopConfigSection: isShopConfigSection(configParam)
+      ? configParam
+      : ('general' as ShopConfigSection),
+  };
+}
+
+function pushAdminNavigation(section: Section, shopConfigSection: ShopConfigSection) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (section === 'overview') url.searchParams.delete('section');
+  else url.searchParams.set('section', section);
+  if (section === 'config' && shopConfigSection !== 'general')
+    url.searchParams.set('config', shopConfigSection);
+  else url.searchParams.delete('config');
+  window.history.pushState(null, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
 const emptyReport: Report = {
   period: 'day',
   businessDate: '',
@@ -418,6 +452,17 @@ export default function AdminPage() {
     return () => {
       disposed = true;
     };
+  }, []);
+
+  useEffect(() => {
+    const syncNavigationFromUrl = () => {
+      const navigation = readAdminNavigationFromUrl();
+      setSection(navigation.section);
+      setShopConfigSection(navigation.shopConfigSection);
+    };
+    syncNavigationFromUrl();
+    window.addEventListener('popstate', syncNavigationFromUrl);
+    return () => window.removeEventListener('popstate', syncNavigationFromUrl);
   }, []);
 
   async function refresh(
@@ -665,11 +710,17 @@ export default function AdminPage() {
     setMobileNavOpen(false);
     setSection(nextSection);
     if (nextSection === 'appointments') setAppointmentFilter('ALL');
+    pushAdminNavigation(nextSection, shopConfigSection);
   }
   function openAppointments(filter: AppointmentFilter = 'ALL') {
     resetAdminScroll();
     setAppointmentFilter(filter);
     setSection('appointments');
+    pushAdminNavigation('appointments', shopConfigSection);
+  }
+  function changeShopConfigSection(nextSection: ShopConfigSection) {
+    setShopConfigSection(nextSection);
+    pushAdminNavigation('config', nextSection);
   }
   const closePayment = useCallback(() => {
     setPaymentModal(null);
@@ -1242,7 +1293,7 @@ export default function AdminPage() {
           <span>Settings section</span>
           <select
             value={shopConfigSection}
-            onChange={(event) => setShopConfigSection(event.target.value as ShopConfigSection)}
+            onChange={(event) => changeShopConfigSection(event.target.value as ShopConfigSection)}
           >
             {shopConfigTabs.map((tab) => (
               <option key={tab.id} value={tab.id}>
@@ -1261,7 +1312,7 @@ export default function AdminPage() {
                 key={tab.id}
                 className={`shop-config-tab ${active ? 'active' : ''}`}
                 aria-pressed={active}
-                onClick={() => setShopConfigSection(tab.id)}
+                onClick={() => changeShopConfigSection(tab.id)}
               >
                 <Icon size={19} strokeWidth={1.9} aria-hidden="true" />
                 <span>{tab.label}</span>
@@ -1341,6 +1392,7 @@ export default function AdminPage() {
 
   return (
     <main
+      id="main-content"
       className={`admin-layout page-root ${section === 'config' ? 'admin-settings-context' : ''} ${section === 'payments' ? 'admin-payment-context' : ''}`}
     >
       <aside
@@ -2697,9 +2749,13 @@ function AppointmentsView({
                 <Search size={16} aria-hidden="true" />
                 <input
                   id="appointment-search"
+                  name="appointment-search"
+                  type="search"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Code, customer, phone"
+                  autoComplete="off"
+                  enterKeyHint="search"
                 />
               </div>
             </div>
@@ -4471,9 +4527,13 @@ function PaymentsView({
                   <Search size={16} aria-hidden="true" />
                   <input
                     id="payment-history-search"
+                    name="payment-history-search"
+                    type="search"
                     value={historySearch}
                     onChange={(event) => setHistorySearch(event.target.value)}
                     placeholder="Code, customer, phone"
+                    autoComplete="off"
+                    enterKeyHint="search"
                   />
                 </div>
               </div>

@@ -1,5 +1,15 @@
 # Implementation changelog
 
+## 2026-10-28 — Web Interface Guidelines pass
+
+- Added a shared skip link and `main-content` landmark across the main app routes.
+- Reworked form focus selectors to use visible keyboard focus without legacy `outline: none` overrides.
+- Contained modal overscroll and respected safe-area insets on mobile.
+- Focused the sign-in email field after authentication errors, made search controls explicit search inputs with mobile search hints, and kept custom keypad paste available.
+- Reflected Admin section and Settings subsection state in the URL while preserving the existing client-side navigation flow.
+
+No API, database, authentication, or deployment behavior changed.
+
 ## 2026-10-25 — Queue, historical review, kiosk, and staff-form refinements
 
 - Made the Staff availability “+N more” affordance a keyboard-accessible control that opens the Staff attendance tab and reports the hidden count from the same filtered staff data.

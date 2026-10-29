@@ -17,7 +17,7 @@ export default async function HomePage() {
   }
 
   return (
-    <main className="entry-shell page-root">
+    <main id="main-content" className="entry-shell page-root">
       <header className="app-topbar">
         <Link className="brand" href="/" aria-label="Wellness Salon home">
           <span className="brand-mark"><Sparkles size={19} aria-hidden="true" /></span>

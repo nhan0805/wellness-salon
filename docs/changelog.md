@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-28 — UI accessibility and navigation refinement
+
+- Added a shared skip link and main-content landmark across kiosk, board, admin, sign-in, and home routes.
+- Improved keyboard focus visibility, mobile modal scroll containment, sign-in error recovery, and Admin URL state persistence.
+
+No API, D1, authentication, or deployment behavior changed.
+
 ## 2026-10-28 — New Cloudflare account deployment documentation
 
 - Added `docs/cloudflare/DEPLOY_NEW_CLOUDFLARE_ACCOUNT_GUIDE.docx`, a beginner-facing Word guide for creating a new Workers subdomain and D1 database, configuring Wrangler and GitHub Actions, applying migrations/bootstrap, adding secrets, and verifying the deployed app.

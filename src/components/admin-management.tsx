@@ -672,6 +672,9 @@ export function AdminManagement({
                 <span className="sr-only">Search customers</span>
                 <input
                   type="search"
+                  name="customer-search"
+                  autoComplete="off"
+                  enterKeyHint="search"
                   value={customerSearch}
                   onChange={(event) => {
                     setCustomerSearch(event.target.value);

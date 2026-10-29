@@ -159,6 +159,25 @@ textarea:focus-visible {
   border: 0;
 }
 
+.skip-link {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  left: max(12px, env(safe-area-inset-left));
+  z-index: var(--z-toast);
+  transform: translateY(-180%);
+  border: 1px solid var(--color-primary-strong);
+  border-radius: 10px;
+  background: var(--color-card);
+  color: var(--color-primary-strong);
+  box-shadow: var(--shadow-md);
+  padding: 10px 14px;
+  font-weight: 800;
+  transition: transform var(--motion-fast) ease;
+}
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
 .app-topbar {
   display: flex;
   align-items: center;
@@ -538,8 +557,11 @@ textarea:focus-visible {
 .field select:focus,
 .field textarea:focus {
   border-color: var(--color-primary-dark);
+}
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
   box-shadow: 0 0 0 4px rgb(201 144 155 / 0.17);
-  outline: none;
 }
 .field input[aria-invalid='true'] {
   border-color: var(--color-danger);
@@ -1788,8 +1810,9 @@ textarea:focus-visible {
 }
 .date-filter input:focus {
   border-color: var(--color-primary-dark);
+}
+.date-filter input:focus-visible {
   box-shadow: 0 0 0 4px rgb(201 144 155 / 0.17);
-  outline: none;
 }
 .kpi-grid {
   display: grid;
@@ -3251,7 +3274,6 @@ textarea:focus-visible {
 .service-name-control input:focus {
   border: 0;
   box-shadow: none;
-  outline: none;
 }
 .service-form .field input,
 .service-form .field select,
@@ -3491,8 +3513,9 @@ textarea:focus-visible {
 }
 .service-icon-search-control input:focus {
   border-color: var(--color-primary-dark);
+}
+.service-icon-search-control input:focus-visible {
   box-shadow: 0 0 0 4px rgb(201 144 155 / 0.17);
-  outline: none;
 }
 .service-icon-groups {
   display: grid;
@@ -3610,13 +3633,16 @@ textarea:focus-visible {
   display: grid;
   place-items: center;
   background: rgb(81 70 74 / 0.48);
-  padding: 24px;
+  overscroll-behavior: contain;
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
   z-index: 50;
 }
 .modal {
   width: min(100%, 470px);
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 20px;
   background: #fff;
   box-shadow: var(--shadow-lg);
@@ -3639,9 +3665,6 @@ textarea:focus-visible {
   font-family: var(--font-heading);
   font-size: 1.35rem;
   letter-spacing: -0.04em;
-}
-.modal-header h2:focus {
-  outline: none;
 }
 .modal-header p {
   margin: 6px 0 0;

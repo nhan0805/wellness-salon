@@ -1,5 +1,15 @@
 # UI/UX refresh — 2026-10-19
 
+## 2026-10-28 — Web Interface Guidelines pass
+
+- Added a shared keyboard skip link to every route and a stable `main-content` landmark so keyboard and assistive-technology users can bypass sticky navigation.
+- Restored visible `:focus-visible` treatment for form controls, preserved the existing pastel focus ring, and removed legacy `outline: none` overrides.
+- Added safe-area-aware modal padding and `overscroll-behavior: contain` so mobile dialogs do not leak scroll into the page.
+- Returned focus to the work-email field after a failed sign-in, made search controls explicit search inputs with mobile search hints, and kept custom keypad paste available.
+- Synced Admin section and Settings subsection navigation to URL query parameters so operational views can be refreshed, shared, and restored with browser Back/Forward.
+
+The Vercel guideline pass did not change product behavior, API contracts, database schema, or the existing system-font performance decision.
+
 ## Visual redesign rollback — 2026-10-19
 
 The Warm Editorial Salon OS experiment was reverted after owner review. The app is back on the previous pastel visual baseline from the operational refresh, while keeping the functional improvements that were already accepted:

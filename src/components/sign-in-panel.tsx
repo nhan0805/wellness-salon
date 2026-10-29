@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ArrowRight, Eye, EyeOff, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
@@ -15,6 +15,7 @@ export default function SignInPanel() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const emailInputRef = useRef<HTMLInputElement>(null);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,19 +30,21 @@ export default function SignInPanel() {
       });
       if (!response.ok) {
         setError('Unable to sign in. Check your email and password and try again.');
+        emailInputRef.current?.focus();
       } else {
         router.replace(isAdminEntry ? '/admin' : '/board');
         router.refresh();
       }
     } catch {
       setError('Something went wrong. Please try again.');
+      emailInputRef.current?.focus();
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="sign-in-shell page-root">
+    <main id="main-content" className="sign-in-shell page-root">
       <header className="sign-in-header">
         <Link className="brand" href="/" aria-label="Wellness Salon home">
           <span className="brand-mark" aria-hidden="true" />
@@ -70,6 +73,7 @@ export default function SignInPanel() {
                 <label htmlFor="sign-in-email">Work email</label>
                 <input
                   className="sign-in-input"
+                  ref={emailInputRef}
                   id="sign-in-email"
                   name="email"
                   type="email"

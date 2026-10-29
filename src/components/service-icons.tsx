@@ -163,7 +163,7 @@ function ServiceIconDialog({ value, onApply, onClose }: { value: ServiceIconKey;
           <label htmlFor={searchId}>Search icons</label>
           <div className="service-icon-search-control">
             <Search size={17} aria-hidden="true" />
-            <input autoFocus data-dialog-focus id={searchId} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or category" />
+            <input data-dialog-focus id={searchId} name="service-icon-search" type="search" autoComplete="off" enterKeyHint="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or category…" />
           </div>
         </div>
         <div className="service-icon-groups">

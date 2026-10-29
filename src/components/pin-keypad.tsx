@@ -67,7 +67,6 @@ export function PinKeypad({
     if (disabled) return;
     const pastedValue = normalizePin(event.clipboardData.getData('text'), maxLength);
     if (!pastedValue) return;
-    event.preventDefault();
     updateValue(pastedValue);
   }
 

@@ -387,7 +387,7 @@ export default function KioskPage() {
   }
 
   return (
-    <main className="kiosk-shell page-root">
+    <main id="main-content" className="kiosk-shell page-root">
       <header className="kiosk-header">
         <Link className="brand" href="/">
           <span className="brand-mark">
@@ -509,11 +509,13 @@ export default function KioskPage() {
                       </label>
                       <input
                         id="kiosk-service-search"
+                        name="service-search"
                         type="search"
                         value={serviceSearch}
                         onChange={(event) => setServiceSearch(event.target.value)}
                         placeholder="Search services"
                         autoComplete="off"
+                        enterKeyHint="search"
                       />
                       {serviceSearch ? (
                         <button
@@ -735,6 +737,7 @@ export default function KioskPage() {
                 <div className="form-actions">
                   <button
                     className="button button-primary"
+                    type="submit"
                     disabled={submitting}
                   >
                     {submitting ? (
