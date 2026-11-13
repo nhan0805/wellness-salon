@@ -1,7 +1,7 @@
 # Cloudflare Free Deployment Guide
 
 **Date:** 2026-10-28
-**Status:** Hardening release `2ca86e8437cc929982c66f84310f9c35d3e5ceef` is deployed through GitHub Actions run `40666796400`. Migration `0006_appointment_customer_name_snapshot.sql` is applied remotely, and the Worker deploy plus public/authenticated read-only smoke succeeded. Business mutation/scheduler evidence and final production approval remain intentionally owner-gated.
+**Status:** Release `1dbe2d6ea133a5b46bb1b0c499f85ef3233c6697` is deployed through GitHub Actions run `43398583912`. Migration `0006_appointment_customer_name_snapshot.sql` is applied remotely, and the Worker deploy plus public/authenticated read-only smoke succeeded. Business mutation/scheduler evidence and final production approval remain intentionally owner-gated.
 
 ## Fresh account deployment guide
 
@@ -12,11 +12,11 @@ The deployment record below is historical for the existing `wellness.n8l.workers
 ## Latest deployment record for the existing account
 
 - Worker URL: `https://wellness.n8l.workers.dev`
-- Source commit: `2ca86e8437cc929982c66f84310f9c35d3e5ceef`
+- Source commit: `1dbe2d6ea133a5b46bb1b0c499f85ef3233c6697`
 - Trigger: `*/15 * * * *`
-- Deployed with `npm run deploy:vinext` after GitHub Actions run [40666796400](https://github.com/nhan0805/wellness-salon/actions/runs/40666796400) passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (47 passed, 1 intentional skip).
-- Cloudflare Version ID: `75bde7fd-c449-4e5e-a1ba-9cab5a704320`.
-- The release adds customer-name/currency snapshots, net-refund history, scheduler boundary/collision handling, payload-aware idempotency, bounded request bodies, explicit proxy trust, D1 lease-loss guards, and CSP hardening.
+- Deployed with `npm run deploy:vinext` after GitHub Actions run [43398583912](https://github.com/nhan0805/wellness-salon/actions/runs/43398583912) passed verification: lint, typecheck, coverage, build, audit, and Worker/D1 E2E (47 passed, 1 intentional skip).
+- Cloudflare Version ID: `97b4202c-0d43-4862-8467-c79808e1408b`.
+- The release fixes the Admin iPad header action row and drawer brand lockup, and updates React Server Components dependencies to the audited `19.3.1` patch release.
 - Post-deploy read-only health check passed for `/api/health`.
 - `npm run smoke:remote` passed 19/19 public and authenticated admin read-only checks, including the initial SSE snapshot.
 - D1 migrations through `0006_appointment_customer_name_snapshot.sql` are recorded remotely; the post-apply migration check reports no pending migrations.
