@@ -8,6 +8,10 @@
 
 No API, database, authentication, or deployment behavior changed.
 
+## 2026-11-13 — React Server Components security patch
+
+- Updated `react-server-dom-webpack` to `19.3.1` (with matching resolved React 19.3.1 lockfile entries) so the production dependency audit no longer reports the critical React Server Components vulnerability.
+
 ## 2026-10-28 — Web Interface Guidelines pass
 
 - Added a shared skip link and `main-content` landmark across the main app routes.
