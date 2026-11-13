@@ -32,5 +32,17 @@ test('dashboard report filter stays usable at iPad portrait and landscape sizes'
     expect(metrics.dateInputWidth).toBeGreaterThan(120);
     expect(metrics.filterRight).toBeLessThanOrEqual(metrics.viewportWidth + 1);
     expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth + 1);
+
+    const headerActionRows = await page
+      .locator('.admin-topbar .topbar-actions > :not(.admin-live-status)')
+      .evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().top)));
+    expect(new Set(headerActionRows).size).toBe(1);
+
+    if (viewport.width < 1200) {
+      await page.getByRole('button', { name: 'Open operations menu' }).click();
+      await expect(page.locator('.admin-sidebar .brand-copy')).toHaveCSS('display', 'grid');
+      await expect(page.locator('.admin-sidebar .brand-copy small')).toHaveText('Operations');
+      await page.locator('.admin-mobile-nav-scrim').click();
+    }
   }
 });

@@ -1407,7 +1407,8 @@ export default function AdminPage() {
             <Sparkles size={19} aria-hidden="true" />
           </span>
           <span className="brand-copy">
-            Wellness Salon <small>Operations</small>
+            <span className="brand-name">Wellness Salon</span>
+            <small>Operations</small>
           </span>
         </Link>
         <nav id="admin-nav-panel" className="admin-nav" aria-label="Operations sections">

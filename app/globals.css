@@ -217,8 +217,15 @@ textarea:focus-visible {
   display: grid;
   gap: 1px;
 }
+.brand-name,
 .brand-copy small {
   color: var(--color-muted-foreground);
+  white-space: nowrap;
+}
+.brand-name {
+  color: inherit;
+}
+.brand-copy small {
   font-family: var(--font-body);
   font-size: 0.7rem;
   font-weight: 500;
@@ -13874,7 +13881,7 @@ p {
 
   .admin-topbar > .topbar-actions {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     align-items: center;
     gap: 8px;
     width: 100%;
@@ -13983,7 +13990,7 @@ p {
   }
 
   .admin-topbar > .topbar-actions {
-    grid-template-columns: repeat(2, 52px);
+    grid-template-columns: repeat(3, 52px);
     width: auto;
     justify-content: initial;
     gap: 8px;
@@ -14890,5 +14897,13 @@ p {
 
   .past-unresolved-table td[data-label='Status'] > .status-badge {
     justify-self: start;
+  }
+}
+
+/* Keep the drawer brand lockup stacked after the tablet shell overrides. */
+@media (min-width: 721px) and (max-width: 1199px) {
+  .admin-sidebar .brand-copy {
+    display: grid;
+    min-width: 0;
   }
 }

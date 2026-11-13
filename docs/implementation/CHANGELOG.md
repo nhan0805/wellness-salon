@@ -1,5 +1,13 @@
 # Implementation changelog
 
+## 2026-11-13 — Admin tablet header alignment
+
+- Kept Refresh, Queue board, and Kiosk actions on one row at iPad widths by matching the action grid to all four header items.
+- Stabilized the Operations label in the drawer brand lockup with an explicit two-line layout and no accidental wrapping.
+- Added responsive E2E assertions for the tablet action row and drawer brand label.
+
+No API, database, authentication, or deployment behavior changed.
+
 ## 2026-10-28 — Web Interface Guidelines pass
 
 - Added a shared skip link and `main-content` landmark across the main app routes.
